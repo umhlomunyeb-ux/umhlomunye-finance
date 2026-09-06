@@ -1,14 +1,30 @@
 import { supabase } from "../lib/supabase";
 
-export async function getCustomers() {
-  const { data, error } = await supabase
+export async function getCustomers(status = "active") {
+  let query = supabase
     .from("customers")
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
+  if (status === "active") {
+    query = query
+      .eq("is_active", true)
+      .eq("is_deleted", false);
+  }
 
-  return data;
+  if (status === "inactive") {
+    query = query
+      .eq("is_active", false)
+      .eq("is_deleted", true);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
 }
 
 export async function addCustomer(customer) {
@@ -72,4 +88,115 @@ export async function customerExists(idNumber) {
   if (error) throw error;
 
   return !!data;
+}
+
+export async function findCustomerByIdNumber(idNumber) {
+  if (!idNumber || !idNumber.trim()) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("customers")
+    .select(`
+      id,
+      customer_number,
+      first_name,
+      last_name,
+      id_number,
+      cellphone,
+      email,
+      date_of_birth,
+      gender,
+      employer,
+      occupation,
+      monthly_income,
+      physical_address,
+      postal_address,
+      alternative_phone,
+      is_active,
+      is_deleted
+    `)
+    .eq("id_number", idNumber.trim())
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+export async function deactivateCustomer(id) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data, error } = await supabase
+    .from("customers")
+    .update({
+      is_active: false,
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: user?.id || null,
+    })
+    .eq("id", id)
+    .select();
+
+  if (error) throw error;
+
+  return data;
+}
+
+export async function reactivateCustomer(id) {
+  const { data, error } = await supabase
+    .from("customers")
+    .update({
+      is_active: true,
+      is_deleted: false,
+      deleted_at: null,
+      deleted_by: null,
+    })
+    .eq("id", id)
+    .select();
+
+  if (error) throw error;
+
+  return data;
+}
+
+export async function findCustomerByDetails({
+  idNumber,
+  cellphone,
+}) {
+  // Search by ID number first
+  if (idNumber && idNumber.trim()) {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("id_number", idNumber.trim())
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      return data;
+    }
+  }
+
+  // Search by cellphone second
+  if (cellphone && cellphone.trim()) {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("cellphone", cellphone.trim())
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      return data;
+    }
+  }
+
+  return null;
 }

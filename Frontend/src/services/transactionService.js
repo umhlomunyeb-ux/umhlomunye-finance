@@ -5,9 +5,11 @@ export async function getLoanTransactions(loanId) {
     .from("loan_transactions")
     .select("*")
     .eq("loan_id", loanId)
-    .order("transaction_date", { ascending: false });
+    .order("created_at", { ascending: true });
 
-  if (error) throw error;
+  if (error) {
+    throw error;
+  }
 
-  return data;
+  return data || [];
 }

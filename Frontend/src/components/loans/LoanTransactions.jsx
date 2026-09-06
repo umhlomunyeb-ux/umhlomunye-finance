@@ -83,7 +83,11 @@ export default function LoanTransactions({ loanId }) {
 
             <TableRow key={trx.id}>
 
-              <TableCell>{trx.transaction_date}</TableCell>
+              <TableCell>
+                {trx.transaction_date
+                  ? new Date(trx.transaction_date).toLocaleDateString("en-ZA")
+                  : "-"}
+              </TableCell>
 
               <TableCell>{trx.transaction_type}</TableCell>
 

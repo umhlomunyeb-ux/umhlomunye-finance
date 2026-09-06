@@ -88,66 +88,80 @@ async function loadCustomerNumber() {
     setCustomer(updatedCustomer);
   }
 
-async function handleSave() {
-  try {
-    setSaving(true);
+  async function handleSave() {
+    try {
+      setSaving(true);
+      if (!customer.first_name.trim()) {
+        toast.error("First name is required.");
+        return;
+      }
 
-    if (!customer.first_name.trim()) {
-      toast.error("First name is required.");
-      return;
+      if (!customer.last_name.trim()) {
+        toast.error("Last name is required.");
+        return;
+      }
+
+      if (!customer.id_number.trim()) {
+        toast.error("ID number is required.");
+        return;
+      }
+
+      if (!customer.cellphone.trim()) {
+        toast.error("Cellphone is required.");
+        return;
+      }
+
+      const exists = await customerExists(customer.id_number);
+
+      if (exists) {
+        toast.error("Customer already exists.");
+        return;
+      }
+
+      const customerToSave = {
+        ...customer,
+        date_of_birth: customer.date_of_birth || null,
+        gender: customer.gender || null,
+        email: customer.email || null,
+        physical_address: customer.physical_address || null,
+        occupation: customer.occupation || null,
+        employer: customer.employer || null,
+        monthly_income:
+          customer.monthly_income === ""
+            ? null
+            : Number(customer.monthly_income),
+      };
+
+      await addCustomer(customerToSave);
+
+      toast.success("Customer saved successfully.");
+
+      await onSaved();
+
+      setCustomer({
+        customer_number: "",
+        first_name: "",
+        last_name: "",
+        id_number: "",
+        date_of_birth: "",
+        gender: "",
+        cellphone: "",
+        email: "",
+        physical_address: "",
+        occupation: "",
+        employer: "",
+        monthly_income: "",
+      });
+
+      onClose();
+
+    } catch (err) {
+      console.error("Error saving customer:", err);
+      toast.error(err.message || "Failed to save customer.");
+    } finally {
+      setSaving(false);
     }
-
-    if (!customer.last_name.trim()) {
-      toast.error("Last name is required.");
-      return;
-    }
-
-    if (!customer.id_number.trim()) {
-      toast.error("ID number is required.");
-      return;
-    }
-
-    if (!customer.cellphone.trim()) {
-      toast.error("Cellphone is required.");
-      return;
-    }
-
-    const exists = await customerExists(customer.id_number);
-
-    if (exists) {
-      toast.error("Customer already exists.");
-      return;
-    }
-
-    await addCustomer(customer);
-
-    toast.success("Customer saved successfully.");
-
-    onSaved();
-
-    setCustomer({
-      customer_number: "",
-      first_name: "",
-      last_name: "",
-      id_number: "",
-      date_of_birth: "",
-      gender: "",
-      cellphone: "",
-      email: "",
-      physical_address: "",
-      occupation: "",
-      employer: "",
-      monthly_income: "",
-    });
-
-    onClose();
-
-  } catch (err) {
-    toast.error(err.message);
-  } finally {
-    setSaving(false);
   }
-}
 
   return (
     <Dialog open={open} maxWidth="md" fullWidth>

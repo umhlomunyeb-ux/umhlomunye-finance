@@ -21,18 +21,17 @@ function luhnCheck(idNumber) {
 }
 
 export function parseSouthAfricanId(idNumber) {
-
   if (!/^\d{13}$/.test(idNumber)) {
     return {
       valid: false,
-      message: "ID number must contain exactly 13 digits."
+      message: "ID number must contain exactly 13 digits.",
     };
   }
 
   if (!luhnCheck(idNumber)) {
     return {
       valid: false,
-      message: "Invalid South African ID number."
+      message: "Invalid South African ID number.",
     };
   }
 
@@ -44,24 +43,26 @@ export function parseSouthAfricanId(idNumber) {
 
   const year = yy <= currentYY ? 2000 + yy : 1900 + yy;
 
-  const birthDate = new Date(year, mm - 1, dd);
+  // Validate the calendar date without converting it to UTC
+  const daysInMonth = new Date(year, mm, 0).getDate();
 
-  if (
-    birthDate.getFullYear() !== year ||
-    birthDate.getMonth() !== mm - 1 ||
-    birthDate.getDate() !== dd
-  ) {
+  if (mm < 1 || mm > 12 || dd < 1 || dd > daysInMonth) {
     return {
       valid: false,
-      message: "Invalid birth date in ID number."
+      message: "Invalid birth date in ID number.",
     };
   }
+
+  // Build the date string directly from the ID.
+  // This prevents timezone-related day shifting.
+  const birthDate =
+    `${year}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 
   const genderDigits = Number(idNumber.substring(6, 10));
 
   return {
     valid: true,
-    birthDate: birthDate.toISOString().split("T")[0],
+    birthDate,
     gender: genderDigits >= 5000 ? "Male" : "Female",
   };
 }
