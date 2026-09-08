@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -11,168 +11,26 @@ import {
   CircularProgress,
   Divider,
   Grid,
-  IconButton,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Tooltip,
   Typography,
 } from "@mui/material";
 
-import RefreshIcon from "@mui/icons-material/Refresh";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
-import PeopleIcon from "@mui/icons-material/People";
-import PaymentsIcon from "@mui/icons-material/Payments";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
-import ScheduleIcon from "@mui/icons-material/Schedule";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import {
+  AccountBalance,
+  ArrowForward,
+  Assignment,
+  AttachMoney,
+  CheckCircle,
+  CreditCard,
+  Payment,
+  Refresh,
+  Schedule,
+  TrendingUp,
+} from "@mui/icons-material";
 
 import { supabase } from "../../lib/supabase";
-import { runDailyLoanProcessing } from "../../services/loanService";
-
-function money(value) {
-  return `R${Number(value || 0).toLocaleString("en-ZA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function formatDate(value) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString("en-ZA", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString("en-ZA", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function getCustomerName(loan) {
-  if (!loan?.customers) return "Unknown customer";
-
-  return (
-    `${loan.customers.first_name || ""} ${
-      loan.customers.last_name || ""
-    }`.trim() || "Unknown customer"
-  );
-}
-
-function StatCard({
-  title,
-  value,
-  subtitle,
-  icon,
-}) {
-  return (
-    <Card
-      elevation={2}
-      sx={{
-        height: "100%",
-        borderRadius: 3,
-      }}
-    >
-      <CardContent>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="flex-start"
-          spacing={2}
-        >
-          <Box>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mb: 1 }}
-            >
-              {title}
-            </Typography>
-
-            <Typography
-              variant="h5"
-              fontWeight={700}
-              sx={{ mb: 0.5 }}
-            >
-              {value}
-            </Typography>
-
-            {subtitle && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
-                {subtitle}
-              </Typography>
-            )}
-          </Box>
-
-          <Box
-            sx={{
-              width: 46,
-              height: 46,
-              borderRadius: 2,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: "action.hover",
-            }}
-          >
-            {icon}
-          </Box>
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}
-
-function statusColor(status) {
-  switch (String(status || "").toLowerCase()) {
-    case "active":
-      return "success";
-
-    case "completed":
-      return "primary";
-
-    case "overdue":
-      return "error";
-
-    case "void":
-    case "cancelled":
-      return "default";
-
-    default:
-      return "warning";
-  }
-}
+import { runDailyLoanProcessing } from "../../services/LoanService";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -197,89 +55,163 @@ export default function Dashboard() {
             await runDailyLoanProcessing();
           } catch (processingError) {
             console.error(
-              "Daily processing failed:",
+              "Daily loan processing error:",
               processingError
             );
-
-            // Do not prevent the dashboard from loading
-            // if processing fails.
-          } finally {
-            setProcessing(false);
           }
+
+          setProcessing(false);
         }
 
-        const [
-          loansResult,
-          transactionsResult,
-          applicationsResult,
-        ] = await Promise.all([
-          supabase
-            .from("loans")
-            .select(`
+        /*
+         * =========================
+         * LOAD LOANS
+         * =========================
+         */
+
+        const loansResult = await supabase
+          .from("loans")
+          .select(
+            `
               *,
               customers (
+                id,
                 customer_number,
                 first_name,
-                last_name
+                last_name,
+                id_number,
+                phone
               )
-            `)
-            .eq("is_deleted", false)
-            .order("created_at", {
-              ascending: false,
-            }),
-
-          supabase
-            .from("loan_transactions")
-            .select("*")
-            .order("transaction_date", {
-              ascending: false,
-            })
-            .limit(50),
-
-          supabase
-            .from("loan_applications")
-            .select("*")
-            .eq("status", "Pending")
-            .order("created_at", {
-              ascending: false,
-            }),
-        ]);
+            `
+          )
+          .order("created_at", {
+            ascending: false,
+          });
 
         if (loansResult.error) {
+          console.error(
+            "Loans error:",
+            loansResult.error
+          );
+
           throw loansResult.error;
         }
 
+        /*
+         * =========================
+         * LOAD TRANSACTIONS
+         * =========================
+         */
+
+        const transactionsResult = await supabase
+          .from("loan_transactions")
+          .select("*")
+          .order("transaction_date", {
+            ascending: false,
+          });
+
         if (transactionsResult.error) {
+          console.error(
+            "Transactions error:",
+            transactionsResult.error
+          );
+
           throw transactionsResult.error;
         }
 
+        /*
+         * =========================
+         * LOAD PENDING APPLICATIONS
+         * =========================
+         *
+         * IMPORTANT:
+         *
+         * loan_applications.status is:
+         *
+         * PENDING
+         *
+         * We are deliberately using the
+         * exact database value here.
+         */
+
+        const applicationsResult = await supabase
+          .from("loan_applications")
+          .select("*")
+          .eq("status", "PENDING")
+          .order("created_at", {
+            ascending: false,
+          });
+
+        /*
+         * Diagnostic output.
+         *
+         * This will tell us exactly what
+         * the browser receives from Supabase.
+         */
+
+        console.log(
+          "PENDING APPLICATION QUERY RESULT:",
+          applicationsResult
+        );
+
         if (applicationsResult.error) {
+          console.error(
+            "Applications error:",
+            applicationsResult.error
+          );
+
           throw applicationsResult.error;
         }
 
+        console.log(
+          "PENDING APPLICATIONS RETURNED:",
+          applicationsResult.data || []
+        );
+
+        /*
+         * =========================
+         * UPDATE STATE
+         * =========================
+         */
+
         setLoans(loansResult.data || []);
-        setTransactions(transactionsResult.data || []);
-        setApplications(applicationsResult.data || []);
+
+        setTransactions(
+          transactionsResult.data || []
+        );
+
+        setApplications(
+          applicationsResult.data || []
+        );
       } catch (err) {
-        console.error("DASHBOARD ERROR:", err);
+        console.error(
+          "Dashboard loading error:",
+          err
+        );
 
         setError(
-          err.message || "Unable to load dashboard data."
+          err?.message ||
+            "Failed to load dashboard data."
         );
       } finally {
         setLoading(false);
+        setProcessing(false);
       }
     },
     []
   );
 
-  useEffect(() => {
-    loadDashboard(true);
-  }, [loadDashboard]);
+  /*
+   * =========================
+   * INITIAL LOAD + REALTIME
+   * =========================
+   */
 
   useEffect(() => {
+    loadDashboard();
+
     const channel = supabase
-      .channel("dashboard-loan-realtime")
+      .channel("dashboard-realtime")
       .on(
         "postgres_changes",
         {
@@ -320,100 +252,117 @@ export default function Dashboard() {
     };
   }, [loadDashboard]);
 
-  const activeLoans = useMemo(
-    () =>
-      loans.filter(
-        (loan) =>
-          String(loan.loan_status).toLowerCase() ===
-            "active" &&
-          !loan.is_deleted
-      ),
-    [loans]
+  /*
+   * =========================
+   * CALCULATIONS
+   * =========================
+   */
+
+  const activeLoans = loans.filter(
+    (loan) =>
+      String(loan.loan_status || "").toLowerCase() ===
+      "active"
   );
 
-  const completedLoans = useMemo(
-    () =>
-      loans.filter(
-        (loan) =>
-          String(loan.loan_status).toLowerCase() ===
-          "completed"
-      ),
-    [loans]
+  const totalPortfolioBalance =
+    activeLoans.reduce(
+      (total, loan) =>
+        total + Number(loan.current_balance || 0),
+      0
+    );
+
+  const totalPaid = loans.reduce(
+    (total, loan) =>
+      total + Number(loan.total_paid || 0),
+    0
   );
 
-  const totalDisbursed = useMemo(
-    () =>
-      loans.reduce(
-        (sum, loan) =>
-          sum + Number(loan.principal_amount || 0),
-        0
-      ),
-    [loans]
-  );
+  const totalLoans = loans.length;
 
-  const activeBalance = useMemo(
-    () =>
-      activeLoans.reduce(
-        (sum, loan) =>
-          sum + Number(loan.current_balance || 0),
-        0
-      ),
-    [activeLoans]
-  );
+  /*
+   * This is the number displayed on the
+   * Pending Applications dashboard card.
+   */
+  const pendingApplications =
+    applications.length;
 
-  const totalPaid = useMemo(
-    () =>
-      loans.reduce(
-        (sum, loan) =>
-          sum + Number(loan.total_paid || 0),
-        0
-      ),
-    [loans]
-  );
+  const upcomingInterest = activeLoans
+    .filter((loan) => loan.next_interest_date)
+    .sort(
+      (a, b) =>
+        new Date(a.next_interest_date) -
+        new Date(b.next_interest_date)
+    );
 
-  const totalInterest = useMemo(
-    () =>
-      loans.reduce(
-        (sum, loan) =>
-          sum + Number(loan.interest_amount || 0),
-        0
-      ),
-    [loans]
-  );
+  const recentRepayments = transactions
+    .filter((transaction) => {
+      const type = String(
+        transaction.transaction_type || ""
+      ).toLowerCase();
 
-  const repaymentTransactions = useMemo(
-    () =>
-      transactions
-        .filter(
-          (transaction) =>
-            String(
-              transaction.transaction_type || ""
-            ).toLowerCase() === "payment"
-        )
-        .slice(0, 10),
-    [transactions]
-  );
+      return (
+        type.includes("payment") ||
+        type.includes("repayment")
+      );
+    })
+    .slice(0, 5);
 
-  const upcomingInterest = useMemo(() => {
-    const now = new Date();
+  /*
+   * =========================
+   * FORMATTERS
+   * =========================
+   */
 
-    return activeLoans
-      .filter((loan) => {
-        if (!loan.next_interest_date) return false;
+  const formatCurrency = (value) =>
+    new Intl.NumberFormat("en-ZA", {
+      style: "currency",
+      currency: "ZAR",
+      minimumFractionDigits: 2,
+    }).format(Number(value || 0));
 
-        const interestDate = new Date(
-          loan.next_interest_date
-        );
+  const formatDate = (date) => {
+    if (!date) return "-";
 
-        return interestDate >= now;
-      })
-      .sort(
-        (a, b) =>
-          new Date(a.next_interest_date) -
-          new Date(b.next_interest_date)
-      )
-      .slice(0, 10);
-  }, [activeLoans]);
+    return new Date(date).toLocaleDateString(
+      "en-ZA",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  };
+
+  const getCustomerName = (loan) => {
+    if (!loan?.customers) {
+      return "Unknown Customer";
+    }
+
+    return (
+      `${loan.customers.first_name || ""} ${
+        loan.customers.last_name || ""
+      }`.trim() || "Unknown Customer"
+    );
+  };
+
+  const getApplicationName = (application) => {
+    return (
+      `${application.first_name || ""} ${
+        application.last_name || ""
+      }`.trim() || "Unknown Applicant"
+    );
+  };
+
+  const getApplicationStatus = (application) =>
+    String(application.status || "")
+      .replace(/_/g, " ")
+      .toUpperCase();
+
+  /*
+   * =========================
+   * LOADING
+   * =========================
+   */
 
   if (loading) {
     return (
@@ -425,8 +374,12 @@ export default function Dashboard() {
           justifyContent: "center",
         }}
       >
-        <Stack alignItems="center" spacing={2}>
+        <Stack
+          spacing={2}
+          alignItems="center"
+        >
           <CircularProgress />
+
           <Typography color="text.secondary">
             Loading dashboard...
           </Typography>
@@ -435,326 +388,535 @@ export default function Dashboard() {
     );
   }
 
+  /*
+   * =========================
+   * DASHBOARD
+   * =========================
+   */
+
   return (
-    <Box sx={{ p: { xs: 2, md: 3 } }}>
-      {/* HEADER */}
+    <Box
+      sx={{
+        p: {
+          xs: 2,
+          md: 3,
+        },
+      }}
+    >
+      {/* =========================
+          HEADER
+      ========================== */}
+
       <Stack
-        direction={{ xs: "column", md: "row" }}
+        direction={{
+          xs: "column",
+          sm: "row",
+        }}
         justifyContent="space-between"
-        alignItems={{ xs: "flex-start", md: "center" }}
+        alignItems={{
+          xs: "flex-start",
+          sm: "center",
+        }}
         spacing={2}
         sx={{ mb: 3 }}
       >
         <Box>
           <Typography
             variant="h4"
-            fontWeight={800}
-            sx={{ mb: 0.5 }}
+            fontWeight={700}
           >
             Dashboard
           </Typography>
 
-          <Typography color="text.secondary">
-            Umhlomunye Finance loan portfolio overview
+          <Typography
+            color="text.secondary"
+            sx={{ mt: 0.5 }}
+          >
+            Umhlomunye Finance overview
           </Typography>
-
-          {processing && (
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              sx={{ mt: 1 }}
-            >
-              <CircularProgress size={14} />
-
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
-                Processing due loan interest...
-              </Typography>
-            </Stack>
-          )}
         </Box>
 
-        <Stack direction="row" spacing={1}>
-          <Tooltip title="Refresh dashboard">
-            <IconButton
-              onClick={() => loadDashboard(true)}
-              disabled={processing}
-            >
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-
-          <Button
-            variant="contained"
-            onClick={() => navigate("/loans")}
-          >
-            View Loans
-          </Button>
-        </Stack>
+        <Button
+          variant="outlined"
+          startIcon={<Refresh />}
+          onClick={() => loadDashboard()}
+          disabled={processing}
+        >
+          {processing
+            ? "Processing..."
+            : "Refresh"}
+        </Button>
       </Stack>
 
       {error && (
         <Alert
-          severity="warning"
+          severity="error"
           sx={{ mb: 3 }}
-          onClose={() => setError("")}
         >
           {error}
         </Alert>
       )}
 
-      {/* STAT CARDS */}
-      <Grid container spacing={2.5} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Total Loans"
-            value={loans.length}
-            subtitle={`${activeLoans.length} active`}
-            icon={<AccountBalanceWalletIcon />}
-          />
-        </Grid>
+      {/* =========================
+          MAIN STATISTICS
+      ========================== */}
 
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Portfolio Balance"
-            value={money(activeBalance)}
-            subtitle="Outstanding active balance"
-            icon={<TrendingUpIcon />}
-          />
-        </Grid>
+      <Grid
+        container
+        spacing={2}
+        sx={{ mb: 3 }}
+      >
+        {/* TOTAL LOANS */}
 
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Total Paid"
-            value={money(totalPaid)}
-            subtitle="All recorded repayments"
-            icon={<PaymentsIcon />}
-          />
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Pending Applications"
-            value={applications.length}
-            subtitle="Awaiting review"
-            icon={<PeopleIcon />}
-          />
-        </Grid>
-      </Grid>
-
-      {/* SECONDARY STATISTICS */}
-      <Grid container spacing={2.5} sx={{ mb: 3 }}>
-        <Grid item xs={12} md={4}>
-          <Card elevation={1} sx={{ borderRadius: 3 }}>
+        <Grid
+          size={{
+            xs: 12,
+            sm: 6,
+            md: 3,
+          }}
+        >
+          <Card>
             <CardContent>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Total Principal Disbursed
-              </Typography>
-
-              <Typography
-                variant="h5"
-                fontWeight={700}
-                sx={{ mt: 1 }}
-              >
-                {money(totalDisbursed)}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Card elevation={1} sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Contracted Interest
-              </Typography>
-
-              <Typography
-                variant="h5"
-                fontWeight={700}
-                sx={{ mt: 1 }}
-              >
-                {money(totalInterest)}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Card elevation={1} sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Completed Loans
-              </Typography>
-
-              <Typography
-                variant="h5"
-                fontWeight={700}
-                sx={{ mt: 1 }}
-              >
-                {completedLoans.length}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* LOANS + APPLICATIONS */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} lg={8}>
-          <Card
-            elevation={2}
-            sx={{ borderRadius: 3 }}
-          >
-            <CardContent sx={{ p: 0 }}>
-              <Box
-                sx={{
-                  p: 2.5,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="flex-start"
               >
                 <Box>
-                  <Typography variant="h6" fontWeight={700}>
-                    Active Loans
+                  <Typography
+                    color="text.secondary"
+                    variant="body2"
+                  >
+                    Total Loans
                   </Typography>
 
                   <Typography
-                    variant="body2"
-                    color="text.secondary"
+                    variant="h4"
+                    fontWeight={700}
+                    sx={{ mt: 1 }}
                   >
-                    Current outstanding portfolio
+                    {totalLoans}
                   </Typography>
                 </Box>
 
-                <Button
-                  endIcon={<ArrowForwardIcon />}
-                  onClick={() => navigate("/loans")}
-                >
-                  All Loans
-                </Button>
-              </Box>
+                <CreditCard />
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
 
-              <Divider />
+        {/* PORTFOLIO BALANCE */}
 
-              {activeLoans.length === 0 ? (
-                <Box sx={{ p: 4, textAlign: "center" }}>
-                  <Typography color="text.secondary">
-                    No active loans found.
+        <Grid
+          size={{
+            xs: 12,
+            sm: 6,
+            md: 3,
+          }}
+        >
+          <Card>
+            <CardContent>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="flex-start"
+              >
+                <Box>
+                  <Typography
+                    color="text.secondary"
+                    variant="body2"
+                  >
+                    Portfolio Balance
+                  </Typography>
+
+                  <Typography
+                    variant="h5"
+                    fontWeight={700}
+                    sx={{ mt: 1 }}
+                  >
+                    {formatCurrency(
+                      totalPortfolioBalance
+                    )}
                   </Typography>
                 </Box>
-              ) : (
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>
-                          <strong>Loan</strong>
-                        </TableCell>
 
-                        <TableCell>
-                          <strong>Customer</strong>
-                        </TableCell>
+                <AccountBalance />
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
 
-                        <TableCell align="right">
-                          <strong>Balance</strong>
-                        </TableCell>
+        {/* TOTAL PAID */}
 
-                        <TableCell>
-                          <strong>Next Interest</strong>
-                        </TableCell>
+        <Grid
+          size={{
+            xs: 12,
+            sm: 6,
+            md: 3,
+          }}
+        >
+          <Card>
+            <CardContent>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="flex-start"
+              >
+                <Box>
+                  <Typography
+                    color="text.secondary"
+                    variant="body2"
+                  >
+                    Total Paid
+                  </Typography>
 
-                        <TableCell>
-                          <strong>Status</strong>
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
+                  <Typography
+                    variant="h5"
+                    fontWeight={700}
+                    sx={{ mt: 1 }}
+                  >
+                    {formatCurrency(totalPaid)}
+                  </Typography>
+                </Box>
 
-                    <TableBody>
-                      {activeLoans
-                        .slice(0, 10)
-                        .map((loan) => (
-                          <TableRow
-                            key={loan.id}
-                            hover
-                            sx={{
-                              cursor: "pointer",
-                            }}
-                            onClick={() =>
-                              navigate(
-                                `/loans/${loan.id}`
-                              )
-                            }
-                          >
-                            <TableCell>
-                              <Typography
-                                fontWeight={700}
-                              >
-                                {loan.loan_number}
-                              </Typography>
-                            </TableCell>
-
-                            <TableCell>
-                              {getCustomerName(loan)}
-                            </TableCell>
-
-                            <TableCell align="right">
-                              <Typography
-                                fontWeight={700}
-                              >
-                                {money(
-                                  loan.current_balance
-                                )}
-                              </Typography>
-                            </TableCell>
-
-                            <TableCell>
-                              {formatDate(
-                                loan.next_interest_date
-                              )}
-                            </TableCell>
-
-                            <TableCell>
-                              <Chip
-                                size="small"
-                                label={
-                                  loan.loan_status ||
-                                  "Unknown"
-                                }
-                                color={statusColor(
-                                  loan.loan_status
-                                )}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
+                <Payment />
+              </Stack>
             </CardContent>
           </Card>
         </Grid>
 
         {/* PENDING APPLICATIONS */}
-        <Grid item xs={12} lg={4}>
+
+        <Grid
+          size={{
+            xs: 12,
+            sm: 6,
+            md: 3,
+          }}
+        >
           <Card
-            elevation={2}
-            sx={{ borderRadius: 3, height: "100%" }}
+            sx={{
+              cursor:
+                pendingApplications > 0
+                  ? "pointer"
+                  : "default",
+            }}
+            onClick={() => {
+              if (pendingApplications > 0) {
+                navigate("/applications");
+              }
+            }}
           >
+            <CardContent>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="flex-start"
+              >
+                <Box>
+                  <Typography
+                    color="text.secondary"
+                    variant="body2"
+                  >
+                    Pending Applications
+                  </Typography>
+
+                  <Typography
+                    variant="h4"
+                    fontWeight={700}
+                    sx={{ mt: 1 }}
+                  >
+                    {pendingApplications}
+                  </Typography>
+                </Box>
+
+                <Assignment />
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* =========================
+          SECONDARY STATISTICS
+      ========================== */}
+
+      <Grid
+        container
+        spacing={2}
+        sx={{ mb: 3 }}
+      >
+        <Grid
+          size={{
+            xs: 12,
+            md: 4,
+          }}
+        >
+          <Paper sx={{ p: 2 }}>
+            <Stack
+              direction="row"
+              spacing={2}
+              alignItems="center"
+            >
+              <CheckCircle />
+
+              <Box>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  Active Loans
+                </Typography>
+
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                >
+                  {activeLoans.length}
+                </Typography>
+              </Box>
+            </Stack>
+          </Paper>
+        </Grid>
+
+        <Grid
+          size={{
+            xs: 12,
+            md: 4,
+          }}
+        >
+          <Paper sx={{ p: 2 }}>
+            <Stack
+              direction="row"
+              spacing={2}
+              alignItems="center"
+            >
+              <TrendingUp />
+
+              <Box>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  Average Loan Balance
+                </Typography>
+
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                >
+                  {formatCurrency(
+                    activeLoans.length
+                      ? totalPortfolioBalance /
+                          activeLoans.length
+                      : 0
+                  )}
+                </Typography>
+              </Box>
+            </Stack>
+          </Paper>
+        </Grid>
+
+        <Grid
+          size={{
+            xs: 12,
+            md: 4,
+          }}
+        >
+          <Paper sx={{ p: 2 }}>
+            <Stack
+              direction="row"
+              spacing={2}
+              alignItems="center"
+            >
+              <AttachMoney />
+
+              <Box>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  Total Portfolio
+                </Typography>
+
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                >
+                  {formatCurrency(
+                    totalPortfolioBalance
+                  )}
+                </Typography>
+              </Box>
+            </Stack>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* =========================
+          APPLICATIONS
+      ========================== */}
+
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Stack
+            direction={{
+              xs: "column",
+              sm: "row",
+            }}
+            justifyContent="space-between"
+            alignItems={{
+              xs: "flex-start",
+              sm: "center",
+            }}
+            spacing={2}
+            sx={{ mb: 2 }}
+          >
+            <Box>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+              >
+                Applications
+              </Typography>
+
+              <Typography
+                variant="body2"
+                color="text.secondary"
+              >
+                Applications awaiting review
+              </Typography>
+            </Box>
+
+            <Button
+              variant="contained"
+              endIcon={<ArrowForward />}
+              onClick={() =>
+                navigate("/applications")
+              }
+            >
+              Review Applications
+            </Button>
+          </Stack>
+
+          <Divider sx={{ mb: 2 }} />
+
+          {applications.length === 0 ? (
+            <Box
+              sx={{
+                py: 4,
+                textAlign: "center",
+              }}
+            >
+              <Assignment
+                sx={{
+                  fontSize: 42,
+                  color: "text.secondary",
+                  mb: 1,
+                }}
+              />
+
+              <Typography color="text.secondary">
+                No pending applications.
+              </Typography>
+            </Box>
+          ) : (
+            <Stack spacing={1}>
+              {applications
+                .slice(0, 5)
+                .map((application) => (
+                  <Paper
+                    key={application.id}
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      cursor: "pointer",
+                    }}
+                    onClick={() =>
+                      navigate(
+                        `/applications/${application.id}`
+                      )
+                    }
+                  >
+                    <Stack
+                      direction={{
+                        xs: "column",
+                        sm: "row",
+                      }}
+                      justifyContent="space-between"
+                      spacing={2}
+                    >
+                      <Box>
+                        <Typography fontWeight={600}>
+                          {getApplicationName(
+                            application
+                          )}
+                        </Typography>
+
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                        >
+                          {application.application_number ||
+                            "Application"}
+                        </Typography>
+
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                        >
+                          Submitted{" "}
+                          {formatDate(
+                            application.created_at
+                          )}
+                        </Typography>
+                      </Box>
+
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                      >
+                        <Chip
+                          size="small"
+                          label={getApplicationStatus(
+                            application
+                          )}
+                        />
+
+                        <Typography fontWeight={600}>
+                          {formatCurrency(
+                            application.amount_requested
+                          )}
+                        </Typography>
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                ))}
+            </Stack>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* =========================
+          ACTIVE LOANS + UPCOMING
+          INTEREST
+      ========================== */}
+
+      <Grid
+        container
+        spacing={2}
+        sx={{ mb: 3 }}
+      >
+        {/* ACTIVE LOANS */}
+
+        <Grid
+          size={{
+            xs: 12,
+            md: 7,
+          }}
+        >
+          <Card>
             <CardContent>
               <Stack
                 direction="row"
@@ -762,352 +924,288 @@ export default function Dashboard() {
                 alignItems="center"
                 sx={{ mb: 2 }}
               >
-                <Box>
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                  >
-                    Applications
-                  </Typography>
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                >
+                  Active Loans
+                </Typography>
 
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Pending review
-                  </Typography>
-                </Box>
-
-                <Chip
-                  label={applications.length}
-                  color="warning"
-                />
+                <Button
+                  size="small"
+                  endIcon={<ArrowForward />}
+                  onClick={() =>
+                    navigate("/loans")
+                  }
+                >
+                  View All
+                </Button>
               </Stack>
 
-              {applications.length === 0 ? (
+              <Divider sx={{ mb: 2 }} />
+
+              {activeLoans.length === 0 ? (
                 <Typography
                   color="text.secondary"
                   sx={{ py: 3 }}
                 >
-                  No pending applications.
+                  No active loans.
                 </Typography>
               ) : (
-                <Stack spacing={1.5}>
-                  {applications
-                    .slice(0, 6)
-                    .map((application) => (
+                <Stack spacing={1}>
+                  {activeLoans
+                    .slice(0, 5)
+                    .map((loan) => (
                       <Paper
-                        key={application.id}
+                        key={loan.id}
                         variant="outlined"
                         sx={{
-                          p: 1.5,
+                          p: 2,
                           cursor: "pointer",
                         }}
                         onClick={() =>
                           navigate(
-                            `/applications/${application.id}`
+                            `/loans/${loan.id}`
                           )
                         }
                       >
-                        <Typography fontWeight={700}>
-                          {application.application_number ||
-                            application.id?.slice(0, 8)}
+                        <Stack
+                          direction={{
+                            xs: "column",
+                            sm: "row",
+                          }}
+                          justifyContent="space-between"
+                          spacing={1}
+                        >
+                          <Box>
+                            <Typography fontWeight={600}>
+                              {getCustomerName(loan)}
+                            </Typography>
+
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                            >
+                              {loan.loan_number ||
+                                "Loan"}
+                            </Typography>
+                          </Box>
+
+                          <Typography fontWeight={600}>
+                            {formatCurrency(
+                              loan.current_balance
+                            )}
+                          </Typography>
+                        </Stack>
+                      </Paper>
+                    ))}
+                </Stack>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* UPCOMING INTEREST */}
+
+        <Grid
+          size={{
+            xs: 12,
+            md: 5,
+          }}
+        >
+          <Card>
+            <CardContent>
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                sx={{ mb: 2 }}
+              >
+                <Schedule />
+
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                >
+                  Upcoming Interest
+                </Typography>
+              </Stack>
+
+              <Divider sx={{ mb: 2 }} />
+
+              {upcomingInterest.length === 0 ? (
+                <Typography
+                  color="text.secondary"
+                  sx={{ py: 3 }}
+                >
+                  No upcoming interest dates.
+                </Typography>
+              ) : (
+                <Stack spacing={1.5}>
+                  {upcomingInterest
+                    .slice(0, 5)
+                    .map((loan) => (
+                      <Box key={loan.id}>
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          spacing={1}
+                        >
+                          <Box>
+                            <Typography
+                              variant="body2"
+                              fontWeight={600}
+                            >
+                              {getCustomerName(loan)}
+                            </Typography>
+
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {formatDate(
+                                loan.next_interest_date
+                              )}
+                            </Typography>
+                          </Box>
+
+                          <Typography
+                            variant="body2"
+                            fontWeight={600}
+                          >
+                            {formatCurrency(
+                              loan.current_balance
+                            )}
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    ))}
+                </Stack>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* =========================
+          RECENT REPAYMENTS
+      ========================== */}
+
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{ mb: 2 }}
+          >
+            <Box>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+              >
+                Recent Repayments
+              </Typography>
+
+              <Typography
+                variant="body2"
+                color="text.secondary"
+              >
+                Latest payment transactions
+              </Typography>
+            </Box>
+
+            <Button
+              size="small"
+              endIcon={<ArrowForward />}
+              onClick={() =>
+                navigate("/repayments")
+              }
+            >
+              View Repayments
+            </Button>
+          </Stack>
+
+          <Divider sx={{ mb: 2 }} />
+
+          {recentRepayments.length === 0 ? (
+            <Typography
+              color="text.secondary"
+              sx={{ py: 3 }}
+            >
+              No recent repayments.
+            </Typography>
+          ) : (
+            <Stack spacing={1}>
+              {recentRepayments.map(
+                (transaction) => (
+                  <Paper
+                    key={transaction.id}
+                    variant="outlined"
+                    sx={{ p: 2 }}
+                  >
+                    <Stack
+                      direction={{
+                        xs: "column",
+                        sm: "row",
+                      }}
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Box>
+                        <Typography fontWeight={600}>
+                          {transaction.description ||
+                            "Repayment"}
                         </Typography>
 
                         <Typography
                           variant="body2"
                           color="text.secondary"
                         >
-                          {application.first_name ||
-                            application.full_name ||
-                            "Applicant"}
-                        </Typography>
-
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                        >
                           {formatDate(
-                            application.created_at
+                            transaction.transaction_date
                           )}
                         </Typography>
-                      </Paper>
-                    ))}
-                </Stack>
-              )}
+                      </Box>
 
-              <Button
-                fullWidth
-                sx={{ mt: 2 }}
-                variant="outlined"
-                onClick={() =>
-                  navigate("/applications")
-                }
-              >
-                Review Applications
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* NEXT INTEREST */}
-      <Card
-        elevation={2}
-        sx={{
-          borderRadius: 3,
-          mt: 3,
-        }}
-      >
-        <CardContent sx={{ p: 0 }}>
-          <Box sx={{ p: 2.5 }}>
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-            >
-              <ScheduleIcon />
-
-              <Box>
-                <Typography
-                  variant="h6"
-                  fontWeight={700}
-                >
-                  Upcoming Interest Processing
-                </Typography>
-
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Loans scheduled for the next interest
-                  calculation
-                </Typography>
-              </Box>
-            </Stack>
-          </Box>
-
-          <Divider />
-
-          {upcomingInterest.length === 0 ? (
-            <Box sx={{ p: 4, textAlign: "center" }}>
-              <Typography color="text.secondary">
-                No upcoming interest dates.
-              </Typography>
-            </Box>
-          ) : (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>
-                      <strong>Loan</strong>
-                    </TableCell>
-
-                    <TableCell>
-                      <strong>Customer</strong>
-                    </TableCell>
-
-                    <TableCell>
-                      <strong>Interest Date</strong>
-                    </TableCell>
-
-                    <TableCell align="right">
-                      <strong>Balance</strong>
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-
-                <TableBody>
-                  {upcomingInterest.map((loan) => (
-                    <TableRow
-                      key={loan.id}
-                      hover
-                      sx={{ cursor: "pointer" }}
-                      onClick={() =>
-                        navigate(`/loans/${loan.id}`)
-                      }
-                    >
-                      <TableCell>
-                        {loan.loan_number}
-                      </TableCell>
-
-                      <TableCell>
-                        {getCustomerName(loan)}
-                      </TableCell>
-
-                      <TableCell>
-                        {formatDate(
-                          loan.next_interest_date
+                      <Typography fontWeight={700}>
+                        {formatCurrency(
+                          transaction.credit
                         )}
-                      </TableCell>
-
-                      <TableCell align="right">
-                        {money(loan.current_balance)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                      </Typography>
+                    </Stack>
+                  </Paper>
+                )
+              )}
+            </Stack>
           )}
         </CardContent>
       </Card>
 
-      {/* RECENT PAYMENTS */}
-      <Card
-        elevation={2}
+      {/* =========================
+          FOOTER
+      ========================== */}
+
+      <Box
         sx={{
-          borderRadius: 3,
-          mt: 3,
+          textAlign: "center",
+          py: 2,
         }}
       >
-        <CardContent sx={{ p: 0 }}>
-          <Box sx={{ p: 2.5 }}>
-            <Typography
-              variant="h6"
-              fontWeight={700}
-            >
-              Recent Repayments
-            </Typography>
-
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Latest payment transactions
-            </Typography>
-          </Box>
-
-          <Divider />
-
-          {repaymentTransactions.length === 0 ? (
-            <Box sx={{ p: 4, textAlign: "center" }}>
-              <Typography color="text.secondary">
-                No repayments recorded yet.
-              </Typography>
-            </Box>
-          ) : (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>
-                      <strong>Date</strong>
-                    </TableCell>
-
-                    <TableCell>
-                      <strong>Loan</strong>
-                    </TableCell>
-
-                    <TableCell>
-                      <strong>Description</strong>
-                    </TableCell>
-
-                    <TableCell align="right">
-                      <strong>Amount</strong>
-                    </TableCell>
-
-                    <TableCell align="right">
-                      <strong>Balance</strong>
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-
-                <TableBody>
-                  {repaymentTransactions.map(
-                    (transaction) => {
-                      const loan = loans.find(
-                        (item) =>
-                          item.id ===
-                          transaction.loan_id
-                      );
-
-                      return (
-                        <TableRow
-                          key={transaction.id}
-                          hover
-                          sx={{
-                            cursor: loan
-                              ? "pointer"
-                              : "default",
-                          }}
-                          onClick={() => {
-                            if (loan) {
-                              navigate(
-                                `/loans/${loan.id}`
-                              );
-                            }
-                          }}
-                        >
-                          <TableCell>
-                            {formatDateTime(
-                              transaction.transaction_date
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {loan?.loan_number || "-"}
-                          </TableCell>
-
-                          <TableCell>
-                            {transaction.description ||
-                              "Loan repayment"}
-                          </TableCell>
-
-                          <TableCell align="right">
-                            <Typography
-                              fontWeight={700}
-                              color="success.main"
-                            >
-                              {money(
-                                transaction.credit
-                              )}
-                            </Typography>
-                          </TableCell>
-
-                          <TableCell align="right">
-                            {money(
-                              transaction.balance
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* FOOTER INFO */}
-      <Paper
-        variant="outlined"
-        sx={{
-          mt: 3,
-          p: 2,
-          borderRadius: 2,
-        }}
-      >
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
+        <Typography
+          variant="body2"
+          color="text.secondary"
         >
-          <WarningAmberIcon fontSize="small" />
+          Umhlomunye Finance
+        </Typography>
 
-          <Typography
-            variant="caption"
-            color="text.secondary"
-          >
-            Loan balances and interest are calculated by
-            the Supabase loan engine. The dashboard only
-            displays the database values.
-          </Typography>
-        </Stack>
-      </Paper>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+        >
+          Our dreams, Our hope
+        </Typography>
+      </Box>
     </Box>
   );
 }
