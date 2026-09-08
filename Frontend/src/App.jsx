@@ -22,6 +22,7 @@ import VerifyAgreement from "./pages/Public/VerifyAgreement";
 import Bank from "./pages/Bank/Bank";
 import TestEmail from "./pages/TestEmail";
 import PendingApplications from "./pages/Applications/PendingApplications";
+import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
 
 export default function App() {
@@ -58,6 +59,11 @@ export default function App() {
         <Route
           path="/verify-agreement/:token"
           element={<VerifyAgreement />}
+        />
+
+        <Route
+          path="/mobile/application-review"
+          element={<MobileApplicationReviews />}
         />
 
         <Route
