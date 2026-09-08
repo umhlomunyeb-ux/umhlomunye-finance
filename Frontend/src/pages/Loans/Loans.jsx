@@ -6,6 +6,7 @@ import LoanForm from "./LoanForm";
 export default function Loans() {
   const [open, setOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [search, setSearch] = useState("");
 
   function handleSaved() {
     setOpen(false);
@@ -14,9 +15,16 @@ export default function Loans() {
 
   return (
     <>
-      <LoanToolbar onAdd={() => setOpen(true)} />
+      <LoanToolbar
+        onAdd={() => setOpen(true)}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
-      <LoanTable refreshKey={refreshKey} />
+      <LoanTable
+        refreshKey={refreshKey}
+        search={search}
+      />
 
       <LoanForm
         open={open}

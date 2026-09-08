@@ -11,12 +11,13 @@ import {
   Stack,
   Chip,
   CircularProgress,
+  Typography,
 } from "@mui/material";
 
 import { getLoans } from "../../services/loanService";
 import RecordPayment from "../../pages/Repayments/RecordPayment";
 
-export default function LoanTable({ refreshKey }) {
+export default function LoanTable({ refreshKey, search = "" }) {
   const navigate = useNavigate();
 
   const [loans, setLoans] = useState([]);
@@ -36,7 +37,7 @@ export default function LoanTable({ refreshKey }) {
 
       const data = await getLoans();
 
-      setLoans(data);
+      setLoans(data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -57,6 +58,46 @@ export default function LoanTable({ refreshKey }) {
   async function handlePaymentSaved() {
     await loadLoans();
   }
+
+  /*
+   * Search by:
+   * - Loan number
+   * - Customer number
+   * - Customer first name
+   * - Customer last name
+   * - Full customer name
+   */
+  const searchTerm = search.trim().toLowerCase();
+
+  const filteredLoans = loans.filter((loan) => {
+    if (!searchTerm) {
+      return true;
+    }
+
+    const loanNumber = String(loan.loan_number || "").toLowerCase();
+
+    const customerNumber = String(
+      loan.customers?.customer_number || ""
+    ).toLowerCase();
+
+    const firstName = String(
+      loan.customers?.first_name || ""
+    ).toLowerCase();
+
+    const lastName = String(
+      loan.customers?.last_name || ""
+    ).toLowerCase();
+
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    return (
+      loanNumber.includes(searchTerm) ||
+      customerNumber.includes(searchTerm) ||
+      firstName.includes(searchTerm) ||
+      lastName.includes(searchTerm) ||
+      fullName.includes(searchTerm)
+    );
+  });
 
   if (loading) {
     return <CircularProgress />;
@@ -80,89 +121,101 @@ export default function LoanTable({ refreshKey }) {
           </TableHead>
 
           <TableBody>
-            {loans.map((loan) => (
-              <TableRow key={loan.id}>
-                <TableCell>
-                  {loan.loan_number}
-                </TableCell>
-
-                <TableCell>
-                  {loan.customers?.customer_number}
-                  <br />
-                  {loan.customers?.first_name}{" "}
-                  {loan.customers?.last_name}
-                </TableCell>
-
-                <TableCell align="right">
-                  R{Number(loan.principal_amount).toFixed(2)}
-                </TableCell>
-
-                <TableCell align="right">
-                  {loan.interest_rate}%
-                </TableCell>
-
-                <TableCell align="right">
-                  R{Number(loan.current_balance).toFixed(2)}
-                </TableCell>
-
-                <TableCell>
-                  <Chip
-                    label={loan.loan_status}
-                    color={
-                      loan.loan_status === "Active"
-                        ? "success"
-                        : "default"
-                    }
-                    size="small"
-                  />
-                </TableCell>
-
-                <TableCell>
-                  {loan.first_payment_date}
-                </TableCell>
-
-                <TableCell>
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                  >
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() =>
-                        navigate(`/loans/${loan.id}`)
-                      }
-                    >
-                      View
-                    </Button>
-
-                    <Button
-                      size="small"
-                      variant="contained"
-                      onClick={() =>
-                        handlePaymentClick(loan)
-                      }
-                    >
-                      Payment
-                    </Button>
-
-                    <Button
-                      size="small"
-                      color="warning"
-                    >
-                      Edit
-                    </Button>
-
-                    <Button
-                      size="small"
-                      color="error"
-                    >
-                      Void
-                    </Button>
-                  </Stack>
+            {filteredLoans.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} align="center">
+                  <Typography sx={{ py: 3 }}>
+                    {searchTerm
+                      ? "No loans found matching your search."
+                      : "No loans found."}
+                  </Typography>
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              filteredLoans.map((loan) => (
+                <TableRow key={loan.id}>
+                  <TableCell>
+                    {loan.loan_number}
+                  </TableCell>
+
+                  <TableCell>
+                    {loan.customers?.customer_number}
+                    <br />
+                    {loan.customers?.first_name}{" "}
+                    {loan.customers?.last_name}
+                  </TableCell>
+
+                  <TableCell align="right">
+                    R{Number(loan.principal_amount).toFixed(2)}
+                  </TableCell>
+
+                  <TableCell align="right">
+                    {loan.interest_rate}%
+                  </TableCell>
+
+                  <TableCell align="right">
+                    R{Number(loan.current_balance).toFixed(2)}
+                  </TableCell>
+
+                  <TableCell>
+                    <Chip
+                      label={loan.loan_status}
+                      color={
+                        loan.loan_status === "Active"
+                          ? "success"
+                          : "default"
+                      }
+                      size="small"
+                    />
+                  </TableCell>
+
+                  <TableCell>
+                    {loan.first_payment_date}
+                  </TableCell>
+
+                  <TableCell>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                    >
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() =>
+                          navigate(`/loans/${loan.id}`)
+                        }
+                      >
+                        View
+                      </Button>
+
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={() =>
+                          handlePaymentClick(loan)
+                        }
+                      >
+                        Payment
+                      </Button>
+
+                      <Button
+                        size="small"
+                        color="warning"
+                      >
+                        Edit
+                      </Button>
+
+                      <Button
+                        size="small"
+                        color="error"
+                      >
+                        Void
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </Paper>

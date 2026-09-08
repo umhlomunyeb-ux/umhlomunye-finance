@@ -11,7 +11,14 @@ type NotificationType =
   | "PENDING_REVIEW"
   | "APPROVED"
   | "REJECTED"
-  | "AGREEMENT";
+  | "AGREEMENT"
+  | "DOCUMENT";
+
+type EmailAttachment = {
+  name: string;
+  content: string;
+  contentType?: string;
+};
 
 type EmailRequest = {
   notificationType: NotificationType;
@@ -32,928 +39,1183 @@ type EmailRequest = {
 
   rejectionReason?: string;
 
-  /**
-   * Optional.
-   * If supplied, this will be used instead of generating
-   * a new agreement token.
-   */
   agreementUrl?: string;
-
-  /**
-   * Optional agreement version.
-   */
   agreementVersion?: string;
-
-  /**
-   * Optional expiry in days.
-   * Defaults to 7 days.
-   */
   agreementExpiryDays?: number;
+
+  documentType?: string;
+  documentName?: string;
+
+  attachment?: EmailAttachment;
 };
 
-function escapeHtml(value: unknown): string {
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function escapeHtml(value: unknown) {
   return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-function formatCurrency(value: unknown): string {
-  const amount = Number(value ?? 0);
 
-  return new Intl.NumberFormat("en-ZA", {
-    style: "currency",
-    currency: "ZAR",
-    minimumFractionDigits: 2,
-  }).format(amount);
+function formatCurrency(value: unknown) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "R 0.00";
+  }
+
+  return `R ${amount.toFixed(2)}`;
 }
 
-/**
- * Generate a cryptographically secure random token.
- */
-function generateSecureToken(): string {
-  const bytes = new Uint8Array(32);
 
-  crypto.getRandomValues(bytes);
+function generateSecureToken(length = 64) {
+  const characters =
+    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-  return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  const bytes =
+    crypto.getRandomValues(
+      new Uint8Array(length)
+    );
+
+  let token = "";
+
+  for (let i = 0; i < bytes.length; i++) {
+    token +=
+      characters[
+        bytes[i] % characters.length
+      ];
+  }
+
+  return token;
 }
 
-/**
- * SHA-256 hash of the raw agreement token.
- *
- * Only the hash is stored in the database.
- * The raw token is only placed in the client's email URL.
- */
-async function hashToken(token: string): Promise<string> {
-  const data = new TextEncoder().encode(token);
 
-  const hashBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    data
-  );
+async function hashToken(token: string) {
+  const encoder =
+    new TextEncoder();
 
-  const hashArray = Array.from(
+  const data =
+    encoder.encode(token);
+
+  const hashBuffer =
+    await crypto.subtle.digest(
+      "SHA-256",
+      data
+    );
+
+  return Array.from(
     new Uint8Array(hashBuffer)
-  );
-
-  return hashArray
+  )
     .map((byte) =>
-      byte.toString(16).padStart(2, "0")
+      byte
+        .toString(16)
+        .padStart(2, "0")
     )
     .join("");
 }
 
-/**
- * Creates a private agreement URL and stores only the
- * SHA-256 token hash in Supabase.
- */
+
+/* =========================================================
+   AGREEMENT LINK
+========================================================= */
+
 async function createAgreementLink(
-  supabaseAdmin: ReturnType<typeof createClient>,
-  data: EmailRequest
-): Promise<{
-  agreementUrl: string;
-  tokenId: string;
-}> {
-  if (!data.loanId) {
+  supabase: ReturnType<typeof createClient>,
+  loanId: string,
+  agreementVersion?: string,
+  expiryDays = 7,
+  appBaseUrl?: string
+) {
+  const {
+    data: loan,
+    error: loanError,
+  } = await supabase
+    .from("loans")
+    .select(`
+      id,
+      loan_number,
+      customer_id
+    `)
+    .eq("id", loanId)
+    .single();
+
+  if (loanError) {
+    throw loanError;
+  }
+
+  if (!loan) {
     throw new Error(
-      "loanId is required when creating a loan agreement link."
+      "Loan could not be found."
     );
   }
 
-  const appBaseUrl =
+  const token =
+    generateSecureToken(64);
+
+  const tokenHash =
+    await hashToken(token);
+
+  const expiresAt =
+    new Date(
+      Date.now() +
+        expiryDays *
+          24 *
+          60 *
+          60 *
+          1000
+    ).toISOString();
+
+  const {
+    data: existingAgreement,
+    error: agreementLookupError,
+  } = await supabase
+    .from("loan_agreements")
+    .select(`
+      id,
+      loan_id,
+      agreement_number,
+      agreement_version
+    `)
+    .eq("loan_id", loanId)
+    .order("created_at", {
+      ascending: false,
+    })
+    .limit(1)
+    .maybeSingle();
+
+  if (agreementLookupError) {
+    throw agreementLookupError;
+  }
+
+  if (!existingAgreement) {
+    throw new Error(
+      "Loan agreement could not be found."
+    );
+  }
+
+  const {
+    data: insertedToken,
+    error: tokenError,
+  } = await supabase
+    .from("loan_agreement_tokens")
+    .insert({
+      loan_id: loanId,
+      agreement_id:
+        existingAgreement.id,
+      token_hash: tokenHash,
+      expires_at: expiresAt,
+      used_at: null,
+    })
+    .select("id")
+    .single();
+
+  if (tokenError) {
+    throw tokenError;
+  }
+
+  const baseUrl =
+    appBaseUrl ||
     Deno.env.get("APP_BASE_URL") ||
     Deno.env.get("PUBLIC_APP_URL");
 
-  if (!appBaseUrl) {
+  if (!baseUrl) {
     throw new Error(
       "APP_BASE_URL is not configured."
     );
   }
 
-  const cleanBaseUrl = appBaseUrl.replace(
-    /\/+$/,
-    ""
-  );
-
-  const rawToken = generateSecureToken();
-
-  const tokenHash = await hashToken(rawToken);
-
-  const expiryDays =
-    Number(data.agreementExpiryDays ?? 7);
-
-  const expiresAt = new Date(
-    Date.now() +
-      expiryDays *
-        24 *
-        60 *
-        60 *
-        1000
-  ).toISOString();
-
-  const agreementVersion =
-    data.agreementVersion ||
-    "1.0";
-
-  /**
-   * Remove any previous unused agreement tokens
-   * for this loan.
-   *
-   * This prevents multiple active links from being
-   * accidentally generated for the same loan.
-   */
-  await supabaseAdmin
-    .from("loan_agreement_tokens")
-    .update({
-      expires_at: new Date().toISOString(),
-    })
-    .eq("loan_id", data.loanId)
-    .is("used_at", null);
-
-  const { data: tokenRecord, error } =
-    await supabaseAdmin
-      .from("loan_agreement_tokens")
-      .insert({
-        loan_id: data.loanId,
-        application_id:
-          data.applicationId || null,
-        token_hash: tokenHash,
-        expires_at: expiresAt,
-      })
-      .select("id")
-      .single();
-
-  if (error) {
-    console.error(
-      "Agreement token insert error:",
-      error
-    );
-
-    throw new Error(
-      `Could not create agreement token: ${error.message}`
-    );
-  }
-
-  /**
-   * The raw token is NEVER stored in Supabase.
-   */
   const agreementUrl =
-    `${cleanBaseUrl}/loan-agreement/${rawToken}`;
-
-  /**
-   * Store agreement version on the loan.
-   *
-   * We intentionally do not mark agreement_sent_at yet.
-   * That only happens after Brevo successfully accepts
-   * the email.
-   */
-  const { error: loanUpdateError } =
-    await supabaseAdmin
-      .from("loans")
-      .update({
-        agreement_version:
-          agreementVersion,
-      })
-      .eq("id", data.loanId);
-
-  if (loanUpdateError) {
-    console.error(
-      "Loan agreement version update error:",
-      loanUpdateError
-    );
-  }
+    `${baseUrl.replace(/\/$/, "")}` +
+    `/agreement/${token}`;
 
   return {
     agreementUrl,
-    tokenId: tokenRecord.id,
+    tokenId: insertedToken?.id || null,
+    expiresAt,
+    agreementId:
+      existingAgreement.id,
+    agreementNumber:
+      existingAgreement.agreement_number,
+    agreementVersion:
+      agreementVersion ||
+      existingAgreement.agreement_version ||
+      null,
   };
 }
+
+
+/* =========================================================
+   EMAIL CONTENT
+========================================================= */
 
 function buildEmailContent(
-  data: EmailRequest
+  body: EmailRequest,
+  agreementUrl?: string
 ) {
-  const clientName = escapeHtml(
-    data.clientName ||
-      data.recipientName ||
-      "Client"
-  );
+  const clientName =
+    escapeHtml(
+      body.clientName ||
+        body.recipientName ||
+        "Customer"
+    );
 
-  const applicationNumber = escapeHtml(
-    data.applicationNumber || ""
-  );
+  const loanNumber =
+    escapeHtml(
+      body.loanNumber ||
+        ""
+    );
 
-  const loanNumber = escapeHtml(
-    data.loanNumber || ""
-  );
+  const applicationNumber =
+    escapeHtml(
+      body.applicationNumber ||
+        ""
+    );
 
-  const agreementUrl = escapeHtml(
-    data.agreementUrl || ""
-  );
 
-  let subject = "";
-  let title = "";
-  let body = "";
+  /* -------------------------------------------------------
+     PENDING REVIEW
+  ------------------------------------------------------- */
 
   if (
-    data.notificationType ===
+    body.notificationType ===
     "PENDING_REVIEW"
   ) {
-    subject =
-      `New Loan Application Pending Review – ${applicationNumber}`;
+    return {
+      subject:
+        `Loan Application Pending Review` +
+        (
+          body.applicationNumber
+            ? ` – ${body.applicationNumber}`
+            : ""
+        ),
 
-    title = "New Loan Application";
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;">
+          <h2>Loan Application Pending Review</h2>
 
-    body = `
-      <p>Hello Administrator,</p>
+          <p>A new loan application requires review.</p>
 
-      <p>
-        A new loan application has been submitted and is
-        <strong>pending review</strong>.
-      </p>
+          ${
+            applicationNumber
+              ? `<p><strong>Application Number:</strong> ${applicationNumber}</p>`
+              : ""
+          }
 
-      <table style="border-collapse:collapse;width:100%;margin:20px 0;">
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Application Number</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${applicationNumber}
-          </td>
-        </tr>
+          ${
+            body.clientName
+              ? `<p><strong>Client:</strong> ${clientName}</p>`
+              : ""
+          }
 
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Applicant</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${clientName}
-          </td>
-        </tr>
+          ${
+            body.amountRequested !== undefined
+              ? `<p><strong>Amount Requested:</strong> ${formatCurrency(
+                  body.amountRequested
+                )}</p>`
+              : ""
+          }
 
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Amount Requested</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${formatCurrency(
-              data.amountRequested
-            )}
-          </td>
-        </tr>
-      </table>
+          <p>Please log into the Umhlomunye Finance system to review the application.</p>
 
-      <p>
-        Please log in to Umhlomunye Finance to review the application.
-      </p>
-    `;
+          <p>
+            Kind regards,<br>
+            <strong>Umhlomunye Finance</strong><br>
+            <em>Our dreams, Our hope</em>
+          </p>
+        </div>
+      `,
+    };
   }
 
+
+  /* -------------------------------------------------------
+     APPROVED
+  ------------------------------------------------------- */
+
   if (
-    data.notificationType ===
+    body.notificationType ===
     "APPROVED"
   ) {
-    subject =
-      `Loan Application Approved – ${loanNumber}`;
+    return {
+      subject:
+        `Loan Application Approved` +
+        (
+          body.loanNumber
+            ? ` – ${body.loanNumber}`
+            : ""
+        ),
 
-    title = "Loan Application Approved";
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;">
+          <h2>Loan Application Approved</h2>
 
-    body = `
-      <p>Dear ${clientName},</p>
+          <p>Dear ${clientName},</p>
 
-      <p>
-        We are pleased to inform you that your loan application
-        has been <strong>approved</strong>.
-      </p>
+          <p>
+            We are pleased to inform you that your loan application
+            has been approved.
+          </p>
 
-      <table style="border-collapse:collapse;width:100%;margin:20px 0;">
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Application Number</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${applicationNumber}
-          </td>
-        </tr>
+          ${
+            body.loanNumber
+              ? `<p><strong>Loan Number:</strong> ${loanNumber}</p>`
+              : ""
+          }
 
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Loan Number</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${loanNumber}
-          </td>
-        </tr>
+          ${
+            body.approvedAmount !== undefined
+              ? `<p><strong>Approved Amount:</strong> ${formatCurrency(
+                  body.approvedAmount
+                )}</p>`
+              : ""
+          }
 
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Approved Amount</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${formatCurrency(
-              data.approvedAmount
-            )}
-          </td>
-        </tr>
-      </table>
+          ${
+            agreementUrl
+              ? `
+                <p>
+                  Your loan agreement is ready for review and acceptance.
+                </p>
 
-      <p>
-        Your loan agreement is ready for review and acceptance.
-      </p>
+                <p>
+                  <a
+                    href="${escapeHtml(agreementUrl)}"
+                    style="
+                      display:inline-block;
+                      padding:12px 20px;
+                      background:#1f3a5f;
+                      color:#ffffff;
+                      text-decoration:none;
+                      border-radius:5px;
+                    "
+                  >
+                    Review Loan Agreement
+                  </a>
+                </p>
+              `
+              : ""
+          }
 
-      <p>
-        Please review the agreement carefully before accepting it.
-      </p>
-
-      <p style="text-align:center;margin:30px 0;">
-        <a
-          href="${agreementUrl}"
-          style="
-            display:inline-block;
-            padding:14px 24px;
-            background:#0b1f3a;
-            color:#ffffff;
-            text-decoration:none;
-            border-radius:6px;
-            font-weight:bold;
-          "
-        >
-          Review &amp; Accept Loan Agreement
-        </a>
-      </p>
-
-      <p>
-        If you did not apply for this loan, please contact
-        Umhlomunye Finance immediately.
-      </p>
-
-      <p style="font-size:13px;color:#777;">
-        This private agreement link expires after the specified
-        validity period.
-      </p>
-    `;
+          <p>
+            Kind regards,<br>
+            <strong>Umhlomunye Finance</strong><br>
+            <em>Our dreams, Our hope</em>
+          </p>
+        </div>
+      `,
+    };
   }
 
-  if (
-    data.notificationType ===
-    "AGREEMENT"
-  ) {
-    subject =
-      `Loan Agreement Ready – ${loanNumber}`;
 
-    title = "Loan Agreement Ready";
-
-    body = `
-      <p>Dear ${clientName},</p>
-
-      <p>
-        Your loan agreement is ready for your review.
-      </p>
-
-      <p>
-        Please click the button below to review the agreement
-        and accept it electronically.
-      </p>
-
-      <p style="text-align:center;margin:30px 0;">
-        <a
-          href="${agreementUrl}"
-          style="
-            display:inline-block;
-            padding:14px 24px;
-            background:#0b1f3a;
-            color:#ffffff;
-            text-decoration:none;
-            border-radius:6px;
-            font-weight:bold;
-          "
-        >
-          Review &amp; Accept Loan Agreement
-        </a>
-      </p>
-
-      <p>
-        Loan Number:
-        <strong>${loanNumber}</strong>
-      </p>
-
-      <p style="font-size:13px;color:#777;">
-        This private agreement link expires after the specified
-        validity period.
-      </p>
-    `;
-  }
+  /* -------------------------------------------------------
+     REJECTED
+  ------------------------------------------------------- */
 
   if (
-    data.notificationType ===
+    body.notificationType ===
     "REJECTED"
   ) {
-    subject =
-      `Loan Application Update – ${applicationNumber}`;
+    return {
+      subject:
+        `Loan Application Update` +
+        (
+          body.applicationNumber
+            ? ` – ${body.applicationNumber}`
+            : ""
+        ),
 
-    title = "Loan Application Update";
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;">
+          <h2>Loan Application Update</h2>
 
-    body = `
-      <p>Dear ${clientName},</p>
+          <p>Dear ${clientName},</p>
 
-      <p>
-        We regret to inform you that your loan application
-        has not been approved.
-      </p>
+          <p>
+            We regret to inform you that your loan application
+            was not approved at this time.
+          </p>
 
-      <table style="border-collapse:collapse;width:100%;margin:20px 0;">
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Application Number</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${applicationNumber}
-          </td>
-        </tr>
+          ${
+            body.applicationNumber
+              ? `<p><strong>Application Number:</strong> ${applicationNumber}</p>`
+              : ""
+          }
 
-        <tr>
-          <td style="padding:8px;border:1px solid #ddd;">
-            <strong>Reason</strong>
-          </td>
-          <td style="padding:8px;border:1px solid #ddd;">
-            ${escapeHtml(
-              data.rejectionReason ||
-                "Not provided"
-            )}
-          </td>
-        </tr>
-      </table>
+          ${
+            body.rejectionReason
+              ? `
+                <p>
+                  <strong>Reason:</strong>
+                  ${escapeHtml(body.rejectionReason)}
+                </p>
+              `
+              : ""
+          }
 
-      <p>
-        Thank you for considering Umhlomunye Finance.
-      </p>
-    `;
+          <p>
+            Kind regards,<br>
+            <strong>Umhlomunye Finance</strong><br>
+            <em>Our dreams, Our hope</em>
+          </p>
+        </div>
+      `,
+    };
   }
 
-  return {
-    subject,
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>${escapeHtml(title)}</title>
-      </head>
 
-      <body
-        style="
-          margin:0;
-          padding:0;
-          background:#f4f6f8;
-          font-family:Arial,Helvetica,sans-serif;
-          color:#222;
-        "
-      >
+  /* -------------------------------------------------------
+     AGREEMENT
+  ------------------------------------------------------- */
 
-        <div style="max-width:650px;margin:30px auto;background:#ffffff;">
+  if (
+    body.notificationType ===
+    "AGREEMENT"
+  ) {
+    return {
+      subject:
+        `Loan Agreement Ready` +
+        (
+          body.loanNumber
+            ? ` – ${body.loanNumber}`
+            : ""
+        ),
 
-          <div
-            style="
-              background:#0b1f3a;
-              padding:25px;
-              color:#ffffff;
-              text-align:center;
-            "
-          >
-            <h1 style="margin:0;">
-              Umhlomunye Finance
-            </h1>
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;">
+          <h2>Loan Agreement Ready</h2>
 
-            <p style="margin:8px 0 0;">
-              Loan Management
-            </p>
-          </div>
+          <p>Dear ${clientName},</p>
 
-          <div style="padding:30px;">
+          <p>
+            Your Umhlomunye Finance loan agreement is ready
+            for review and acceptance.
+          </p>
 
-            <h2 style="color:#0b1f3a;">
-              ${escapeHtml(title)}
-            </h2>
+          ${
+            body.loanNumber
+              ? `<p><strong>Loan Number:</strong> ${loanNumber}</p>`
+              : ""
+          }
 
-            ${body}
+          ${
+            agreementUrl
+              ? `
+                <p>
+                  <a
+                    href="${escapeHtml(agreementUrl)}"
+                    style="
+                      display:inline-block;
+                      padding:12px 20px;
+                      background:#1f3a5f;
+                      color:#ffffff;
+                      text-decoration:none;
+                      border-radius:5px;
+                    "
+                  >
+                    Review and Accept Agreement
+                  </a>
+                </p>
+              `
+              : ""
+          }
 
-            <hr
-              style="
-                border:0;
-                border-top:1px solid #eee;
-                margin:30px 0;
-              "
-            >
-
-            <p
-              style="
-                font-size:12px;
-                color:#777;
-              "
-            >
-              This is an automated message from
-              Umhlomunye Finance.
-              Please do not reply to this email.
-            </p>
-
-          </div>
-
+          <p>
+            Kind regards,<br>
+            <strong>Umhlomunye Finance</strong><br>
+            <em>Our dreams, Our hope</em>
+          </p>
         </div>
+      `,
+    };
+  }
 
-      </body>
-      </html>
-    `,
-  };
+
+  /* -------------------------------------------------------
+     DOCUMENT
+  ------------------------------------------------------- */
+
+  if (
+    body.notificationType ===
+    "DOCUMENT"
+  ) {
+    const documentType =
+      escapeHtml(
+        body.documentType ||
+          "Loan Document"
+      );
+
+    const documentName =
+      escapeHtml(
+        body.documentName ||
+          "Loan Document"
+      );
+
+    return {
+      subject:
+        `${body.documentType || "Loan Document"}` +
+        (
+          body.loanNumber
+            ? ` – ${body.loanNumber}`
+            : ""
+        ),
+
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;">
+          <h2>${documentType}</h2>
+
+          <p>Dear ${clientName},</p>
+
+          <p>
+            Please find attached your
+            <strong>${documentType}</strong>
+            for your Umhlomunye Finance loan.
+          </p>
+
+          ${
+            body.loanNumber
+              ? `<p><strong>Loan Number:</strong> ${loanNumber}</p>`
+              : ""
+          }
+
+          <p>
+            <strong>Document:</strong>
+            ${documentName}
+          </p>
+
+          <p>
+            Please retain this document for your records.
+          </p>
+
+          <p>
+            Kind regards,<br>
+            <strong>Umhlomunye Finance</strong><br>
+            <em>Our dreams, Our hope</em>
+          </p>
+        </div>
+      `,
+    };
+  }
+
+
+  throw new Error(
+    "Unsupported notification type."
+  );
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: corsHeaders,
-    });
-  }
 
-  try {
-    const body: EmailRequest =
-      await req.json();
+/* =========================================================
+   SERVER
+========================================================= */
 
-    if (!body.notificationType) {
-      throw new Error(
-        "notificationType is required."
-      );
-    }
-
-    if (!body.recipientEmail) {
-      throw new Error(
-        "recipientEmail is required."
-      );
-    }
-
-    /**
-     * Approved and Agreement emails need a loan.
-     */
+Deno.serve(
+  async (req) => {
     if (
-      (
-        body.notificationType ===
-          "APPROVED" ||
-        body.notificationType ===
-          "AGREEMENT"
-      ) &&
-      !body.loanId
+      req.method ===
+      "OPTIONS"
     ) {
-      throw new Error(
-        "loanId is required for approved/agreement emails."
-      );
-    }
-
-    const brevoApiKey =
-      Deno.env.get(
-        "BREVO_API_KEY"
-      );
-
-    const senderEmail =
-      Deno.env.get(
-        "BREVO_SENDER_EMAIL"
-      );
-
-    const senderName =
-      Deno.env.get(
-        "BREVO_SENDER_NAME"
-      ) ||
-      "Umhlomunye Finance";
-
-    if (!brevoApiKey) {
-      throw new Error(
-        "BREVO_API_KEY is not configured."
-      );
-    }
-
-    if (!senderEmail) {
-      throw new Error(
-        "BREVO_SENDER_EMAIL is not configured."
-      );
-    }
-
-    const supabaseUrl =
-      Deno.env.get(
-        "SUPABASE_URL"
-      );
-
-    const supabaseSecretKey =
-      Deno.env.get(
-        "SUPABASE_SECRET_KEY"
-      ) ||
-      Deno.env.get(
-        "SUPABASE_SERVICE_ROLE_KEY"
-      );
-
-    if (
-      !supabaseUrl ||
-      !supabaseSecretKey
-    ) {
-      throw new Error(
-        "Supabase server credentials are not configured."
-      );
-    }
-
-    const supabaseAdmin =
-      createClient(
-        supabaseUrl,
-        supabaseSecretKey
-      );
-
-    /**
-     * For APPROVED and AGREEMENT emails,
-     * generate a secure private agreement link.
-     */
-    if (
-      body.notificationType ===
-        "APPROVED" ||
-      body.notificationType ===
-        "AGREEMENT"
-    ) {
-      if (!body.agreementUrl) {
-        const agreement =
-          await createAgreementLink(
-            supabaseAdmin,
-            body
-          );
-
-        body.agreementUrl =
-          agreement.agreementUrl;
-      }
-    }
-
-    const email =
-      buildEmailContent(body);
-
-    /**
-     * Log notification.
-     */
-    const {
-      data: notification,
-      error: insertError,
-    } =
-      await supabaseAdmin
-        .from(
-          "email_notifications"
-        )
-        .insert({
-          application_id:
-            body.applicationId ||
-            null,
-
-          loan_id:
-            body.loanId ||
-            null,
-
-          recipient_email:
-            body.recipientEmail,
-
-          recipient_name:
-            body.recipientName ||
-            null,
-
-          notification_type:
-            body.notificationType,
-
-          subject:
-            email.subject,
-
-          status:
-            "PENDING",
-        })
-        .select()
-        .single();
-
-    if (insertError) {
-      console.error(
-        "Notification log insert error:",
-        insertError
-      );
-    }
-
-    /**
-     * Send through Brevo.
-     */
-    const brevoResponse =
-      await fetch(
-        "https://api.brevo.com/v3/smtp/email",
+      return new Response(
+        "ok",
         {
-          method: "POST",
-
-          headers: {
-            accept:
-              "application/json",
-
-            "api-key":
-              brevoApiKey,
-
-            "content-type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            sender: {
-              name: senderName,
-              email: senderEmail,
-            },
-
-            to: [
-              {
-                email:
-                  body.recipientEmail,
-
-                name:
-                  body.recipientName ||
-                  body.clientName ||
-                  undefined,
-              },
-            ],
-
-            subject:
-              email.subject,
-
-            htmlContent:
-              email.html,
-          }),
+          headers:
+            corsHeaders,
         }
       );
+    }
 
-    const responseText =
-      await brevoResponse.text();
-
-    /**
-     * Brevo failed.
-     */
-    if (!brevoResponse.ok) {
-      let errorMessage =
-        responseText;
-
-      try {
-        const parsed =
-          JSON.parse(
-            responseText
-          );
-
-        errorMessage =
-          parsed.message ||
-          parsed.code ||
-          responseText;
-      } catch {
-        // Keep raw response.
+    try {
+      if (
+        req.method !==
+        "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error:
+              "Method not allowed.",
+          }),
+          {
+            status: 405,
+            headers: {
+              ...corsHeaders,
+              "Content-Type":
+                "application/json",
+            },
+          }
+        );
       }
 
-      if (notification?.id) {
-        await supabaseAdmin
+
+      /* ---------------------------------------------------
+         REQUEST
+      --------------------------------------------------- */
+
+      const body =
+        (await req.json()) as EmailRequest;
+
+
+      if (
+        !body.notificationType
+      ) {
+        throw new Error(
+          "notificationType is required."
+        );
+      }
+
+
+      if (
+        !body.recipientEmail
+      ) {
+        throw new Error(
+          "recipientEmail is required."
+        );
+      }
+
+
+      /* ---------------------------------------------------
+         DOCUMENT VALIDATION
+      --------------------------------------------------- */
+
+      if (
+        body.notificationType ===
+        "DOCUMENT"
+      ) {
+        if (
+          !body.attachment
+        ) {
+          throw new Error(
+            "A PDF attachment is required."
+          );
+        }
+
+        if (
+          !body.attachment.name
+        ) {
+          throw new Error(
+            "Attachment filename is required."
+          );
+        }
+
+        if (
+          !body.attachment.content
+        ) {
+          throw new Error(
+            "Attachment content is required."
+          );
+        }
+
+        if (
+          !body.documentType
+        ) {
+          throw new Error(
+            "documentType is required."
+          );
+        }
+      }
+
+
+      /* ---------------------------------------------------
+         ENVIRONMENT
+      --------------------------------------------------- */
+
+      const brevoApiKey =
+        Deno.env.get(
+          "BREVO_API_KEY"
+        );
+
+      const senderEmail =
+        Deno.env.get(
+          "BREVO_SENDER_EMAIL"
+        );
+
+      const senderName =
+        Deno.env.get(
+          "BREVO_SENDER_NAME"
+        ) ||
+        "Umhlomunye Finance";
+
+      const supabaseUrl =
+        Deno.env.get(
+          "SUPABASE_URL"
+        );
+
+      const supabaseSecretKey =
+        Deno.env.get(
+          "SUPABASE_SECRET_KEY"
+        ) ||
+        Deno.env.get(
+          "SUPABASE_SERVICE_ROLE_KEY"
+        );
+
+      const appBaseUrl =
+        Deno.env.get(
+          "APP_BASE_URL"
+        ) ||
+        Deno.env.get(
+          "PUBLIC_APP_URL"
+        );
+
+
+      if (
+        !brevoApiKey
+      ) {
+        throw new Error(
+          "BREVO_API_KEY is not configured."
+        );
+      }
+
+      if (
+        !senderEmail
+      ) {
+        throw new Error(
+          "BREVO_SENDER_EMAIL is not configured."
+        );
+      }
+
+      if (
+        !supabaseUrl
+      ) {
+        throw new Error(
+          "SUPABASE_URL is not configured."
+        );
+      }
+
+      if (
+        !supabaseSecretKey
+      ) {
+        throw new Error(
+          "Supabase service role key is not configured."
+        );
+      }
+
+
+      /* ---------------------------------------------------
+         SUPABASE
+      --------------------------------------------------- */
+
+      const supabase =
+        createClient(
+          supabaseUrl,
+          supabaseSecretKey
+        );
+
+
+      /* ---------------------------------------------------
+         AGREEMENT LINK
+      --------------------------------------------------- */
+
+      let agreementUrl =
+        body.agreementUrl;
+
+      let agreementInfo:
+        | {
+            agreementUrl: string;
+            tokenId: string | null;
+            expiresAt: string;
+            agreementId: string;
+            agreementNumber:
+              | string
+              | null;
+            agreementVersion:
+              | string
+              | null;
+          }
+        | null = null;
+
+
+      if (
+        (
+          body.notificationType ===
+            "APPROVED" ||
+          body.notificationType ===
+            "AGREEMENT"
+        ) &&
+        body.loanId &&
+        !agreementUrl
+      ) {
+        agreementInfo =
+          await createAgreementLink(
+            supabase,
+            body.loanId,
+            body.agreementVersion,
+            body.agreementExpiryDays ||
+              7,
+            appBaseUrl
+          );
+
+        agreementUrl =
+          agreementInfo.agreementUrl;
+      }
+
+
+      /* ---------------------------------------------------
+         EMAIL CONTENT
+      --------------------------------------------------- */
+
+      const emailContent =
+        buildEmailContent(
+          body,
+          agreementUrl
+        );
+
+
+      /* ---------------------------------------------------
+         LOG EMAIL
+      --------------------------------------------------- */
+
+      let notificationId:
+        | string
+        | null = null;
+
+      try {
+        const {
+          data:
+            notification,
+          error:
+            notificationError,
+        } = await supabase
+          .from(
+            "email_notifications"
+          )
+          .insert({
+            notification_type:
+              body.notificationType,
+
+            application_id:
+              body.applicationId ||
+              null,
+
+            loan_id:
+              body.loanId ||
+              null,
+
+            recipient_email:
+              body.recipientEmail,
+
+            recipient_name:
+              body.recipientName ||
+              body.clientName ||
+              null,
+
+            subject:
+              emailContent.subject,
+
+            status:
+              "PENDING",
+          })
+          .select("id")
+          .single();
+
+        if (
+          notificationError
+        ) {
+          console.warn(
+            "EMAIL LOG INSERT WARNING:",
+            notificationError
+          );
+        } else {
+          notificationId =
+            notification?.id ||
+            null;
+        }
+      } catch (
+        notificationInsertError
+      ) {
+        console.warn(
+          "EMAIL LOG INSERT WARNING:",
+          notificationInsertError
+        );
+      }
+
+
+      /* ---------------------------------------------------
+         BREVO PAYLOAD
+      --------------------------------------------------- */
+
+      const brevoPayload: Record<
+        string,
+        unknown
+      > = {
+        sender: {
+          email:
+            senderEmail,
+          name:
+            senderName,
+        },
+
+        to: [
+          {
+            email:
+              body.recipientEmail,
+            name:
+              body.recipientName ||
+              body.clientName ||
+              undefined,
+          },
+        ],
+
+        subject:
+          emailContent.subject,
+
+        htmlContent:
+          emailContent.html,
+      };
+
+
+      /* ---------------------------------------------------
+         ATTACHMENT
+      --------------------------------------------------- */
+
+      if (
+        body.notificationType ===
+        "DOCUMENT"
+      ) {
+        brevoPayload.attachment = [
+          {
+            name:
+              body.attachment!.name,
+
+            content:
+              body.attachment!.content,
+          },
+        ];
+      }
+
+
+      /* ---------------------------------------------------
+         SEND THROUGH BREVO
+      --------------------------------------------------- */
+
+      const brevoResponse =
+        await fetch(
+          "https://api.brevo.com/v3/smtp/email",
+          {
+            method: "POST",
+
+            headers: {
+              "accept":
+                "application/json",
+
+              "api-key":
+                brevoApiKey,
+
+              "content-type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify(
+                brevoPayload
+              ),
+          }
+        );
+
+
+      const brevoText =
+        await brevoResponse.text();
+
+      let brevoResult:
+        | Record<string, unknown>
+        | null = null;
+
+      try {
+        brevoResult =
+          brevoText
+            ? JSON.parse(
+                brevoText
+              )
+            : null;
+      } catch {
+        brevoResult = null;
+      }
+
+
+      /* ---------------------------------------------------
+         BREVO FAILURE
+      --------------------------------------------------- */
+
+      if (
+        !brevoResponse.ok
+      ) {
+        if (
+          notificationId
+        ) {
+          await supabase
+            .from(
+              "email_notifications"
+            )
+            .update({
+              status:
+                "FAILED",
+
+              error_message:
+                brevoText ||
+                `Brevo returned ${brevoResponse.status}`,
+            })
+            .eq(
+              "id",
+              notificationId
+            );
+        }
+
+        throw new Error(
+          brevoText ||
+            `Brevo email failed with status ${brevoResponse.status}.`
+        );
+      }
+
+
+      /* ---------------------------------------------------
+         MESSAGE ID
+      --------------------------------------------------- */
+
+      const messageId =
+        String(
+          brevoResult?.messageId ||
+            brevoResult?.message_id ||
+            ""
+        );
+
+
+      /* ---------------------------------------------------
+         UPDATE EMAIL LOG
+      --------------------------------------------------- */
+
+      if (
+        notificationId
+      ) {
+        await supabase
           .from(
             "email_notifications"
           )
           .update({
-            status: "FAILED",
+            status:
+              "SENT",
+
+            brevo_message_id:
+              messageId ||
+              null,
+
+            sent_at:
+              new Date().toISOString(),
+
             error_message:
-              errorMessage,
+              null,
           })
           .eq(
             "id",
-            notification.id
+            notificationId
           );
       }
 
-      throw new Error(
-        `Brevo email failed: ${errorMessage}`
-      );
-    }
 
-    let brevoResult: {
-      messageId?: string;
-    } = {};
+      /* ---------------------------------------------------
+         AGREEMENT SENT DATE
+      --------------------------------------------------- */
 
-    try {
-      brevoResult =
-        JSON.parse(
-          responseText
-        );
-    } catch {
-      // Ignore JSON parsing failure.
-    }
+      if (
+        (
+          body.notificationType ===
+            "APPROVED" ||
+          body.notificationType ===
+            "AGREEMENT"
+        ) &&
+        body.loanId
+      ) {
+        try {
+          await supabase
+            .from(
+              "loan_agreements"
+            )
+            .update({
+              sent_at:
+                new Date().toISOString(),
+            })
+            .eq(
+              "loan_id",
+              body.loanId
+            );
+        } catch (
+          agreementUpdateError
+        ) {
+          console.warn(
+            "AGREEMENT SENT DATE WARNING:",
+            agreementUpdateError
+          );
+        }
+      }
 
-    /**
-     * Email successfully accepted by Brevo.
-     */
-    if (notification?.id) {
-      await supabaseAdmin
-        .from(
-          "email_notifications"
-        )
-        .update({
-          status: "SENT",
 
-          brevo_message_id:
-            brevoResult.messageId ||
+      /* ---------------------------------------------------
+         RESPONSE
+      --------------------------------------------------- */
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+
+          messageId:
+            messageId ||
             null,
 
-          sent_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          "id",
-          notification.id
-        );
+          notificationId,
+
+          agreementUrl:
+            agreementUrl ||
+            null,
+
+          agreementExpiresAt:
+            agreementInfo?.expiresAt ||
+            null,
+
+          agreementId:
+            agreementInfo?.agreementId ||
+            null,
+        }),
+        {
+          status: 200,
+
+          headers: {
+            ...corsHeaders,
+
+            "Content-Type":
+              "application/json",
+          },
+        }
+      );
+
+    } catch (error) {
+      console.error(
+        "SEND LOAN EMAIL ERROR:",
+        error
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to send email.",
+        }),
+        {
+          status: 500,
+
+          headers: {
+            ...corsHeaders,
+
+            "Content-Type":
+              "application/json",
+          },
+        }
+      );
     }
-
-    /**
-     * Only mark the agreement as sent AFTER
-     * Brevo successfully accepted the email.
-     */
-    if (
-      body.loanId &&
-      (
-        body.notificationType ===
-          "APPROVED" ||
-        body.notificationType ===
-          "AGREEMENT"
-      )
-    ) {
-      const {
-        error: agreementSentError,
-      } =
-        await supabaseAdmin
-          .from("loans")
-          .update({
-            agreement_sent_at:
-              new Date().toISOString(),
-          })
-          .eq(
-            "id",
-            body.loanId
-          );
-
-      if (agreementSentError) {
-        console.error(
-          "Could not update agreement_sent_at:",
-          agreementSentError
-        );
-      }
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-
-        messageId:
-          brevoResult.messageId ||
-          null,
-
-        /**
-         * This is useful to the application
-         * for logging/debugging, but the raw
-         * token is never stored in the database.
-         */
-        agreementUrl:
-          body.agreementUrl ||
-          null,
-      }),
-      {
-        status: 200,
-
-        headers: {
-          ...corsHeaders,
-
-          "Content-Type":
-            "application/json",
-        },
-      }
-    );
-  } catch (error) {
-    console.error(
-      "send-loan-email error:",
-      error
-    );
-
-    return new Response(
-      JSON.stringify({
-        success: false,
-
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error",
-      }),
-      {
-        status: 500,
-
-        headers: {
-          ...corsHeaders,
-
-          "Content-Type":
-            "application/json",
-        },
-      }
-    );
   }
-});
+);

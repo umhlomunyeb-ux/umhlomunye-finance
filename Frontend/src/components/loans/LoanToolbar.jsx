@@ -1,6 +1,10 @@
 import { Button, TextField } from "@mui/material";
 
-export default function LoanToolbar({ onAdd }) {
+export default function LoanToolbar({
+  onAdd,
+  search,
+  onSearchChange,
+}) {
   return (
     <div
       style={{
@@ -12,6 +16,9 @@ export default function LoanToolbar({ onAdd }) {
       <TextField
         label="Search Loan"
         size="small"
+        value={search}
+        onChange={(e) => onSearchChange(e.target.value)}
+        placeholder="Loan number or customer name"
       />
 
       <Button

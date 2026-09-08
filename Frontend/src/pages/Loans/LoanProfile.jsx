@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+
 import QRCode from "qrcode";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -20,6 +21,7 @@ import {
   DialogTitle,
   Divider,
   Grid,
+  IconButton,
   Paper,
   Stack,
   Tab,
@@ -29,15 +31,15 @@ import {
 
 import {
   ArrowBack,
+  Close,
   Description,
+  Download,
+  Email,
   FolderOpen,
   History,
-  OpenInNew,
-  Payment,
   PictureAsPdf,
   Print,
   ReceiptLong,
-  Verified,
 } from "@mui/icons-material";
 
 import {
@@ -48,67 +50,248 @@ import {
   removeLoanSubscription,
 } from "../../services/loanService";
 
-import { getLoanStatement } from "../../services/statementService";
+import {
+  getLoanStatement,
+  getExistingLoanStatementDocument,
+} from "../../services/statementService";
 
 import LoanTransactions from "../../components/loans/LoanTransactions";
-import RecordPayment from "../Repayments/RecordPayment";
 
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function toNumber(value) {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+}
+
+
+function formatMoney(value) {
+  return `R ${toNumber(value).toFixed(2)}`;
+}
+
+
+function formatDate(value) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleDateString("en-ZA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+
+function formatDateTime(value) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleString("en-ZA");
+}
+
+
+/* =========================================================
+   BLOB → BASE64
+========================================================= */
+
+async function blobToBase64(blob) {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      const result = String(
+        reader.result || ""
+      );
+
+      const commaIndex =
+        result.indexOf(",");
+
+      resolve(
+        commaIndex >= 0
+          ? result.slice(
+              commaIndex + 1
+            )
+          : result
+      );
+    };
+
+    reader.onerror = reject;
+
+    reader.readAsDataURL(blob);
+  });
+}
+
+
+/* =========================================================
+   SAFE FILE NAME
+========================================================= */
+
+function safeFileName(value) {
+  return String(value || "Loan Document")
+    .replace(/\.pdf$/i, "")
+    .replace(/[^\w.-]+/g, "_");
+}
+
+
+/* =========================================================
+   GET SETTLEMENT VALIDITY DATE
+     
+   BUSINESS RULE:
+   If interest updates on the 15th,
+   settlement quote is valid until the 14th.
+========================================================= */
+
+function getSettlementValidUntil(nextInterestDate) {
+  if (!nextInterestDate) {
+    return null;
+  }
+
+  const date = new Date(
+    nextInterestDate
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  date.setDate(
+    date.getDate() - 1
+  );
+
+  return date;
+}
+
+
+/* =========================================================
+   COMPONENT
+========================================================= */
 
 export default function LoanProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [loan, setLoan] = useState(null);
-  const [agreement, setAgreement] = useState(null);
-  const [documents, setDocuments] = useState([]);
 
-  const [statement, setStatement] = useState({
-    transactions: [],
-    overdues: [],
-  });
+  /* =======================================================
+     STATE
+  ======================================================= */
 
-  const [loading, setLoading] = useState(true);
-  const [loadingDocuments, setLoadingDocuments] = useState(false);
-  const [generatingAgreement, setGeneratingAgreement] = useState(false);
-  const [generatingStatement, setGeneratingStatement] = useState(false);
-  const [openingDocument, setOpeningDocument] = useState(false);
+  const [loan, setLoan] =
+    useState(null);
 
-  const [tab, setTab] = useState(0);
-  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [transactions, setTransactions] =
+    useState([]);
 
-  const [error, setError] = useState("");
+  const [agreement, setAgreement] =
+    useState(null);
+
+  const [documents, setDocuments] =
+    useState([]);
+
+  const [statement, setStatement] =
+    useState({
+      transactions: [],
+      overdues: [],
+    });
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [loadingDocuments, setLoadingDocuments] =
+    useState(false);
+
+  const [openingDocument, setOpeningDocument] =
+    useState(false);
+
+  const [generatingSettlement, setGeneratingSettlement] =
+    useState(false);
+
+  const [sendingEmail, setSendingEmail] =
+    useState(false);
+
+  const [emailSuccess, setEmailSuccess] =
+    useState("");
+
+  const [tab, setTab] =
+    useState(0);
+
+  const [error, setError] =
+    useState("");
 
 
-  // ============================================================
-  // CUSTOMER NAME
-  // ============================================================
+  /* -------------------------------------------------------
+     DOCUMENT VIEWER
+  ------------------------------------------------------- */
 
-  const getCustomerName = useCallback(() => {
+  const [documentViewerOpen, setDocumentViewerOpen] =
+    useState(false);
+
+  const [documentViewerUrl, setDocumentViewerUrl] =
+    useState("");
+
+  const [documentViewerName, setDocumentViewerName] =
+    useState("");
+
+  const [documentViewerType, setDocumentViewerType] =
+    useState("");
+
+  const [documentViewerBlobUrl, setDocumentViewerBlobUrl] =
+    useState(null);
+
+
+  /* =======================================================
+     CUSTOMER NAME
+  ======================================================= */
+
+  const customerName = useMemo(() => {
     if (!loan?.customers) {
       return "Customer";
     }
 
-    const customer = loan.customers;
-
     return (
-      `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
-      "Customer"
+      `${loan.customers.first_name || ""} ${
+        loan.customers.last_name || ""
+      }`.trim() || "Customer"
     );
   }, [loan]);
 
 
-  // ============================================================
-  // LOAD DOCUMENTS
-  // ============================================================
+  /* =======================================================
+     LOAD DOCUMENTS
+  ======================================================= */
 
   const loadDocuments = useCallback(
-    async (loanId = id) => {
-      if (!loanId) return;
+    async () => {
+      if (!id) {
+        return;
+      }
+
+      setLoadingDocuments(true);
 
       try {
-        setLoadingDocuments(true);
-
-        const { data, error: documentsError } = await supabase
+        const {
+          data,
+          error: documentError,
+        } = await supabase
           .from("documents")
           .select(`
             id,
@@ -121,19 +304,26 @@ export default function LoanProfile() {
             created_by,
             created_at
           `)
-          .eq("loan_id", loanId)
+          .eq("loan_id", id)
           .order("created_at", {
             ascending: false,
           });
 
-        if (documentsError) {
-          throw documentsError;
+        if (documentError) {
+          throw documentError;
         }
 
         setDocuments(data || []);
-      } catch (err) {
-        console.error("DOCUMENTS ERROR:", err);
-        setDocuments([]);
+      } catch (documentError) {
+        console.error(
+          "LOAD DOCUMENTS ERROR:",
+          documentError
+        );
+
+        setError(
+          documentError?.message ||
+            "Unable to load loan documents."
+        );
       } finally {
         setLoadingDocuments(false);
       }
@@ -142,17 +332,19 @@ export default function LoanProfile() {
   );
 
 
-  // ============================================================
-  // LOAD AGREEMENT
-  // ============================================================
+  /* =======================================================
+     LOAD AGREEMENT
+  ======================================================= */
 
   const loadAgreement = useCallback(
-    async (loanId = id) => {
-      if (!loanId) return;
+    async () => {
+      if (!id) {
+        return;
+      }
 
       try {
         const {
-          data: agreementData,
+          data,
           error: agreementError,
         } = await supabase
           .from("loan_agreements")
@@ -170,7 +362,7 @@ export default function LoanProfile() {
             created_at,
             document_path
           `)
-          .eq("loan_id", loanId)
+          .eq("loan_id", id)
           .order("created_at", {
             ascending: false,
           })
@@ -178,58 +370,45 @@ export default function LoanProfile() {
           .maybeSingle();
 
         if (agreementError) {
-          console.error(
-            "AGREEMENT LOADING ERROR:",
-            agreementError
-          );
-
-          setAgreement(null);
-          return;
+          throw agreementError;
         }
 
-        setAgreement(agreementData || null);
-      } catch (err) {
+        setAgreement(data || null);
+      } catch (agreementError) {
         console.error(
-          "AGREEMENT ERROR:",
-          err
+          "LOAD AGREEMENT ERROR:",
+          agreementError
         );
-
-        setAgreement(null);
       }
     },
     [id]
   );
 
 
-  // ============================================================
-  // LOAD STATEMENT
-  // ============================================================
+  /* =======================================================
+     LOAD STATEMENT DATA
+  ======================================================= */
 
   const loadStatement = useCallback(
-    async (loanId = id) => {
-      if (!loanId) return;
+    async () => {
+      if (!id) {
+        return;
+      }
 
       try {
-        const statementData =
-          await getLoanStatement(loanId);
+        const data =
+          await getLoanStatement(id);
 
-        if (statementData) {
-          setStatement({
-            transactions:
-              statementData.transactions || [],
-            overdues:
-              statementData.overdues || [],
-          });
-        } else {
-          setStatement({
-            transactions: [],
-            overdues: [],
-          });
-        }
-      } catch (err) {
+        setStatement({
+          transactions:
+            data?.transactions || [],
+          overdues:
+            data?.overdues || [],
+        });
+      } catch (statementError) {
         console.error(
-          "STATEMENT LOADING ERROR:",
-          err
+          "LOAD STATEMENT ERROR:",
+          statementError
         );
 
         setStatement({
@@ -242,77 +421,66 @@ export default function LoanProfile() {
   );
 
 
-  // ============================================================
-  // LOAD LOAN
-  // ============================================================
+  /* =======================================================
+     LOAD LOAN
+  ======================================================= */
 
   const loadLoan = useCallback(
-    async (processInterest = true) => {
-      if (!id) return;
+    async (
+      processInterest = false
+    ) => {
+      if (!id) {
+        setError(
+          "Loan ID is missing."
+        );
+
+        setLoading(false);
+
+        return;
+      }
 
       try {
-        setLoading(true);
         setError("");
-
-        // ------------------------------------------------------
-        // RUN DAILY PROCESSING
-        // ------------------------------------------------------
 
         if (processInterest) {
           try {
             await runDailyLoanProcessing();
           } catch (processingError) {
-            console.error(
-              "Daily loan processing failed:",
+            console.warn(
+              "DAILY LOAN PROCESSING WARNING:",
               processingError
             );
-
-            // Do not prevent the profile from loading
-            // if daily processing has a temporary problem.
           }
         }
 
-        // ------------------------------------------------------
-        // LOAD LOAN + TRANSACTIONS
-        // ------------------------------------------------------
-
-        const [loanData, transactionData] =
-          await Promise.all([
-            getLoan(id),
-            getLoanTransactions(id),
-          ]);
-
-        if (!loanData) {
-          throw new Error(
-            "Loan could not be found."
-          );
-        }
+        const [
+          loanData,
+          transactionData,
+        ] = await Promise.all([
+          getLoan(id),
+          getLoanTransactions(id),
+        ]);
 
         setLoan(loanData);
 
-        // ------------------------------------------------------
-        // LOAD OTHER DATA
-        // ------------------------------------------------------
+        setTransactions(
+          transactionData || []
+        );
 
         await Promise.all([
-          loadAgreement(id),
-          loadDocuments(id),
-          loadStatement(id),
+          loadAgreement(),
+          loadDocuments(),
+          loadStatement(),
         ]);
-
-        return {
-          loan: loanData,
-          transactions: transactionData || [],
-        };
-      } catch (err) {
+      } catch (loadError) {
         console.error(
-          "LOAN PROFILE ERROR:",
-          err
+          "LOAD LOAN PROFILE ERROR:",
+          loadError
         );
 
         setError(
-          err?.message ||
-            "Unable to load the loan profile."
+          loadError?.message ||
+            "Unable to load loan."
         );
       } finally {
         setLoading(false);
@@ -327,23 +495,23 @@ export default function LoanProfile() {
   );
 
 
-  // ============================================================
-  // INITIAL LOAD
-  // ============================================================
+  /* =======================================================
+     INITIAL LOAD
+  ======================================================= */
 
   useEffect(() => {
-    if (!id) return;
-
     loadLoan(true);
-  }, [id, loadLoan]);
+  }, [loadLoan]);
 
 
-  // ============================================================
-  // REAL-TIME LOAN UPDATES
-  // ============================================================
+  /* =======================================================
+     REALTIME
+  ======================================================= */
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      return undefined;
+    }
 
     let channel;
 
@@ -351,1146 +519,1427 @@ export default function LoanProfile() {
       channel = subscribeToLoan(
         id,
         async () => {
-          console.log(
-            "Loan profile realtime update received."
-          );
-
           await loadLoan(false);
         }
       );
-    } catch (err) {
+    } catch (subscriptionError) {
       console.error(
-        "REALTIME SUBSCRIPTION ERROR:",
-        err
+        "LOAN SUBSCRIPTION ERROR:",
+        subscriptionError
       );
     }
 
     return () => {
       if (channel) {
-        removeLoanSubscription(channel);
+        removeLoanSubscription(
+          channel
+        );
       }
     };
   }, [id, loadLoan]);
 
 
-  // ============================================================
-  // SIGNED AGREEMENT DOCUMENT
-  // ============================================================
+  /* =======================================================
+     DOCUMENT LOOKUPS
+  ======================================================= */
 
   const signedAgreementDocument =
-    documents.find(
-      (document) =>
-        document.document_type ===
-          "Signed Loan Agreement" &&
-        document.document_path &&
-        (
-          !agreement?.id ||
-          document.agreement_id === agreement.id
-        )
+    useMemo(() => {
+      return documents.find(
+        (document) =>
+          document.document_type ===
+            "Signed Loan Agreement" &&
+          document.document_path &&
+          (
+            !agreement?.id ||
+            document.agreement_id ===
+              agreement.id
+          )
+      );
+    }, [
+      documents,
+      agreement,
+    ]);
+
+
+  const statementDocument =
+    useMemo(() => {
+      return documents.find(
+        (document) =>
+          document.document_type ===
+            "Statement" &&
+          document.document_path
+      );
+    }, [documents]);
+
+
+  /* =======================================================
+     CREATE SIGNED STORAGE URL
+  ======================================================= */
+
+  const getSignedDocumentUrl =
+    useCallback(
+      async (
+        documentPath
+      ) => {
+        if (!documentPath) {
+          throw new Error(
+            "Document file is not available."
+          );
+        }
+
+        const {
+          data,
+          error: signedUrlError,
+        } = await supabase.storage
+          .from("loan-documents")
+          .createSignedUrl(
+            documentPath,
+            60 * 60
+          );
+
+        if (signedUrlError) {
+          throw signedUrlError;
+        }
+
+        if (!data?.signedUrl) {
+          throw new Error(
+            "Unable to create document URL."
+          );
+        }
+
+        return data.signedUrl;
+      },
+      []
     );
 
 
-  // ============================================================
-  // OPEN STORED DOCUMENT
-  // ============================================================
+  /* =======================================================
+     OPEN DOCUMENT VIEWER
+  ======================================================= */
 
-  const openStoredDocument = async (
-    document
-  ) => {
-    try {
-      if (!document?.document_path) {
-        throw new Error(
-          "This document does not have a storage path."
-        );
-      }
+  const openDocumentViewer =
+    useCallback(
+      async ({
+        documentPath,
+        documentName,
+        documentType,
+        blobUrl = null,
+      }) => {
+        try {
+          setError("");
+          setEmailSuccess("");
+          setOpeningDocument(true);
 
-      setOpeningDocument(true);
-      setError("");
+          let url = blobUrl;
 
-      const {
-        data,
-        error: signedUrlError,
-      } = await supabase.storage
-        .from("loan-documents")
-        .createSignedUrl(
-          document.document_path,
-          600
-        );
+          if (!url) {
+            url =
+              await getSignedDocumentUrl(
+                documentPath
+              );
+          }
 
-      if (signedUrlError) {
-        throw signedUrlError;
-      }
+          setDocumentViewerUrl(
+            url
+          );
 
-      if (!data?.signedUrl) {
-        throw new Error(
-          "Could not create a secure document link."
-        );
-      }
+          setDocumentViewerName(
+            documentName ||
+              "Document"
+          );
 
-      window.open(
-        data.signedUrl,
-        "_blank",
-        "noopener,noreferrer"
-      );
-    } catch (err) {
-      console.error(
-        "DOCUMENT OPEN ERROR:",
-        err
-      );
+          setDocumentViewerType(
+            documentType ||
+              "Document"
+          );
 
-      setError(
-        err?.message ||
-          "Unable to open the document."
-      );
-    } finally {
-      setOpeningDocument(false);
-    }
-  };
+          setDocumentViewerBlobUrl(
+            blobUrl
+          );
+
+          setDocumentViewerOpen(
+            true
+          );
+        } catch (openError) {
+          console.error(
+            "OPEN DOCUMENT ERROR:",
+            openError
+          );
+
+          setError(
+            openError?.message ||
+              "Unable to open document."
+          );
+        } finally {
+          setOpeningDocument(false);
+        }
+      },
+      [getSignedDocumentUrl]
+    );
 
 
-  // ============================================================
-  // PRINT / OPEN STORED SIGNED AGREEMENT
-  // ============================================================
+  /* =======================================================
+     CLOSE DOCUMENT VIEWER
+  ======================================================= */
 
-  const handlePrintAgreement = async () => {
-    try {
-      setGeneratingAgreement(true);
-      setError("");
-
-      const {
-        data: document,
-        error: documentError,
-      } = await supabase
-        .from("documents")
-        .select(`
-          id,
-          agreement_id,
-          document_type,
-          document_name,
-          document_path,
-          created_at
-        `)
-        .eq("loan_id", id)
-        .eq(
-          "document_type",
-          "Signed Loan Agreement"
-        )
-        .not(
-          "document_path",
-          "is",
-          null
-        )
-        .order("created_at", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
-
-      if (documentError) {
-        throw documentError;
-      }
-
-      if (!document) {
-        throw new Error(
-          "The customer's signed agreement has not been stored yet."
-        );
-      }
-
-      if (!document.document_path) {
-        throw new Error(
-          "The signed agreement does not have a stored file."
-        );
-      }
-
-      const {
-        data,
-        error: signedUrlError,
-      } = await supabase.storage
-        .from("loan-documents")
-        .createSignedUrl(
-          document.document_path,
-          600
-        );
-
-      if (signedUrlError) {
-        throw signedUrlError;
-      }
-
-      if (!data?.signedUrl) {
-        throw new Error(
-          "Could not create a secure link for the signed agreement."
-        );
-      }
-
-      window.open(
-        data.signedUrl,
-        "_blank",
-        "noopener,noreferrer"
-      );
-    } catch (err) {
-      console.error(
-        "PRINT AGREEMENT ERROR:",
-        err
+  const closeDocumentViewer =
+    useCallback(() => {
+      setDocumentViewerOpen(
+        false
       );
 
-      setError(
-        err?.message ||
-          "Unable to open the signed agreement."
+      if (
+        documentViewerBlobUrl
+      ) {
+        URL.revokeObjectURL(
+          documentViewerBlobUrl
+        );
+      }
+
+      setDocumentViewerBlobUrl(
+        null
       );
-    } finally {
-      setGeneratingAgreement(false);
-    }
-  };
+
+      setDocumentViewerUrl(
+        ""
+      );
+
+      setDocumentViewerName(
+        ""
+      );
+
+      setDocumentViewerType(
+        ""
+      );
+
+      setEmailSuccess("");
+    }, [
+      documentViewerBlobUrl,
+    ]);
 
 
-  // ============================================================
-  // PRINT / GENERATE STATEMENT
-  // ============================================================
+  /* =======================================================
+     VIEW STATEMENT
+     
+     IMPORTANT:
+     THIS NEVER GENERATES A STATEMENT.
+     IT ONLY RETRIEVES THE EXISTING ONE.
+  ======================================================= */
 
-  const handlePrintStatement = async () => {
-    try {
+  const handleViewStatement =
+    async () => {
+      try {
+        setError("");
+        setOpeningDocument(true);
+
+        const existingStatement =
+          statementDocument ||
+          await getExistingLoanStatementDocument(
+            id
+          );
+
+        if (
+          !existingStatement?.document_path
+        ) {
+          throw new Error(
+            "No statement exists for this loan yet."
+          );
+        }
+
+        await openDocumentViewer({
+          documentPath:
+            existingStatement.document_path,
+
+          documentName:
+            existingStatement.document_name ||
+            `Loan Statement - ${
+              loan?.loan_number || ""
+            }`,
+
+          documentType:
+            "Statement",
+        });
+      } catch (statementError) {
+        console.error(
+          "VIEW STATEMENT ERROR:",
+          statementError
+        );
+
+        setError(
+          statementError?.message ||
+            "Unable to open the statement."
+        );
+      } finally {
+        setOpeningDocument(false);
+      }
+    };
+
+
+  /* =======================================================
+     VIEW AGREEMENT
+  ======================================================= */
+
+  const handleViewAgreement =
+    async () => {
+      try {
+        setError("");
+
+        if (
+          !signedAgreementDocument?.document_path
+        ) {
+          throw new Error(
+            "The signed loan agreement is not available."
+          );
+        }
+
+        await openDocumentViewer({
+          documentPath:
+            signedAgreementDocument.document_path,
+
+          documentName:
+            signedAgreementDocument.document_name ||
+            "Signed Loan Agreement",
+
+          documentType:
+            "Signed Loan Agreement",
+        });
+      } catch (agreementError) {
+        console.error(
+          "VIEW AGREEMENT ERROR:",
+          agreementError
+        );
+
+        setError(
+          agreementError?.message ||
+            "Unable to open the agreement."
+        );
+      }
+    };
+
+
+  /* =======================================================
+     GENERATE SETTLEMENT LETTER
+     
+     BUSINESS RULE:
+     
+     If next interest update date = 15th,
+     settlement quote is valid until the 14th.
+     
+     The QR code contains the same settlement
+     information displayed on the PDF.
+  ======================================================= */
+
+  const generateSettlementLetter =
+    async () => {
       if (!loan) {
         throw new Error(
           "Loan information is not available."
         );
       }
 
-      setGeneratingStatement(true);
-      setError("");
-
-      const customerName =
-        getCustomerName();
+      const doc =
+        new jsPDF();
 
       const loanNumber =
-        loan.loan_number || "-";
+        loan.loan_number ||
+        "N/A";
 
-      const principalAmount =
-        Number(
-          loan.principal_amount || 0
-        );
+      const customerNumber =
+        loan.customers?.customer_number ||
+        "N/A";
 
-      const interestAmount =
-        Number(
-          loan.interest_amount || 0
-        );
+      const issuedDate =
+        new Date();
 
-      const totalRepayment =
-        Number(
-          loan.total_repayment || 0
+      const today =
+        issuedDate.toLocaleDateString(
+          "en-ZA"
         );
 
       const currentBalance =
-        Number(
-          loan.current_balance || 0
+        toNumber(
+          loan.current_balance
         );
 
-      const totalPaid =
-        Number(
-          loan.total_paid || 0
+      const nextInterestDate =
+        loan.next_interest_date;
+
+      let validUntilDate =
+        getSettlementValidUntil(
+          nextInterestDate
         );
 
-      const interestRate =
-        Number(
-          loan.interest_rate || 0
+      /*
+       * Fallback only if the loan does not
+       * currently have a next interest date.
+       */
+      if (!validUntilDate) {
+        validUntilDate =
+          new Date(
+            issuedDate
+          );
+
+        validUntilDate.setDate(
+          validUntilDate.getDate() +
+            1
+        );
+      }
+
+      const validUntil =
+        validUntilDate.toLocaleDateString(
+          "en-ZA"
         );
 
-      const verificationToken =
-        agreement?.verification_token || "";
+
+      /* ---------------------------------------------------
+         QR CODE
+      --------------------------------------------------- */
+
+      const qrText = [
+        "UMHLOMUNYE FINANCE",
+        "Settlement Letter",
+        `Loan Number: ${loanNumber}`,
+        `Customer Number: ${customerNumber}`,
+        `Customer: ${customerName}`,
+        `Settlement Amount: ${formatMoney(
+          currentBalance
+        )}`,
+        `Date Issued: ${today}`,
+        `Valid Until: ${validUntil}`,
+        `Next Interest Update: ${
+          nextInterestDate
+            ? formatDate(
+                nextInterestDate
+              )
+            : "Not available"
+        }`,
+      ].join("\n");
+
+      const qrDataUrl =
+        await QRCode.toDataURL(
+          qrText,
+          {
+            width: 220,
+            margin: 1,
+            errorCorrectionLevel:
+              "M",
+          }
+        );
 
 
-      // --------------------------------------------------------
-      // CREATE PDF
-      // --------------------------------------------------------
+      /* ---------------------------------------------------
+         PROFESSIONAL HEADER
+         
+         QR CODE IS TOP-RIGHT
+      --------------------------------------------------- */
 
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const pageWidth =
-        pdf.internal.pageSize.getWidth();
-
-      const pageHeight =
-        pdf.internal.pageSize.getHeight();
-
-
-      // --------------------------------------------------------
-      // HEADER
-      // --------------------------------------------------------
-
-      pdf.setTextColor(
-        23,
-        37,
-        84
+      doc.setFontSize(
+        20
       );
 
-      pdf.setFontSize(20);
-      pdf.setFont(
+      doc.setFont(
         "helvetica",
         "bold"
       );
 
-      pdf.text(
+      doc.text(
         "UMHLOMUNYE FINANCE",
         15,
-        18
+        20
       );
 
-      pdf.setFontSize(9);
-      pdf.setFont(
+      doc.setFontSize(
+        10
+      );
+
+      doc.setFont(
         "helvetica",
         "normal"
       );
 
-      pdf.setTextColor(
-        75,
-        85,
-        99
-      );
-
-      pdf.text(
+      doc.text(
         "Our dreams, Our hope",
         15,
-        24
-      );
-
-      pdf.text(
-        "Registration No: 2020/191721/07",
-        15,
-        30
-      );
-
-      pdf.text(
-        "20 Jacaranda Street, Kinross, 2270",
-        15,
-        35
-      );
-
-      pdf.text(
-        "Tel: 078 078 3879 | WhatsApp: 060 508 6672",
-        15,
-        40
-      );
-
-      pdf.text(
-        "Email: umhlomunyeb@gmail.com",
-        15,
-        45
+        27
       );
 
 
-      // --------------------------------------------------------
-      // TITLE
-      // --------------------------------------------------------
+      /* ---------------------------------------------------
+         QR TOP RIGHT
+      --------------------------------------------------- */
 
-      pdf.setTextColor(
-        23,
+      doc.addImage(
+        qrDataUrl,
+        "PNG",
+        158,
+        7,
         37,
-        84
+        37
       );
 
-      pdf.setFontSize(18);
-      pdf.setFont(
-        "helvetica",
-        "bold"
+      doc.setFontSize(
+        7
       );
 
-      pdf.text(
-        "LOAN STATEMENT",
-        pageWidth - 15,
-        20,
-        {
-          align: "right",
-        }
-      );
-
-      pdf.setFontSize(8);
-      pdf.setFont(
+      doc.setFont(
         "helvetica",
         "normal"
       );
 
-      pdf.setTextColor(
-        107,
-        114,
-        128
-      );
-
-      pdf.text(
-        "Official Customer Statement",
-        pageWidth - 15,
-        26,
+      doc.text(
+        "Scan to verify",
+        176.5,
+        47,
         {
-          align: "right",
+          align: "center",
         }
       );
 
 
-      // --------------------------------------------------------
-      // QR CODE
-      // --------------------------------------------------------
+      /* ---------------------------------------------------
+         HEADER LINE
+      --------------------------------------------------- */
 
-      if (verificationToken) {
-        const verificationUrl =
-          `${window.location.origin}/verify-agreement/${verificationToken}`;
-
-        const qrDataUrl =
-          await QRCode.toDataURL(
-            verificationUrl,
-            {
-              width: 180,
-              margin: 1,
-            }
-          );
-
-        pdf.addImage(
-          qrDataUrl,
-          "PNG",
-          pageWidth - 42,
-          31,
-          27,
-          27
-        );
-
-        pdf.setFontSize(7);
-        pdf.setTextColor(
-          75,
-          85,
-          99
-        );
-
-        pdf.text(
-          "Scan to verify",
-          pageWidth - 28.5,
-          61,
-          {
-            align: "center",
-          }
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // HEADER LINE
-      // --------------------------------------------------------
-
-      pdf.setDrawColor(
-        23,
-        37,
-        84
+      doc.setDrawColor(
+        120
       );
 
-      pdf.setLineWidth(0.8);
-
-      pdf.line(
+      doc.line(
         15,
-        50,
-        pageWidth - 15,
-        50
+        53,
+        195,
+        53
       );
 
 
-      // --------------------------------------------------------
-      // CUSTOMER & LOAN INFORMATION
-      // --------------------------------------------------------
+      /* ---------------------------------------------------
+         TITLE
+      --------------------------------------------------- */
 
-      pdf.setFillColor(
-        23,
-        37,
-        84
+      doc.setFontSize(
+        16
       );
 
-      pdf.rect(
-        15,
-        58,
-        pageWidth - 30,
-        8,
-        "F"
-      );
-
-      pdf.setTextColor(
-        255,
-        255,
-        255
-      );
-
-      pdf.setFontSize(9);
-      pdf.setFont(
+      doc.setFont(
         "helvetica",
         "bold"
       );
 
-      pdf.text(
-        "CUSTOMER & LOAN INFORMATION",
-        18,
-        63.5
+      doc.text(
+        "SETTLEMENT LETTER",
+        105,
+        68,
+        {
+          align: "center",
+        }
       );
 
-      autoTable(pdf, {
-        startY: 66,
-        margin: {
-          left: 15,
-          right: 15,
-        },
-        theme: "grid",
-        styles: {
-          fontSize: 8,
-          cellPadding: 4,
-        },
-        headStyles: {
-          fillColor: [
-            229,
-            231,
-            235,
-          ],
-          textColor: [
-            31,
-            41,
-            55,
-          ],
-          fontStyle: "bold",
-        },
-        body: [
-          [
-            "Customer",
-            customerName,
-            "Loan Number",
-            loanNumber,
-          ],
-          [
-            "Interest Rate",
-            `${interestRate.toFixed(2)}%`,
-            "Statement Date",
-            new Date().toLocaleDateString(
-              "en-ZA"
-            ),
-          ],
-          [
-            "First Payment Date",
-            loan.first_payment_date
-              ? new Date(
-                  loan.first_payment_date
-                ).toLocaleDateString(
-                  "en-ZA"
-                )
-              : "-",
-            "Next Interest Date",
-            loan.next_interest_date
-              ? new Date(
-                  loan.next_interest_date
-                ).toLocaleDateString(
-                  "en-ZA"
-                )
-              : "-",
-          ],
-        ],
-        columnStyles: {
-          0: {
-            fontStyle: "bold",
-            cellWidth: 32,
-          },
-          1: {
-            cellWidth: 58,
-          },
-          2: {
-            fontStyle: "bold",
-            cellWidth: 32,
-          },
-          3: {
-            cellWidth: 58,
-          },
-        },
-      });
 
+      /* ---------------------------------------------------
+         ISSUE + VALIDITY
+      --------------------------------------------------- */
 
-      // --------------------------------------------------------
-      // LOAN SUMMARY
-      // --------------------------------------------------------
-
-      let currentY =
-        pdf.lastAutoTable.finalY + 10;
-
-      pdf.setFillColor(
-        23,
-        37,
-        84
+      doc.setFontSize(
+        10
       );
 
-      pdf.rect(
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.text(
+        `Date Issued: ${today}`,
         15,
-        currentY,
-        pageWidth - 30,
-        8,
-        "F"
+        82
       );
 
-      pdf.setTextColor(
-        255,
-        255,
-        255
-      );
-
-      pdf.setFontSize(9);
-      pdf.setFont(
+      doc.setFont(
         "helvetica",
         "bold"
       );
 
-      pdf.text(
+      doc.text(
+        `Settlement Quote Valid Until: ${validUntil}`,
+        15,
+        90
+      );
+
+
+      /* ---------------------------------------------------
+         CUSTOMER INFORMATION
+      --------------------------------------------------- */
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.text(
+        "CUSTOMER INFORMATION",
+        15,
+        108
+      );
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.text(
+        `Customer Name: ${customerName}`,
+        15,
+        117
+      );
+
+      doc.text(
+        `Customer Number: ${customerNumber}`,
+        15,
+        124
+      );
+
+      doc.text(
+        `Loan Number: ${loanNumber}`,
+        15,
+        131
+      );
+
+
+      /* ---------------------------------------------------
+         SETTLEMENT AMOUNT
+      --------------------------------------------------- */
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.text(
+        "SETTLEMENT AMOUNT",
+        15,
+        150
+      );
+
+      doc.setFontSize(
+        16
+      );
+
+      doc.text(
+        formatMoney(
+          currentBalance
+        ),
+        15,
+        162
+      );
+
+      doc.setFontSize(
+        10
+      );
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+
+      /* ---------------------------------------------------
+         SETTLEMENT MESSAGE
+      --------------------------------------------------- */
+
+      const settlementText =
+        currentBalance <= 0
+          ? "This loan has been fully settled. No further amount is outstanding."
+          : `The current outstanding settlement amount on loan ${loanNumber} is ${formatMoney(
+              currentBalance
+            )}. This settlement quotation is valid until ${validUntil}.`;
+
+      const textLines =
+        doc.splitTextToSize(
+          settlementText,
+          175
+        );
+
+      doc.text(
+        textLines,
+        15,
+        176
+      );
+
+
+      /* ---------------------------------------------------
+         LOAN SUMMARY
+      --------------------------------------------------- */
+
+      const summaryStart =
+        198;
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.text(
         "LOAN SUMMARY",
-        18,
-        currentY + 5.5
-      );
-
-      currentY += 9;
-
-      autoTable(pdf, {
-        startY: currentY,
-        margin: {
-          left: 15,
-          right: 15,
-        },
-        theme: "grid",
-        styles: {
-          fontSize: 8,
-          cellPadding: 5,
-        },
-        body: [
-          [
-            "Principal",
-            `R${principalAmount.toFixed(2)}`,
-            "Interest",
-            `R${interestAmount.toFixed(2)}`,
-          ],
-          [
-            "Total Repayment",
-            `R${totalRepayment.toFixed(2)}`,
-            "Current Balance",
-            `R${currentBalance.toFixed(2)}`,
-          ],
-          [
-            "Total Paid",
-            `R${totalPaid.toFixed(2)}`,
-            "Interest Rate",
-            `${interestRate.toFixed(2)}%`,
-          ],
-        ],
-        columnStyles: {
-          0: {
-            fontStyle: "bold",
-            cellWidth: 38,
-          },
-          1: {
-            cellWidth: 52,
-          },
-          2: {
-            fontStyle: "bold",
-            cellWidth: 38,
-          },
-          3: {
-            cellWidth: 52,
-          },
-        },
-      });
-
-
-      // --------------------------------------------------------
-      // TRANSACTION HISTORY
-      // --------------------------------------------------------
-
-      currentY =
-        pdf.lastAutoTable.finalY + 10;
-
-      pdf.setFillColor(
-        23,
-        37,
-        84
-      );
-
-      pdf.rect(
         15,
-        currentY,
-        pageWidth - 30,
-        8,
-        "F"
+        summaryStart
       );
 
-      pdf.setTextColor(
-        255,
-        255,
-        255
-      );
+      autoTable(
+        doc,
+        {
+          startY:
+            summaryStart + 5,
 
-      pdf.setFontSize(9);
-      pdf.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      pdf.text(
-        "TRANSACTION HISTORY",
-        18,
-        currentY + 5.5
-      );
-
-      currentY += 9;
-
-
-      const transactionRows =
-        (
-          statement.transactions || []
-        ).map(
-          (transaction) => {
-            const date =
-              transaction.transaction_date
-                ? new Date(
-                    transaction.transaction_date
-                  ).toLocaleDateString(
-                    "en-ZA"
-                  )
-                : "-";
-
-            const description =
-              transaction.description ||
-              transaction.transaction_type ||
-              "-";
-
-            const debit =
-              Number(
-                transaction.debit || 0
-              );
-
-            const credit =
-              Number(
-                transaction.credit || 0
-              );
-
-            const balance =
-              Number(
-                transaction.balance || 0
-              );
-
-            return [
-              date,
-              description,
-              debit > 0
-                ? `R${debit.toFixed(2)}`
-                : "-",
-              credit > 0
-                ? `R${credit.toFixed(2)}`
-                : "-",
-              `R${balance.toFixed(2)}`,
-            ];
-          }
-        );
-
-
-      if (transactionRows.length > 0) {
-        autoTable(pdf, {
-          startY: currentY,
-          margin: {
-            left: 15,
-            right: 15,
-          },
-          theme: "grid",
-          styles: {
-            fontSize: 7.5,
-            cellPadding: 3,
-          },
-          headStyles: {
-            fillColor: [
-              229,
-              231,
-              235,
-            ],
-            textColor: [
-              31,
-              41,
-              55,
-            ],
-            fontStyle: "bold",
-          },
           head: [
             [
-              "Date",
               "Description",
-              "Debit",
-              "Credit",
-              "Balance",
+              "Amount",
             ],
           ],
-          body: transactionRows,
-          columnStyles: {
-            0: {
-              cellWidth: 25,
-            },
-            1: {
-              cellWidth: 75,
-            },
-            2: {
-              cellWidth: 25,
-              halign: "right",
-            },
-            3: {
-              cellWidth: 25,
-              halign: "right",
-            },
-            4: {
-              cellWidth: 30,
-              halign: "right",
-            },
+
+          body: [
+            [
+              "Principal Amount",
+              formatMoney(
+                loan.principal_amount
+              ),
+            ],
+
+            [
+              "Interest Amount",
+              formatMoney(
+                loan.interest_amount
+              ),
+            ],
+
+            [
+              "Total Repayment",
+              formatMoney(
+                loan.total_repayment
+              ),
+            ],
+
+            [
+              "Total Paid",
+              formatMoney(
+                loan.total_paid
+              ),
+            ],
+
+            [
+              "Current Settlement Balance",
+              formatMoney(
+                loan.current_balance
+              ),
+            ],
+          ],
+
+          theme:
+            "grid",
+
+          styles: {
+            fontSize: 9,
           },
-        });
-      } else {
-        pdf.setTextColor(
-          107,
-          114,
-          128
-        );
 
-        pdf.setFontSize(8);
-
-        pdf.text(
-          "No transactions recorded for this loan.",
-          18,
-          currentY + 6
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // FOOTER
-      // --------------------------------------------------------
-
-      const footerY =
-        pageHeight - 18;
-
-      pdf.setDrawColor(
-        209,
-        213,
-        219
+          headStyles: {
+            fontStyle:
+              "bold",
+          },
+        }
       );
 
-      pdf.setLineWidth(0.3);
 
-      pdf.line(
+      /* ---------------------------------------------------
+         VALIDITY NOTE
+      --------------------------------------------------- */
+
+      let finalY =
+        doc.lastAutoTable?.finalY ||
+        245;
+
+      finalY +=
+        12;
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.text(
+        "SETTLEMENT VALIDITY",
         15,
-        footerY - 6,
-        pageWidth - 15,
-        footerY - 6
+        finalY
       );
 
-      pdf.setTextColor(
-        107,
-        114,
-        128
+      finalY +=
+        7;
+
+      doc.setFont(
+        "helvetica",
+        "normal"
       );
 
-      pdf.setFontSize(7);
+      const validityText =
+        `This settlement quotation is valid until ${validUntil}. ` +
+        (
+          nextInterestDate
+            ? `The next interest update date is ${formatDate(
+                nextInterestDate
+              )}. `
+            : ""
+        ) +
+        "If settlement is not completed within the validity period, " +
+        "a new settlement quotation may be required.";
 
-      pdf.text(
-        'UMHLOMUNYE FINANCE | "Our dreams, Our hope"',
-        pageWidth / 2,
-        footerY,
+      const validityLines =
+        doc.splitTextToSize(
+          validityText,
+          175
+        );
+
+      doc.text(
+        validityLines,
+        15,
+        finalY
+      );
+
+
+      /* ---------------------------------------------------
+         SIGNATURE
+      --------------------------------------------------- */
+
+      finalY +=
+        validityLines.length *
+          5 +
+        18;
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.text(
+        "Umhlomunye Finance",
+        15,
+        finalY
+      );
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.text(
+        "Authorised Representative",
+        15,
+        finalY + 7
+      );
+
+
+      /* ---------------------------------------------------
+         FOOTER
+      --------------------------------------------------- */
+
+      doc.setFontSize(
+        8
+      );
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.text(
+        "This document reflects the loan information available in the Umhlomunye Finance system at the time of issuance.",
+        105,
+        285,
         {
           align: "center",
         }
       );
 
-      pdf.text(
-        "This statement is generated from the official UMHLOMUNYE FINANCE loan management system.",
-        pageWidth / 2,
-        footerY + 4,
-        {
-          align: "center",
-        }
-      );
 
-
-      // --------------------------------------------------------
-      // PAGE NUMBERS
-      // --------------------------------------------------------
-
-      const totalPages =
-        pdf.internal.getNumberOfPages();
-
-      for (
-        let pageNumber = 1;
-        pageNumber <= totalPages;
-        pageNumber++
-      ) {
-        pdf.setPage(pageNumber);
-
-        pdf.setFontSize(7);
-
-        pdf.setTextColor(
-          107,
-          114,
-          128
-        );
-
-        pdf.text(
-          `Page ${pageNumber} of ${totalPages}`,
-          pageWidth - 15,
-          pageHeight - 8,
-          {
-            align: "right",
-          }
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // CREATE BLOB
-      // --------------------------------------------------------
-
-      const pdfBlob =
-        pdf.output("blob");
-
-      if (!pdfBlob) {
-        throw new Error(
-          "Unable to generate the statement PDF."
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // CURRENT USER
-      // --------------------------------------------------------
-
-      const {
-        data: {
-          user,
-        },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
-
-      if (!user) {
-        throw new Error(
-          "You must be logged in to store the statement."
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // STORAGE PATH
-      // --------------------------------------------------------
-
-      const safeLoanNumber =
-        loanNumber.replace(
-          /[^a-zA-Z0-9_-]/g,
-          "_"
-        );
-
-      const timestamp =
-        new Date()
-          .toISOString()
-          .replace(
-            /[:.]/g,
-            "-"
-          );
-
-      const documentPath =
-        `statements/${loan.customer_id}/${loan.id}/${safeLoanNumber}-statement-${timestamp}.pdf`;
-
-
-      // --------------------------------------------------------
-      // UPLOAD PDF
-      // --------------------------------------------------------
-
-      const {
-        error: uploadError,
-      } = await supabase.storage
-        .from("loan-documents")
-        .upload(
-          documentPath,
-          pdfBlob,
-          {
-            contentType:
-              "application/pdf",
-            upsert: false,
-          }
-        );
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-
-      // --------------------------------------------------------
-      // SAVE DOCUMENT RECORD
-      // --------------------------------------------------------
-
-      const {
-        data: documentRecord,
-        error: documentError,
-      } = await supabase
-        .from("documents")
-        .insert({
-          customer_id:
-            loan.customer_id,
-          loan_id:
-            loan.id,
-          agreement_id:
-            agreement?.id || null,
-          document_type:
-            "Loan Statement",
-          document_name:
-            `Loan Statement - ${loanNumber} - ${new Date().toLocaleDateString(
-              "en-ZA"
-            )}`,
-          document_path:
-            documentPath,
-          created_by:
-            user.id,
-        })
-        .select()
-        .single();
-
-      if (documentError) {
-        await supabase.storage
-          .from("loan-documents")
-          .remove([
-            documentPath,
-          ]);
-
-        throw documentError;
-      }
-
-
-      // --------------------------------------------------------
-      // UPDATE DOCUMENT LIST
-      // --------------------------------------------------------
-
-      setDocuments(
-        (previous) => [
-          documentRecord,
-          ...previous,
-        ]
-      );
-
-
-      // --------------------------------------------------------
-      // OPEN STORED PDF
-      // --------------------------------------------------------
-
-      await openStoredDocument(
-        documentRecord
-      );
-    } catch (err) {
-      console.error(
-        "STATEMENT GENERATION ERROR:",
-        err
-      );
-
-      setError(
-        err?.message ||
-          "Unable to generate and store the statement."
-      );
-    } finally {
-      setGeneratingStatement(false);
-    }
-  };
-
-
-  // ============================================================
-  // PAYMENT SUCCESS
-  // ============================================================
-
-  const handlePaymentSuccess =
-    async () => {
-      setPaymentOpen(false);
-
-      // Refresh without running the daily
-      // interest engine a second time.
-      await loadLoan(false);
+      return {
+        doc,
+        validUntil,
+        qrText,
+      };
     };
 
 
-  // ============================================================
-  // TAB CHANGE
-  // ============================================================
+  /* =======================================================
+     VIEW SETTLEMENT LETTER
+  ======================================================= */
 
-  const handleTabChange = (
-    _event,
-    newValue
-  ) => {
-    setTab(newValue);
+  const handleViewSettlement =
+    async () => {
+      try {
+        setError("");
+        setEmailSuccess("");
+        setGeneratingSettlement(
+          true
+        );
 
-    if (newValue === 1) {
-      loadStatement();
-    }
+        const {
+          doc,
+        } =
+          await generateSettlementLetter();
 
-    if (newValue === 2) {
-      loadDocuments();
-    }
-  };
+        const blob =
+          doc.output(
+            "blob"
+          );
 
+        const blobUrl =
+          URL.createObjectURL(
+            blob
+          );
 
-  // ============================================================
-  // FORMAT MONEY
-  // ============================================================
+        await openDocumentViewer({
+          documentName:
+            `Settlement Letter - ${
+              loan?.loan_number || ""
+            }`,
 
-  const formatMoney = (value) =>
-    Number(value || 0).toLocaleString(
-      "en-ZA",
-      {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+          documentType:
+            "Settlement Letter",
+
+          blobUrl,
+        });
+      } catch (
+        settlementError
+      ) {
+        console.error(
+          "SETTLEMENT LETTER ERROR:",
+          settlementError
+        );
+
+        setError(
+          settlementError?.message ||
+            "Unable to generate settlement letter."
+        );
+      } finally {
+        setGeneratingSettlement(
+          false
+        );
       }
-    );
+    };
 
 
-  // ============================================================
-  // LOADING
-  // ============================================================
+  /* =======================================================
+     PRINT DOCUMENT
+  ======================================================= */
+
+  const handlePrint =
+    () => {
+      if (!documentViewerUrl) {
+        return;
+      }
+
+      const printWindow =
+        window.open(
+          documentViewerUrl,
+          "_blank"
+        );
+
+      if (!printWindow) {
+        setError(
+          "Please allow pop-ups to print the document."
+        );
+
+        return;
+      }
+    };
+
+
+  /* =======================================================
+     DOWNLOAD DOCUMENT
+  ======================================================= */
+
+  const handleDownload =
+    async () => {
+      if (!documentViewerUrl) {
+        return;
+      }
+
+      try {
+        setError("");
+
+        const response =
+          await fetch(
+            documentViewerUrl
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "Unable to download document."
+          );
+        }
+
+        const blob =
+          await response.blob();
+
+        const blobUrl =
+          URL.createObjectURL(
+            blob
+          );
+
+        const anchor =
+          document.createElement(
+            "a"
+          );
+
+        anchor.href =
+          blobUrl;
+
+        anchor.download =
+          documentViewerName
+            ? `${safeFileName(
+                documentViewerName
+              )}.pdf`
+            : "document.pdf";
+
+        document.body.appendChild(
+          anchor
+        );
+
+        anchor.click();
+
+        anchor.remove();
+
+        setTimeout(
+          () => {
+            URL.revokeObjectURL(
+              blobUrl
+            );
+          },
+          1000
+        );
+      } catch (
+        downloadError
+      ) {
+        console.error(
+          "DOWNLOAD DOCUMENT ERROR:",
+          downloadError
+        );
+
+        setError(
+          downloadError?.message ||
+            "Unable to download document."
+        );
+      }
+    };
+
+
+  /* =======================================================
+     EMAIL DOCUMENT
+     
+     IMPORTANT:
+     
+     The actual PDF currently being viewed is downloaded
+     from documentViewerUrl and converted to Base64.
+     
+     The Base64 PDF is sent as a REAL attachment to Brevo.
+     
+     For Settlement Letters:
+     
+     1. The exact PDF being viewed is emailed.
+     2. Only after the email succeeds, that exact PDF
+        is saved into Supabase Storage.
+     3. A new Documents record is created.
+     4. Previous settlement letters are never overwritten.
+  ======================================================= */
+
+  const handleEmail =
+    async () => {
+      if (!documentViewerUrl) {
+        return;
+      }
+
+      if (!loan) {
+        setError(
+          "Loan information is not available."
+        );
+
+        return;
+      }
+
+      const recipientEmail =
+        loan?.customers?.email ||
+        loan?.customers?.email_address ||
+        loan?.customers?.emailAddress ||
+        "";
+
+      if (!recipientEmail) {
+        setError(
+          "Customer email address is not available."
+        );
+
+        return;
+      }
+
+      try {
+        setError("");
+        setEmailSuccess("");
+        setSendingEmail(
+          true
+        );
+
+
+        /* -------------------------------------------------
+           GET THE EXACT PDF CURRENTLY BEING VIEWED
+        ------------------------------------------------- */
+
+        const response =
+          await fetch(
+            documentViewerUrl
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "Unable to retrieve the document for emailing."
+          );
+        }
+
+        const blob =
+          await response.blob();
+
+        if (
+          !blob ||
+          blob.size === 0
+        ) {
+          throw new Error(
+            "The document is empty and cannot be emailed."
+          );
+        }
+
+        const base64 =
+          await blobToBase64(
+            blob
+          );
+
+
+        /* -------------------------------------------------
+           FILE NAME
+        ------------------------------------------------- */
+
+        const fileName =
+          `${safeFileName(
+            documentViewerName ||
+              documentViewerType ||
+              "Loan Document"
+          )}.pdf`;
+
+
+        /* -------------------------------------------------
+           SEND ACTUAL PDF ATTACHMENT
+        ------------------------------------------------- */
+
+        const {
+          data,
+          error: emailError,
+        } =
+          await supabase.functions.invoke(
+            "send-loan-email",
+            {
+              body: {
+                notificationType:
+                  "DOCUMENT",
+
+                loanId:
+                  loan.id,
+
+                recipientEmail,
+
+                recipientName:
+                  customerName,
+
+                clientName:
+                  customerName,
+
+                loanNumber:
+                  loan.loan_number ||
+                  "",
+
+                documentType:
+                  documentViewerType ||
+                  "Loan Document",
+
+                documentName:
+                  fileName,
+
+                attachment: {
+                  name:
+                    fileName,
+
+                  content:
+                    base64,
+
+                  contentType:
+                    "application/pdf",
+                },
+              },
+            }
+          );
+
+
+        if (emailError) {
+          throw emailError;
+        }
+
+        if (
+          !data?.success
+        ) {
+          throw new Error(
+            data?.error ||
+              "Unable to send the email."
+          );
+        }
+
+
+        /* -------------------------------------------------
+           SAVE EXACT SENT SETTLEMENT LETTER
+           
+           Only after Brevo confirms success.
+           
+           Each settlement gets a unique storage path,
+           therefore old settlement letters remain intact.
+        ------------------------------------------------- */
+
+        if (
+          documentViewerType ===
+          "Settlement Letter"
+        ) {
+          if (
+            !loan.customer_id
+          ) {
+            throw new Error(
+              "Customer ID is missing from the loan."
+            );
+          }
+
+
+          const timestamp =
+            new Date()
+              .toISOString()
+              .replace(
+                /[:.]/g,
+                "-"
+              );
+
+
+          const storagePath =
+            `settlements/${loan.customer_id}/${loan.id}/${timestamp}-${fileName}`;
+
+
+          const {
+            error:
+              uploadError,
+          } =
+            await supabase.storage
+              .from(
+                "loan-documents"
+              )
+              .upload(
+                storagePath,
+                blob,
+                {
+                  contentType:
+                    "application/pdf",
+
+                  upsert:
+                    false,
+                }
+              );
+
+
+          if (
+            uploadError
+          ) {
+            throw uploadError;
+          }
+
+
+          const {
+            data:
+              authData,
+          } =
+            await supabase.auth.getUser();
+
+
+          const createdBy =
+            authData?.user?.id ||
+            null;
+
+
+          const {
+            error:
+              documentInsertError,
+          } =
+            await supabase
+              .from(
+                "documents"
+              )
+              .insert({
+                customer_id:
+                  loan.customer_id,
+
+                loan_id:
+                  loan.id,
+
+                agreement_id:
+                  null,
+
+                document_type:
+                  "Settlement Letter",
+
+                document_name:
+                  fileName,
+
+                document_path:
+                  storagePath,
+
+                created_by:
+                  createdBy,
+              });
+
+
+          if (
+            documentInsertError
+          ) {
+            /*
+             * If the Documents record fails,
+             * remove the uploaded copy so that
+             * the database and storage do not disagree.
+             */
+            await supabase.storage
+              .from(
+                "loan-documents"
+              )
+              .remove([
+                storagePath,
+              ]);
+
+            throw documentInsertError;
+          }
+
+
+          await loadDocuments();
+        }
+
+
+        /* -------------------------------------------------
+           SUCCESS
+        ------------------------------------------------- */
+
+        setEmailSuccess(
+          `The ${(
+            documentViewerType ||
+            "document"
+          ).toLowerCase()} was emailed successfully to ${recipientEmail}.`
+        );
+      } catch (
+        emailSendError
+      ) {
+        console.error(
+          "EMAIL DOCUMENT ERROR:",
+          emailSendError
+        );
+
+        setError(
+          emailSendError?.message ||
+            "Unable to email the document."
+        );
+      } finally {
+        setSendingEmail(
+          false
+        );
+      }
+    };
+
+
+  /* =======================================================
+     TAB CHANGE
+  ======================================================= */
+
+  const handleTabChange =
+    (
+      _event,
+      newValue
+    ) => {
+      setTab(
+        newValue
+      );
+
+      if (
+        newValue === 1
+      ) {
+        loadStatement();
+      }
+
+      if (
+        newValue === 2
+      ) {
+        loadDocuments();
+      }
+    };
+
+
+  /* =======================================================
+     LOADING
+  ======================================================= */
 
   if (loading) {
     return (
       <Box
         sx={{
-          minHeight: "70vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          display:
+            "flex",
+
+          justifyContent:
+            "center",
+
+          alignItems:
+            "center",
+
+          minHeight:
+            "60vh",
         }}
       >
-        <Stack
-          spacing={2}
-          alignItems="center"
-        >
-          <CircularProgress />
-
-          <Typography color="text.secondary">
-            Loading loan profile...
-          </Typography>
-        </Stack>
+        <CircularProgress />
       </Box>
     );
   }
 
 
-  // ============================================================
-  // LOAN NOT FOUND
-  // ============================================================
+  /* =======================================================
+     NO LOAN
+  ======================================================= */
 
   if (!loan) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box
+        sx={{
+          p: 3,
+        }}
+      >
         <Alert severity="error">
-          {error || "Loan not found."}
+          {error ||
+            "Loan could not be found."}
         </Alert>
 
         <Button
-          sx={{ mt: 2 }}
-          startIcon={<ArrowBack />}
+          sx={{
+            mt: 2,
+          }}
+          startIcon={
+            <ArrowBack />
+          }
           onClick={() =>
-            navigate("/loans")
+            navigate(
+              "/loans"
+            )
           }
         >
           Back to Loans
@@ -1500,68 +1949,9 @@ export default function LoanProfile() {
   }
 
 
-  // ============================================================
-  // VALUES
-  // ============================================================
-
-  const customerName =
-    getCustomerName();
-
-  const loanNumber =
-    loan.loan_number || "-";
-
-  const principalAmount =
-    Number(
-      loan.principal_amount || 0
-    );
-
-  const interestAmount =
-    Number(
-      loan.interest_amount || 0
-    );
-
-  const totalRepayment =
-    Number(
-      loan.total_repayment || 0
-    );
-
-  const currentBalance =
-    Number(
-      loan.current_balance || 0
-    );
-
-  const totalPaid =
-    Number(
-      loan.total_paid || 0
-    );
-
-  const interestRate =
-    Number(
-      loan.interest_rate || 0
-    );
-
-
-  // ============================================================
-  // STATUS
-  // ============================================================
-
-  const loanStatus =
-    String(
-      loan.loan_status || "Unknown"
-    );
-
-  const isCompleted =
-    loanStatus.toLowerCase() ===
-    "completed";
-
-  const isVoid =
-    loanStatus.toLowerCase() ===
-    "void";
-
-
-  // ============================================================
-  // RENDER
-  // ============================================================
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <Box
@@ -1570,14 +1960,12 @@ export default function LoanProfile() {
           xs: 2,
           md: 3,
         },
-        maxWidth: 1500,
-        mx: "auto",
       }}
     >
 
-      {/* ====================================================== */}
-      {/* HEADER */}
-      {/* ====================================================== */}
+      {/* ===================================================
+          PAGE HEADER
+      =================================================== */}
 
       <Stack
         direction={{
@@ -1590,130 +1978,79 @@ export default function LoanProfile() {
           md: "center",
         }}
         spacing={2}
-        sx={{ mb: 3 }}
+        sx={{
+          mb: 3,
+        }}
       >
-
         <Box>
-
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            flexWrap="wrap"
+          <Button
+            startIcon={
+              <ArrowBack />
+            }
+            onClick={() =>
+              navigate(
+                "/loans"
+              )
+            }
+            sx={{
+              mb: 1,
+            }}
           >
+            Back to Loans
+          </Button>
 
-            <Button
-              variant="outlined"
-              startIcon={<ArrowBack />}
-              onClick={() =>
-                navigate("/loans")
-              }
-            >
-              Back
-            </Button>
-
-            <Typography
-              variant="h4"
-              fontWeight={800}
-            >
-              Loan Profile
-            </Typography>
-
-            <Chip
-              label={loanStatus}
-              color={
-                isCompleted
-                  ? "success"
-                  : isVoid
-                  ? "error"
-                  : "primary"
-              }
-              size="small"
-            />
-
-          </Stack>
+          <Typography
+            variant="h4"
+            fontWeight={700}
+          >
+            Loan Profile
+          </Typography>
 
           <Typography
             color="text.secondary"
-            sx={{ mt: 0.5 }}
           >
-            {loanNumber} • {customerName}
+            {loan.loan_number}
           </Typography>
-
         </Box>
 
-
-        <Stack
-          direction={{
-            xs: "column",
-            sm: "row",
+        <Chip
+          label={
+            loan.loan_status ||
+            "Unknown"
+          }
+          color={
+            String(
+              loan.loan_status
+            ).toLowerCase() ===
+            "active"
+              ? "success"
+              : String(
+                    loan.loan_status
+                  ).toLowerCase() ===
+                  "completed"
+                ? "primary"
+                : "default"
+          }
+          sx={{
+            alignSelf: {
+              xs: "flex-start",
+              md: "center",
+            },
           }}
-          spacing={1}
-        >
-
-          <Button
-            variant="outlined"
-            startIcon={
-              generatingStatement ? (
-                <CircularProgress
-                  size={18}
-                  color="inherit"
-                />
-              ) : (
-                <ReceiptLong />
-              )
-            }
-            disabled={
-              generatingStatement
-            }
-            onClick={
-              handlePrintStatement
-            }
-          >
-            {generatingStatement
-              ? "Generating..."
-              : "Generate Statement"}
-          </Button>
-
-
-          <Button
-            variant="contained"
-            startIcon={
-              generatingAgreement ? (
-                <CircularProgress
-                  size={18}
-                  color="inherit"
-                />
-              ) : (
-                <PictureAsPdf />
-              )
-            }
-            disabled={
-              generatingAgreement ||
-              !signedAgreementDocument
-            }
-            onClick={
-              handlePrintAgreement
-            }
-          >
-            {generatingAgreement
-              ? "Opening..."
-              : "Print Agreement"}
-          </Button>
-
-        </Stack>
-
+        />
       </Stack>
 
 
-      {/* ====================================================== */}
-      {/* ERROR */}
-      {/* ====================================================== */}
+      {/* ===================================================
+          ERROR
+      =================================================== */}
 
       {error && (
         <Alert
           severity="error"
-          sx={{ mb: 3 }}
+          sx={{
+            mb: 3,
+          }}
           onClose={() =>
             setError("")
           }
@@ -1723,42 +2060,86 @@ export default function LoanProfile() {
       )}
 
 
-      {/* ====================================================== */}
-      {/* LOAN SUMMARY */}
-      {/* ====================================================== */}
+      {/* ===================================================
+          EMAIL SUCCESS
+      =================================================== */}
+
+      {emailSuccess && (
+        <Alert
+          severity="success"
+          sx={{
+            mb: 3,
+          }}
+          onClose={() =>
+            setEmailSuccess("")
+          }
+        >
+          {emailSuccess}
+        </Alert>
+      )}
+
+
+      {/* ===================================================
+          CUSTOMER + LOAN SUMMARY
+      =================================================== */}
 
       <Grid
         container
         spacing={2}
-        sx={{ mb: 3 }}
+        sx={{
+          mb: 3,
+        }}
       >
 
         <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            md: 3,
-          }}
+          item
+          xs={12}
+          md={6}
         >
           <Card>
             <CardContent>
 
               <Typography
-                color="text.secondary"
-                variant="body2"
+                variant="h6"
+                fontWeight={700}
+                gutterBottom
               >
-                Principal Amount
+                Customer
               </Typography>
 
-              <Typography
-                variant="h5"
-                fontWeight={800}
-                sx={{ mt: 1 }}
-              >
-                R{formatMoney(
-                  principalAmount
-                )}
-              </Typography>
+              <Divider
+                sx={{
+                  mb: 2,
+                }}
+              />
+
+              <Stack spacing={1}>
+
+                <Typography>
+                  <strong>
+                    Name:
+                  </strong>{" "}
+                  {customerName}
+                </Typography>
+
+                <Typography>
+                  <strong>
+                    Customer Number:
+                  </strong>{" "}
+                  {loan.customers
+                    ?.customer_number ||
+                    "—"}
+                </Typography>
+
+                <Typography>
+                  <strong>
+                    Loan Number:
+                  </strong>{" "}
+                  {loan.loan_number ||
+                    "—"}
+                </Typography>
+
+              </Stack>
 
             </CardContent>
           </Card>
@@ -1766,112 +2147,146 @@ export default function LoanProfile() {
 
 
         <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            md: 3,
-          }}
+          item
+          xs={12}
+          md={6}
         >
           <Card>
             <CardContent>
 
               <Typography
-                color="text.secondary"
-                variant="body2"
+                variant="h6"
+                fontWeight={700}
+                gutterBottom
               >
-                Interest
+                Loan Summary
               </Typography>
 
-              <Typography
-                variant="h5"
-                fontWeight={800}
-                sx={{ mt: 1 }}
+              <Divider
+                sx={{
+                  mb: 2,
+                }}
+              />
+
+              <Grid
+                container
+                spacing={2}
               >
-                R{formatMoney(
-                  interestAmount
-                )}
-              </Typography>
 
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
-                {interestRate.toFixed(2)}%
-              </Typography>
+                <Grid
+                  item
+                  xs={6}
+                >
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                  >
+                    Principal
+                  </Typography>
 
-            </CardContent>
-          </Card>
-        </Grid>
-
-
-        <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            md: 3,
-          }}
-        >
-          <Card>
-            <CardContent>
-
-              <Typography
-                color="text.secondary"
-                variant="body2"
-              >
-                Total Repayment
-              </Typography>
-
-              <Typography
-                variant="h5"
-                fontWeight={800}
-                sx={{ mt: 1 }}
-              >
-                R{formatMoney(
-                  totalRepayment
-                )}
-              </Typography>
-
-            </CardContent>
-          </Card>
-        </Grid>
+                  <Typography
+                    fontWeight={700}
+                  >
+                    {formatMoney(
+                      loan.principal_amount
+                    )}
+                  </Typography>
+                </Grid>
 
 
-        <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            md: 3,
-          }}
-        >
-          <Card>
-            <CardContent>
+                <Grid
+                  item
+                  xs={6}
+                >
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                  >
+                    Interest
+                  </Typography>
 
-              <Typography
-                color="text.secondary"
-                variant="body2"
-              >
-                Current Balance
-              </Typography>
+                  <Typography
+                    fontWeight={700}
+                  >
+                    {formatMoney(
+                      loan.interest_amount
+                    )}
+                  </Typography>
+                </Grid>
 
-              <Typography
-                variant="h5"
-                fontWeight={800}
-                sx={{ mt: 1 }}
-              >
-                R{formatMoney(
-                  currentBalance
-                )}
-              </Typography>
 
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
-                Paid: R
-                {formatMoney(
-                  totalPaid
-                )}
-              </Typography>
+                <Grid
+                  item
+                  xs={6}
+                >
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                  >
+                    Total Repayment
+                  </Typography>
+
+                  <Typography
+                    fontWeight={700}
+                  >
+                    {formatMoney(
+                      loan.total_repayment
+                    )}
+                  </Typography>
+                </Grid>
+
+
+                <Grid
+                  item
+                  xs={6}
+                >
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                  >
+                    Total Paid
+                  </Typography>
+
+                  <Typography
+                    fontWeight={700}
+                  >
+                    {formatMoney(
+                      loan.total_paid
+                    )}
+                  </Typography>
+                </Grid>
+
+
+                <Grid
+                  item
+                  xs={12}
+                >
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      mt: 1,
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                    >
+                      Current Balance
+                    </Typography>
+
+                    <Typography
+                      variant="h5"
+                      fontWeight={800}
+                    >
+                      {formatMoney(
+                        loan.current_balance
+                      )}
+                    </Typography>
+                  </Paper>
+                </Grid>
+
+              </Grid>
 
             </CardContent>
           </Card>
@@ -1880,343 +2295,33 @@ export default function LoanProfile() {
       </Grid>
 
 
-      {/* ====================================================== */}
-      {/* PAYMENT / INTEREST DATES */}
-      {/* ====================================================== */}
+      {/* ===================================================
+          THREE MAIN DOCUMENT BUTTONS
+      =================================================== */}
 
-      <Card sx={{ mb: 3 }}>
+      <Card
+        sx={{
+          mb: 3,
+        }}
+      >
         <CardContent>
 
           <Typography
             variant="h6"
             fontWeight={700}
-            sx={{ mb: 2 }}
+            gutterBottom
           >
-            Repayment Schedule
+            Loan Documents
           </Typography>
 
-          <Grid
-            container
-            spacing={2}
-          >
-
-            <Grid
-              size={{
-                xs: 12,
-                sm: 6,
-                md: 3,
-              }}
-            >
-              <Paper
-                variant="outlined"
-                sx={{ p: 2 }}
-              >
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  First Payment Date
-                </Typography>
-
-                <Typography
-                  fontWeight={700}
-                  sx={{ mt: 0.5 }}
-                >
-                  {loan.first_payment_date
-                    ? new Date(
-                        loan.first_payment_date
-                      ).toLocaleDateString(
-                        "en-ZA"
-                      )
-                    : "Not recorded"}
-                </Typography>
-              </Paper>
-            </Grid>
-
-
-            <Grid
-              size={{
-                xs: 12,
-                sm: 6,
-                md: 3,
-              }}
-            >
-              <Paper
-                variant="outlined"
-                sx={{ p: 2 }}
-              >
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Next Payment Date
-                </Typography>
-
-                <Typography
-                  fontWeight={700}
-                  sx={{ mt: 0.5 }}
-                >
-                  {loan.next_payment_date
-                    ? new Date(
-                        loan.next_payment_date
-                      ).toLocaleDateString(
-                        "en-ZA"
-                      )
-                    : "Not scheduled"}
-                </Typography>
-              </Paper>
-            </Grid>
-
-
-            <Grid
-              size={{
-                xs: 12,
-                sm: 6,
-                md: 3,
-              }}
-            >
-              <Paper
-                variant="outlined"
-                sx={{ p: 2 }}
-              >
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Next Interest Date
-                </Typography>
-
-                <Typography
-                  fontWeight={700}
-                  sx={{ mt: 0.5 }}
-                >
-                  {loan.next_interest_date
-                    ? new Date(
-                        loan.next_interest_date
-                      ).toLocaleDateString(
-                        "en-ZA"
-                      )
-                    : "Not scheduled"}
-                </Typography>
-              </Paper>
-            </Grid>
-
-
-            <Grid
-              size={{
-                xs: 12,
-                sm: 6,
-                md: 3,
-              }}
-            >
-              <Paper
-                variant="outlined"
-                sx={{ p: 2 }}
-              >
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Last Payment Date
-                </Typography>
-
-                <Typography
-                  fontWeight={700}
-                  sx={{ mt: 0.5 }}
-                >
-                  {loan.last_payment_date
-                    ? new Date(
-                        loan.last_payment_date
-                      ).toLocaleDateString(
-                        "en-ZA"
-                      )
-                    : "No payment"}
-                </Typography>
-              </Paper>
-            </Grid>
-
-          </Grid>
-
-        </CardContent>
-      </Card>
-
-
-      {/* ====================================================== */}
-      {/* AGREEMENT */}
-      {/* ====================================================== */}
-
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-
-          <Stack
-            direction={{
-              xs: "column",
-              md: "row",
-            }}
-            justifyContent="space-between"
-            alignItems={{
-              xs: "flex-start",
-              md: "center",
-            }}
-            spacing={2}
-          >
-
-            <Box>
-
-              <Stack
-                direction="row"
-                spacing={1}
-                alignItems="center"
-              >
-
-                <Description />
-
-                <Typography
-                  variant="h6"
-                  fontWeight={700}
-                >
-                  Loan Agreement
-                </Typography>
-
-              </Stack>
-
-              {agreement ? (
-                <>
-
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 0.5 }}
-                  >
-                    Agreement Number:{" "}
-                    <strong>
-                      {
-                        agreement.agreement_number
-                      }
-                    </strong>
-                  </Typography>
-
-                  {agreement.accepted_at && (
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      Accepted:{" "}
-                      {new Date(
-                        agreement.accepted_at
-                      ).toLocaleString(
-                        "en-ZA"
-                      )}
-                    </Typography>
-                  )}
-
-                </>
-              ) : (
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ mt: 0.5 }}
-                >
-                  No agreement has been created
-                  for this loan.
-                </Typography>
-              )}
-
-            </Box>
-
-
-            {agreement && (
-              <Stack
-                direction="row"
-                spacing={1}
-                alignItems="center"
-                flexWrap="wrap"
-              >
-
-                <Chip
-                  icon={
-                    agreement.status ===
-                    "Signed" ? (
-                      <Verified />
-                    ) : undefined
-                  }
-                  label={
-                    agreement.status ||
-                    "Pending"
-                  }
-                  color={
-                    agreement.status ===
-                    "Signed"
-                      ? "success"
-                      : "warning"
-                  }
-                  variant="outlined"
-                />
-
-                {signedAgreementDocument && (
-                  <Chip
-                    icon={
-                      <PictureAsPdf />
-                    }
-                    label="PDF Stored"
-                    color="success"
-                    variant="outlined"
-                  />
-                )}
-
-              </Stack>
-            )}
-
-          </Stack>
-
-
-          {agreement &&
-            agreement.status !==
-              "Signed" && (
-              <Alert
-                severity="info"
-                sx={{ mt: 2 }}
-              >
-                Agreement is awaiting customer
-                acceptance. The official signed
-                PDF will become available after
-                the customer accepts the
-                agreement.
-              </Alert>
-            )}
-
-
-          {agreement &&
-            agreement.status ===
-              "Signed" &&
-            !signedAgreementDocument && (
-              <Alert
-                severity="warning"
-                sx={{ mt: 2 }}
-              >
-                The agreement is marked as signed,
-                but the official signed PDF has
-                not been stored yet.
-              </Alert>
-            )}
-
-        </CardContent>
-      </Card>
-
-
-      {/* ====================================================== */}
-      {/* QUICK ACTIONS */}
-      {/* ====================================================== */}
-
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-
           <Typography
-            variant="h6"
-            fontWeight={700}
-            sx={{ mb: 2 }}
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              mb: 2,
+            }}
           >
-            Quick Actions
+            Open the latest loan documents.
           </Typography>
 
           <Stack
@@ -2224,29 +2329,15 @@ export default function LoanProfile() {
               xs: "column",
               sm: "row",
             }}
-            spacing={1.5}
+            spacing={2}
           >
 
-            <Button
-              variant="outlined"
-              startIcon={<Payment />}
-              disabled={
-                isCompleted ||
-                isVoid ||
-                currentBalance <= 0
-              }
-              onClick={() =>
-                setPaymentOpen(true)
-              }
-            >
-              Record Payment
-            </Button>
-
+            {/* STATEMENT */}
 
             <Button
-              variant="outlined"
+              variant="contained"
               startIcon={
-                generatingStatement ? (
+                openingDocument ? (
                   <CircularProgress
                     size={18}
                     color="inherit"
@@ -2256,22 +2347,54 @@ export default function LoanProfile() {
                 )
               }
               onClick={
-                handlePrintStatement
+                handleViewStatement
               }
               disabled={
-                generatingStatement
+                openingDocument ||
+                !statementDocument
               }
+              sx={{
+                minWidth: {
+                  xs: "100%",
+                  sm: 170,
+                },
+              }}
             >
-              {generatingStatement
-                ? "Generating..."
-                : "Generate Statement"}
+              Statement
             </Button>
 
+
+            {/* AGREEMENT */}
 
             <Button
               variant="contained"
               startIcon={
-                generatingAgreement ? (
+                <Description />
+              }
+              onClick={
+                handleViewAgreement
+              }
+              disabled={
+                openingDocument ||
+                !signedAgreementDocument
+              }
+              sx={{
+                minWidth: {
+                  xs: "100%",
+                  sm: 170,
+                },
+              }}
+            >
+              Agreement
+            </Button>
+
+
+            {/* SETTLEMENT LETTER */}
+
+            <Button
+              variant="contained"
+              startIcon={
+                generatingSettlement ? (
                   <CircularProgress
                     size={18}
                     color="inherit"
@@ -2280,58 +2403,91 @@ export default function LoanProfile() {
                   <PictureAsPdf />
                 )
               }
-              disabled={
-                generatingAgreement ||
-                !signedAgreementDocument
-              }
               onClick={
-                handlePrintAgreement
+                handleViewSettlement
               }
+              disabled={
+                generatingSettlement
+              }
+              sx={{
+                minWidth: {
+                  xs: "100%",
+                  sm: 210,
+                },
+              }}
             >
-              {generatingAgreement
-                ? "Opening..."
-                : "Print Agreement"}
+              Settlement Letter
             </Button>
 
           </Stack>
+
+
+          {!statementDocument && (
+            <Alert
+              severity="warning"
+              sx={{
+                mt: 2,
+              }}
+            >
+              No statement document exists
+              for this loan.
+            </Alert>
+          )}
+
+
+          {!signedAgreementDocument && (
+            <Alert
+              severity="warning"
+              sx={{
+                mt: 2,
+              }}
+            >
+              No signed loan agreement is
+              available for this loan.
+            </Alert>
+          )}
 
         </CardContent>
       </Card>
 
 
-      {/* ====================================================== */}
-      {/* TABS */}
-      {/* ====================================================== */}
+      {/* ===================================================
+          TABS
+      =================================================== */}
 
       <Card>
 
         <Tabs
           value={tab}
-          onChange={handleTabChange}
+          onChange={
+            handleTabChange
+          }
           variant="scrollable"
           scrollButtons="auto"
         >
 
           <Tab
-            icon={<History />}
+            icon={
+              <History />
+            }
             iconPosition="start"
             label="Transactions"
           />
 
           <Tab
-            icon={<ReceiptLong />}
+            icon={
+              <ReceiptLong />
+            }
             iconPosition="start"
             label="Statement"
           />
 
           <Tab
-            icon={<FolderOpen />}
+            icon={
+              <FolderOpen />
+            }
             iconPosition="start"
-            label={`Documents${
-              documents.length
-                ? ` (${documents.length})`
-                : ""
-            }`}
+            label="Documents"
           />
 
         </Tabs>
@@ -2340,40 +2496,41 @@ export default function LoanProfile() {
         <Divider />
 
 
-        {/* ==================================================== */}
-        {/* TRANSACTIONS */}
-        {/* ==================================================== */}
+        {/* =================================================
+            TRANSACTIONS TAB
+        ================================================= */}
 
         {tab === 0 && (
-          <Box sx={{ p: 3 }}>
+          <CardContent>
 
             <LoanTransactions
               loanId={id}
+              transactions={
+                transactions
+              }
             />
 
-          </Box>
+          </CardContent>
         )}
 
 
-        {/* ==================================================== */}
-        {/* STATEMENT */}
-        {/* ==================================================== */}
+        {/* =================================================
+            STATEMENT TAB
+        ================================================= */}
 
         {tab === 1 && (
-          <Box sx={{ p: 3 }}>
+          <CardContent>
 
             <Stack
               direction={{
                 xs: "column",
-                sm: "row",
+                md: "row",
               }}
               justifyContent="space-between"
-              alignItems={{
-                xs: "flex-start",
-                sm: "center",
-              }}
               spacing={2}
-              sx={{ mb: 3 }}
+              sx={{
+                mb: 2,
+              }}
             >
 
               <Box>
@@ -2389,393 +2546,9 @@ export default function LoanProfile() {
                   variant="body2"
                   color="text.secondary"
                 >
-                  Complete financial position
-                  and transaction history.
-                </Typography>
-
-              </Box>
-
-
-              <Button
-                variant="contained"
-                startIcon={
-                  generatingStatement ? (
-                    <CircularProgress
-                      size={18}
-                      color="inherit"
-                    />
-                  ) : (
-                    <ReceiptLong />
-                  )
-                }
-                onClick={
-                  handlePrintStatement
-                }
-                disabled={
-                  generatingStatement
-                }
-              >
-                {generatingStatement
-                  ? "Generating..."
-                  : "Generate Statement"}
-              </Button>
-
-            </Stack>
-
-
-            <Grid
-              container
-              spacing={2}
-            >
-
-              <Grid
-                size={{
-                  xs: 12,
-                  md: 3,
-                }}
-              >
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 2 }}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Principal
-                  </Typography>
-
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                  >
-                    R{formatMoney(
-                      principalAmount
-                    )}
-                  </Typography>
-                </Paper>
-              </Grid>
-
-
-              <Grid
-                size={{
-                  xs: 12,
-                  md: 3,
-                }}
-              >
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 2 }}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Total Repayment
-                  </Typography>
-
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                  >
-                    R{formatMoney(
-                      totalRepayment
-                    )}
-                  </Typography>
-                </Paper>
-              </Grid>
-
-
-              <Grid
-                size={{
-                  xs: 12,
-                  md: 3,
-                }}
-              >
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 2 }}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Total Paid
-                  </Typography>
-
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                  >
-                    R{formatMoney(
-                      totalPaid
-                    )}
-                  </Typography>
-                </Paper>
-              </Grid>
-
-
-              <Grid
-                size={{
-                  xs: 12,
-                  md: 3,
-                }}
-              >
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 2 }}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Balance
-                  </Typography>
-
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                  >
-                    R{formatMoney(
-                      currentBalance
-                    )}
-                  </Typography>
-                </Paper>
-              </Grid>
-
-            </Grid>
-
-
-            {/* OVERDUE INFORMATION */}
-
-            {statement.overdues?.length >
-              0 && (
-              <Alert
-                severity="warning"
-                sx={{ mt: 3 }}
-              >
-                This loan has{" "}
-                {statement.overdues.length}{" "}
-                overdue item
-                {statement.overdues.length !==
-                1
-                  ? "s"
-                  : ""}.
-              </Alert>
-            )}
-
-
-            <Box sx={{ mt: 3 }}>
-
-              <Typography
-                variant="subtitle1"
-                fontWeight={700}
-                sx={{ mb: 1 }}
-              >
-                Transactions
-              </Typography>
-
-
-              {statement.transactions
-                .length === 0 ? (
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 3 }}
-                >
-
-                  <Typography
-                    color="text.secondary"
-                  >
-                    No transactions recorded
-                    for this loan.
-                  </Typography>
-
-                </Paper>
-              ) : (
-                <Paper
-                  variant="outlined"
-                  sx={{
-                    overflow: "hidden",
-                  }}
-                >
-
-                  {statement.transactions.map(
-                    (
-                      transaction,
-                      index
-                    ) => {
-
-                      const debit =
-                        Number(
-                          transaction.debit ||
-                            0
-                        );
-
-                      const credit =
-                        Number(
-                          transaction.credit ||
-                            0
-                        );
-
-                      return (
-                        <Box
-                          key={
-                            transaction.id ||
-                            index
-                          }
-                          sx={{
-                            p: 2,
-                            borderBottom:
-                              index <
-                              statement
-                                .transactions
-                                .length -
-                                1
-                                ? "1px solid"
-                                : "none",
-                            borderColor:
-                              "divider",
-                          }}
-                        >
-
-                          <Stack
-                            direction={{
-                              xs: "column",
-                              sm: "row",
-                            }}
-                            justifyContent="space-between"
-                            spacing={1}
-                          >
-
-                            <Box>
-
-                              <Typography
-                                fontWeight={
-                                  600
-                                }
-                              >
-                                {
-                                  transaction.description ||
-                                  transaction.transaction_type ||
-                                  "Transaction"
-                                }
-                              </Typography>
-
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {transaction.transaction_date
-                                  ? new Date(
-                                      transaction.transaction_date
-                                    ).toLocaleDateString(
-                                      "en-ZA"
-                                    )
-                                  : "-"}
-                              </Typography>
-
-                            </Box>
-
-
-                            <Box
-                              sx={{
-                                textAlign: {
-                                  xs: "left",
-                                  sm: "right",
-                                },
-                              }}
-                            >
-
-                              {debit > 0 && (
-                                <Typography
-                                  fontWeight={
-                                    700
-                                  }
-                                >
-                                  Debit: R
-                                  {formatMoney(
-                                    debit
-                                  )}
-                                </Typography>
-                              )}
-
-                              {credit > 0 && (
-                                <Typography
-                                  fontWeight={
-                                    700
-                                  }
-                                >
-                                  Credit: R
-                                  {formatMoney(
-                                    credit
-                                  )}
-                                </Typography>
-                              )}
-
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                Balance: R
-                                {formatMoney(
-                                  transaction.balance
-                                )}
-                              </Typography>
-
-                            </Box>
-
-                          </Stack>
-
-                        </Box>
-                      );
-                    }
-                  )}
-
-                </Paper>
-              )}
-
-            </Box>
-
-          </Box>
-        )}
-
-
-        {/* ==================================================== */}
-        {/* DOCUMENTS */}
-        {/* ==================================================== */}
-
-        {tab === 2 && (
-          <Box sx={{ p: 3 }}>
-
-            <Stack
-              direction={{
-                xs: "column",
-                sm: "row",
-              }}
-              justifyContent="space-between"
-              alignItems={{
-                xs: "flex-start",
-                sm: "center",
-              }}
-              spacing={2}
-              sx={{ mb: 3 }}
-            >
-
-              <Box>
-
-                <Typography
-                  variant="h6"
-                  fontWeight={700}
-                >
-                  Loan Documents
-                </Typography>
-
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Official documents associated
-                  with this loan.
+                  This is the current
+                  transaction history for
+                  this loan.
                 </Typography>
 
               </Box>
@@ -2783,76 +2556,271 @@ export default function LoanProfile() {
 
               <Button
                 variant="outlined"
-                startIcon={<FolderOpen />}
-                onClick={() =>
-                  loadDocuments()
+                startIcon={
+                  <ReceiptLong />
+                }
+                onClick={
+                  handleViewStatement
+                }
+                disabled={
+                  !statementDocument
                 }
               >
-                Refresh
+                Open Statement
               </Button>
 
             </Stack>
 
 
-            {loadingDocuments ? (
+            {statement.transactions
+              .length === 0 ? (
+
+              <Alert severity="info">
+                No transactions found.
+              </Alert>
+
+            ) : (
+
               <Box
                 sx={{
-                  py: 6,
-                  display: "flex",
+                  overflowX:
+                    "auto",
+                }}
+              >
+
+                <Box
+                  component="table"
+                  sx={{
+                    width: "100%",
+                    borderCollapse:
+                      "collapse",
+                    minWidth: 700,
+                  }}
+                >
+
+                  <Box
+                    component="thead"
+                  >
+
+                    <Box
+                      component="tr"
+                    >
+
+                      {[
+                        "Date",
+                        "Type",
+                        "Description",
+                        "Debit",
+                        "Credit",
+                        "Balance",
+                      ].map(
+                        (
+                          heading
+                        ) => (
+                          <Box
+                            component="th"
+                            key={
+                              heading
+                            }
+                            sx={{
+                              textAlign:
+                                "left",
+                              p: 1.5,
+                              borderBottom:
+                                "1px solid",
+                              borderColor:
+                                "divider",
+                            }}
+                          >
+                            {heading}
+                          </Box>
+                        )
+                      )}
+
+                    </Box>
+
+                  </Box>
+
+
+                  <Box
+                    component="tbody"
+                  >
+
+                    {statement.transactions.map(
+                      (
+                        transaction
+                      ) => (
+
+                        <Box
+                          component="tr"
+                          key={
+                            transaction.id
+                          }
+                        >
+
+                          <Box
+                            component="td"
+                            sx={{
+                              p: 1.5,
+                              borderBottom:
+                                "1px solid",
+                              borderColor:
+                                "divider",
+                            }}
+                          >
+                            {formatDate(
+                              transaction.transaction_date
+                            )}
+                          </Box>
+
+
+                          <Box
+                            component="td"
+                            sx={{
+                              p: 1.5,
+                              borderBottom:
+                                "1px solid",
+                              borderColor:
+                                "divider",
+                            }}
+                          >
+                            {transaction.transaction_type ||
+                              "—"}
+                          </Box>
+
+
+                          <Box
+                            component="td"
+                            sx={{
+                              p: 1.5,
+                              borderBottom:
+                                "1px solid",
+                              borderColor:
+                                "divider",
+                            }}
+                          >
+                            {transaction.description ||
+                              "—"}
+                          </Box>
+
+
+                          <Box
+                            component="td"
+                            sx={{
+                              p: 1.5,
+                              borderBottom:
+                                "1px solid",
+                              borderColor:
+                                "divider",
+                            }}
+                          >
+                            {formatMoney(
+                              transaction.debit
+                            )}
+                          </Box>
+
+
+                          <Box
+                            component="td"
+                            sx={{
+                              p: 1.5,
+                              borderBottom:
+                                "1px solid",
+                              borderColor:
+                                "divider",
+                            }}
+                          >
+                            {formatMoney(
+                              transaction.credit
+                            )}
+                          </Box>
+
+
+                          <Box
+                            component="td"
+                            sx={{
+                              p: 1.5,
+                              borderBottom:
+                                "1px solid",
+                              borderColor:
+                                "divider",
+                              fontWeight:
+                                700,
+                            }}
+                          >
+                            {formatMoney(
+                              transaction.balance
+                            )}
+                          </Box>
+
+                        </Box>
+
+                      )
+                    )}
+
+                  </Box>
+
+                </Box>
+
+              </Box>
+
+            )}
+
+          </CardContent>
+        )}
+
+
+        {/* =================================================
+            DOCUMENTS TAB
+        ================================================= */}
+
+        {tab === 2 && (
+          <CardContent>
+
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              gutterBottom
+            >
+              Documents
+            </Typography>
+
+
+            {loadingDocuments ? (
+
+              <Box
+                sx={{
+                  display:
+                    "flex",
                   justifyContent:
                     "center",
+                  py: 4,
                 }}
               >
                 <CircularProgress />
               </Box>
+
             ) : documents.length ===
               0 ? (
 
-              <Paper
-                variant="outlined"
-                sx={{ p: 5 }}
-              >
-
-                <Stack
-                  alignItems="center"
-                  spacing={1}
-                >
-
-                  <FolderOpen
-                    sx={{
-                      fontSize: 50,
-                      color:
-                        "text.secondary",
-                    }}
-                  />
-
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                  >
-                    No documents found
-                  </Typography>
-
-                  <Typography
-                    color="text.secondary"
-                    textAlign="center"
-                  >
-                    Documents created for this
-                    loan will appear here.
-                  </Typography>
-
-                </Stack>
-
-              </Paper>
+              <Alert severity="info">
+                No documents found for
+                this loan.
+              </Alert>
 
             ) : (
 
               <Stack spacing={2}>
 
                 {documents.map(
-                  (document) => (
+                  (
+                    document
+                  ) => (
+
                     <Paper
-                      key={document.id}
+                      key={
+                        document.id
+                      }
                       variant="outlined"
                       sx={{
                         p: 2,
@@ -2862,185 +2830,318 @@ export default function LoanProfile() {
                       <Stack
                         direction={{
                           xs: "column",
-                          md: "row",
+                          sm: "row",
                         }}
                         justifyContent="space-between"
                         alignItems={{
-                          xs: "flex-start",
-                          md: "center",
+                          xs: "stretch",
+                          sm: "center",
                         }}
                         spacing={2}
                       >
 
-                        <Stack
-                          direction="row"
-                          spacing={2}
-                          alignItems="center"
-                        >
+                        <Box>
 
-                          <Box
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
                             sx={{
-                              width: 48,
-                              height: 48,
-                              borderRadius: 1,
-                              display: "flex",
-                              alignItems:
-                                "center",
-                              justifyContent:
-                                "center",
-                              bgcolor:
-                                "grey.100",
+                              mb: 0.5,
                             }}
                           >
-                            <Description
-                              color="primary"
+
+                            <PictureAsPdf
+                              fontSize="small"
                             />
-                          </Box>
-
-
-                          <Box>
 
                             <Typography
-                              fontWeight={700}
+                              fontWeight={
+                                700
+                              }
                             >
                               {
                                 document.document_name
                               }
                             </Typography>
 
-                            <Typography
-                              variant="body2"
-                              color="text.secondary"
-                            >
-                              {
-                                document.document_type
-                              }
-                            </Typography>
+                          </Stack>
 
-                            {document.created_at && (
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                Created:{" "}
-                                {new Date(
-                                  document.created_at
-                                ).toLocaleString(
-                                  "en-ZA"
-                                )}
-                              </Typography>
+
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                          >
+                            Type:{" "}
+                            {
+                              document.document_type
+                            }
+                          </Typography>
+
+
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                          >
+                            Created:{" "}
+                            {formatDateTime(
+                              document.created_at
                             )}
+                          </Typography>
 
-                          </Box>
-
-                        </Stack>
+                        </Box>
 
 
-                        <Stack
-                          direction="row"
-                          spacing={1}
-                          flexWrap="wrap"
+                        <Button
+                          variant="outlined"
+                          startIcon={
+                            <FolderOpen />
+                          }
+                          onClick={() =>
+                            openDocumentViewer(
+                              {
+                                documentPath:
+                                  document.document_path,
+
+                                documentName:
+                                  document.document_name,
+
+                                documentType:
+                                  document.document_type,
+                              }
+                            )
+                          }
+                          disabled={
+                            !document.document_path
+                          }
                         >
-
-                          {document.document_type ===
-                            "Signed Loan Agreement" && (
-                            <Chip
-                              icon={
-                                <Verified />
-                              }
-                              label="Official Signed Copy"
-                              color="success"
-                              size="small"
-                            />
-                          )}
-
-
-                          {document.document_type ===
-                            "Loan Statement" && (
-                            <Chip
-                              icon={
-                                <ReceiptLong />
-                              }
-                              label="Official Statement"
-                              color="primary"
-                              size="small"
-                            />
-                          )}
-
-
-                          <Button
-                            variant="outlined"
-                            startIcon={
-                              openingDocument ? (
-                                <CircularProgress
-                                  size={16}
-                                />
-                              ) : (
-                                <OpenInNew />
-                              )
-                            }
-                            disabled={
-                              !document.document_path ||
-                              openingDocument
-                            }
-                            onClick={() =>
-                              openStoredDocument(
-                                document
-                              )
-                            }
-                          >
-                            View
-                          </Button>
-
-
-                          <Button
-                            variant="contained"
-                            startIcon={
-                              <Print />
-                            }
-                            disabled={
-                              !document.document_path
-                            }
-                            onClick={() =>
-                              openStoredDocument(
-                                document
-                              )
-                            }
-                          >
-                            Print
-                          </Button>
-
-                        </Stack>
+                          View
+                        </Button>
 
                       </Stack>
 
                     </Paper>
+
                   )
                 )}
 
               </Stack>
+
             )}
 
-          </Box>
+          </CardContent>
         )}
 
       </Card>
 
 
-      {/* ====================================================== */}
-      {/* PAYMENT DIALOG */}
-      {/* ====================================================== */}
+      {/* ===================================================
+          DOCUMENT VIEWER
+      =================================================== */}
 
-      <RecordPayment
-        open={paymentOpen}
-        loan={loan}
-        onClose={() =>
-          setPaymentOpen(false)
+      <Dialog
+        open={
+          documentViewerOpen
         }
-        onSaved={
-          handlePaymentSuccess
+        onClose={
+          closeDocumentViewer
         }
-      />
+        fullScreen
+      >
+
+        <DialogTitle
+          sx={{
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "space-between",
+            gap: 2,
+          }}
+        >
+
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+          >
+
+            <PictureAsPdf />
+
+            <Box>
+
+              <Typography
+                fontWeight={700}
+              >
+                {documentViewerName ||
+                  "Document"}
+              </Typography>
+
+              <Typography
+                variant="caption"
+                color="text.secondary"
+              >
+                {documentViewerType}
+              </Typography>
+
+            </Box>
+
+          </Stack>
+
+
+          <IconButton
+            onClick={
+              closeDocumentViewer
+            }
+            aria-label="Close"
+          >
+            <Close />
+          </IconButton>
+
+        </DialogTitle>
+
+
+        <Divider />
+
+
+        <DialogContent
+          sx={{
+            p: 0,
+            backgroundColor:
+              "#525659",
+            overflow:
+              "hidden",
+          }}
+        >
+
+          {documentViewerUrl ? (
+
+            <Box
+              component="iframe"
+              src={
+                documentViewerUrl
+              }
+              title={
+                documentViewerName ||
+                "Document Viewer"
+              }
+              sx={{
+                width: "100%",
+                height: "100%",
+                border: 0,
+                display:
+                  "block",
+              }}
+            />
+
+          ) : (
+
+            <Box
+              sx={{
+                display:
+                  "flex",
+                justifyContent:
+                  "center",
+                alignItems:
+                  "center",
+                height: "100%",
+              }}
+            >
+              <CircularProgress />
+            </Box>
+
+          )}
+
+        </DialogContent>
+
+
+        <DialogActions
+          sx={{
+            p: 2,
+            gap: 1,
+            borderTop:
+              "1px solid",
+            borderColor:
+              "divider",
+            flexWrap:
+              "wrap",
+          }}
+        >
+
+          <Button
+            variant="contained"
+            startIcon={
+              <Print />
+            }
+            onClick={
+              handlePrint
+            }
+            disabled={
+              !documentViewerUrl
+            }
+          >
+            Print
+          </Button>
+
+
+          <Button
+            variant="contained"
+            startIcon={
+              <Download />
+            }
+            onClick={
+              handleDownload
+            }
+            disabled={
+              !documentViewerUrl
+            }
+          >
+            Download
+          </Button>
+
+
+          <Button
+            variant="contained"
+            startIcon={
+              sendingEmail ? (
+                <CircularProgress
+                  size={18}
+                  color="inherit"
+                />
+              ) : (
+                <Email />
+              )
+            }
+            onClick={
+              handleEmail
+            }
+            disabled={
+              !documentViewerUrl ||
+              sendingEmail
+            }
+          >
+            {sendingEmail
+              ? "Sending..."
+              : "Email"}
+          </Button>
+
+
+          <Button
+            variant="outlined"
+            onClick={
+              closeDocumentViewer
+            }
+            disabled={
+              sendingEmail
+            }
+          >
+            Close
+          </Button>
+
+        </DialogActions>
+
+      </Dialog>
 
     </Box>
   );
