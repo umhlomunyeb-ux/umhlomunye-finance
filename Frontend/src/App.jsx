@@ -29,76 +29,150 @@ export default function App() {
   return (
     <>
       <Toaster position="top-right" />
+
       <BrowserRouter>
         <Routes>
 
-        {/* =========================
-            PUBLIC
-        ========================== */}
+          {/* =========================
+              PUBLIC
+          ========================== */}
 
-        <Route
-          path="/"
-          element={<Login />}
-        />
+          <Route
+            path="/"
+            element={<Login />}
+          />
 
-        <Route
-          path="/apply"
-          element={<PublicApplication />}
-        />
+          <Route
+            path="/apply"
+            element={<PublicApplication />}
+          />
 
-        <Route 
-          path="/sign-agreement/:token" 
-          element={<SignAgreement />} 
-        />
+          <Route
+            path="/sign-agreement/:token"
+            element={<SignAgreement />}
+          />
 
-        <Route
-          path="/verify-statement/:token"
-          element={<VerifyStatement />}
-        />
+          <Route
+            path="/verify-statement/:token"
+            element={<VerifyStatement />}
+          />
 
-        <Route
-          path="/verify-agreement/:token"
-          element={<VerifyAgreement />}
-        />
+          <Route
+            path="/verify-agreement/:token"
+            element={<VerifyAgreement />}
+          />
 
-        <Route
-          path="/mobile/application-review"
-          element={<MobileApplicationReviews />}
-        />
 
-        <Route
-          path="/mobile/application-review/:id"
-          element={<MobileApplicationReview />}
-        />
+          {/* =========================
+              MOBILE APPLICATION REVIEW
+              
+              Protected, but intentionally
+              outside MainLayout so the
+              phone only shows the review UI.
+          ========================== */}
 
-        {/* =========================
-            PROTECTED
-        ========================== */}
+          <Route
+            path="/mobile/application-review"
+            element={
+              <ProtectedRoute>
+                <MobileApplicationReviews />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          element={
-            <ProtectedRoute>
-              <MainLayout />
-            </ProtectedRoute>
-          }
-        >
-          <Route path="/dashboard" element={<Dashboard />}/>
-          <Route path="/customers" element={<Customers />}/>
-          <Route path="/customers/:id" element={<CustomerProfile />}/>
-          <Route path="/loans" element={<Loans />}/>
-          <Route path="/repayments" element={<Repayments />}/>
-          <Route path="/statements" element={<Statements />}/>
-          <Route path="/reports" element={<Reports />}/>
-          <Route path="/settings" element={<Settings />}/>
-          <Route path="/applications" element={<Applications />}/>
-          <Route path="/applications/:id" element={<ApplicationReview />}/>
-          <Route path="/loans/:id" element={<LoanProfile />}/>
-          <Route path="/bank" element={<Bank />} />
-          <Route path="/test-email" element={<TestEmail />}/>
-          <Route path="/pending-applications" element={<PendingApplications />}/>
-        </Route>
+          <Route
+            path="/mobile/application-review/:id"
+            element={
+              <ProtectedRoute>
+                <MobileApplicationReview />
+              </ProtectedRoute>
+            }
+          />
 
-      </Routes>
+
+          {/* =========================
+              DESKTOP PROTECTED SYSTEM
+          ========================== */}
+
+          <Route
+            element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route
+              path="/dashboard"
+              element={<Dashboard />}
+            />
+
+            <Route
+              path="/customers"
+              element={<Customers />}
+            />
+
+            <Route
+              path="/customers/:id"
+              element={<CustomerProfile />}
+            />
+
+            <Route
+              path="/loans"
+              element={<Loans />}
+            />
+
+            <Route
+              path="/repayments"
+              element={<Repayments />}
+            />
+
+            <Route
+              path="/statements"
+              element={<Statements />}
+            />
+
+            <Route
+              path="/reports"
+              element={<Reports />}
+            />
+
+            <Route
+              path="/settings"
+              element={<Settings />}
+            />
+
+            <Route
+              path="/applications"
+              element={<Applications />}
+            />
+
+            <Route
+              path="/applications/:id"
+              element={<ApplicationReview />}
+            />
+
+            <Route
+              path="/loans/:id"
+              element={<LoanProfile />}
+            />
+
+            <Route
+              path="/bank"
+              element={<Bank />}
+            />
+
+            <Route
+              path="/test-email"
+              element={<TestEmail />}
+            />
+
+            <Route
+              path="/pending-applications"
+              element={<PendingApplications />}
+            />
+          </Route>
+
+        </Routes>
       </BrowserRouter>
     </>
   );

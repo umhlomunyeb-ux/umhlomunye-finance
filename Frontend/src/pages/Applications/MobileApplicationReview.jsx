@@ -44,10 +44,6 @@ export default function MobileApplicationReview() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
 
-  // --------------------------------------------------
-  // LOAD APPLICATION
-  // --------------------------------------------------
-
   async function loadApplication() {
     try {
       setLoading(true);
@@ -59,9 +55,7 @@ export default function MobileApplicationReview() {
         .eq("id", id)
         .single();
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setApplication(data);
 
@@ -73,18 +67,11 @@ export default function MobileApplicationReview() {
       }
     } catch (err) {
       console.error("Unable to load application:", err);
-
-      setError(
-        err?.message || "Unable to load application."
-      );
+      setError(err?.message || "Unable to load application.");
     } finally {
       setLoading(false);
     }
   }
-
-  // --------------------------------------------------
-  // FIND EXISTING CUSTOMER
-  // --------------------------------------------------
 
   async function findApplicationCustomer(applicationData) {
     try {
@@ -92,35 +79,26 @@ export default function MobileApplicationReview() {
       setCustomerError("");
       setCustomer(null);
 
-      if (!applicationData.id_number) {
-        return null;
-      }
+      if (!applicationData.id_number) return null;
 
-      const existingCustomer =
-        await findCustomerByIdNumber(
-          applicationData.id_number
-        );
+      const existingCustomer = await findCustomerByIdNumber(
+        applicationData.id_number
+      );
 
       if (!existingCustomer) {
         setCustomerError(
           "No existing customer was found with this ID number."
         );
-
         return null;
       }
 
       setCustomer(existingCustomer);
-
       return existingCustomer;
     } catch (err) {
-      console.error(
-        "Unable to identify customer:",
-        err
-      );
+      console.error("Unable to identify customer:", err);
 
       setCustomerError(
-        err?.message ||
-          "Unable to identify the customer."
+        err?.message || "Unable to identify the customer."
       );
 
       return null;
@@ -129,10 +107,6 @@ export default function MobileApplicationReview() {
     }
   }
 
-  // --------------------------------------------------
-  // CURRENT USER
-  // --------------------------------------------------
-
   async function loadCurrentUser() {
     try {
       const {
@@ -140,40 +114,22 @@ export default function MobileApplicationReview() {
         error: userError,
       } = await supabase.auth.getUser();
 
-      if (userError) {
-        throw userError;
-      }
+      if (userError) throw userError;
 
       setCurrentUserId(user?.id || null);
     } catch (err) {
-      console.error(
-        "Unable to load current user:",
-        err
-      );
-
+      console.error("Unable to load current user:", err);
       setCurrentUserId(null);
     }
   }
-
-  // --------------------------------------------------
-  // INITIAL LOAD
-  // --------------------------------------------------
 
   useEffect(() => {
     loadApplication();
     loadCurrentUser();
   }, [id]);
 
-  // --------------------------------------------------
-  // FORMATTING
-  // --------------------------------------------------
-
   function formatMoney(value) {
-    if (
-      value === null ||
-      value === undefined ||
-      value === ""
-    ) {
+    if (value === null || value === undefined || value === "") {
       return "0.00";
     }
 
@@ -229,9 +185,7 @@ export default function MobileApplicationReview() {
     return status
       .replaceAll("_", " ")
       .toLowerCase()
-      .replace(/\b\w/g, (letter) =>
-        letter.toUpperCase()
-      );
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 
   function getStatusColor(status) {
@@ -259,16 +213,11 @@ export default function MobileApplicationReview() {
     }
   }
 
-  // --------------------------------------------------
-  // MAKER CHECKER
-  // --------------------------------------------------
-
-  const isApplicationCreator =
-    Boolean(
-      application?.created_by &&
-        currentUserId &&
-        application.created_by === currentUserId
-    );
+  const isApplicationCreator = Boolean(
+    application?.created_by &&
+      currentUserId &&
+      application.created_by === currentUserId
+  );
 
   const canApprove =
     application?.status === "PENDING" &&
@@ -281,10 +230,6 @@ export default function MobileApplicationReview() {
     !approving &&
     !rejecting;
 
-  // --------------------------------------------------
-  // APPROVE
-  // --------------------------------------------------
-
   async function handleApprove() {
     try {
       setApproving(true);
@@ -296,14 +241,10 @@ export default function MobileApplicationReview() {
         error: userError,
       } = await supabase.auth.getUser();
 
-      if (userError) {
-        throw userError;
-      }
+      if (userError) throw userError;
 
       if (!user) {
-        throw new Error(
-          "No logged-in administrator was found."
-        );
+        throw new Error("No logged-in administrator was found.");
       }
 
       if (
@@ -323,18 +264,15 @@ export default function MobileApplicationReview() {
         );
       }
 
-      const { data, error } =
-        await supabase.rpc(
-          "approve_loan_application",
-          {
-            p_application_id: application.id,
-            p_approved_by: user.id,
-          }
-        );
+      const { data, error } = await supabase.rpc(
+        "approve_loan_application",
+        {
+          p_application_id: application.id,
+          p_approved_by: user.id,
+        }
+      );
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       const loanNumber =
         data?.loan_number ||
@@ -353,23 +291,15 @@ export default function MobileApplicationReview() {
 
       await loadApplication();
     } catch (err) {
-      console.error(
-        "Unable to approve application:",
-        err
-      );
+      console.error("Unable to approve application:", err);
 
       setError(
-        err?.message ||
-          "Unable to approve application."
+        err?.message || "Unable to approve application."
       );
     } finally {
       setApproving(false);
     }
   }
-
-  // --------------------------------------------------
-  // REJECTION
-  // --------------------------------------------------
 
   function openRejectDialog() {
     setError("");
@@ -380,10 +310,7 @@ export default function MobileApplicationReview() {
   async function handleReject() {
     try {
       if (!rejectionReason.trim()) {
-        setError(
-          "Please enter a rejection reason."
-        );
-
+        setError("Please enter a rejection reason.");
         return;
       }
 
@@ -396,14 +323,10 @@ export default function MobileApplicationReview() {
         error: userError,
       } = await supabase.auth.getUser();
 
-      if (userError) {
-        throw userError;
-      }
+      if (userError) throw userError;
 
       if (!user) {
-        throw new Error(
-          "No logged-in administrator was found."
-        );
+        throw new Error("No logged-in administrator was found.");
       }
 
       if (application.status !== "PENDING") {
@@ -414,20 +337,16 @@ export default function MobileApplicationReview() {
         );
       }
 
-      const { error } =
-        await supabase.rpc(
-          "reject_loan_application",
-          {
-            p_application_id: application.id,
-            p_rejected_by: user.id,
-            p_rejection_reason:
-              rejectionReason.trim(),
-          }
-        );
+      const { error } = await supabase.rpc(
+        "reject_loan_application",
+        {
+          p_application_id: application.id,
+          p_rejected_by: user.id,
+          p_rejection_reason: rejectionReason.trim(),
+        }
+      );
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setRejectDialogOpen(false);
       setRejectionReason("");
@@ -438,23 +357,15 @@ export default function MobileApplicationReview() {
 
       await loadApplication();
     } catch (err) {
-      console.error(
-        "Unable to reject application:",
-        err
-      );
+      console.error("Unable to reject application:", err);
 
       setError(
-        err?.message ||
-          "Unable to reject application."
+        err?.message || "Unable to reject application."
       );
     } finally {
       setRejecting(false);
     }
   }
-
-  // --------------------------------------------------
-  // LOADING
-  // --------------------------------------------------
 
   if (loading) {
     return (
@@ -472,10 +383,6 @@ export default function MobileApplicationReview() {
     );
   }
 
-  // --------------------------------------------------
-  // ERROR
-  // --------------------------------------------------
-
   if (error && !application) {
     return (
       <Box
@@ -485,16 +392,14 @@ export default function MobileApplicationReview() {
           backgroundColor: "#f5f6f8",
         }}
       >
-        <Alert severity="error">
-          {error}
-        </Alert>
+        <Alert severity="error">{error}</Alert>
 
         <Button
           fullWidth
           sx={{ mt: 2 }}
           variant="outlined"
           onClick={() =>
-            navigate("/applications")
+            navigate("/mobile/application-review")
           }
         >
           Back to Applications
@@ -521,7 +426,7 @@ export default function MobileApplicationReview() {
           sx={{ mt: 2 }}
           variant="outlined"
           onClick={() =>
-            navigate("/applications")
+            navigate("/mobile/application-review")
           }
         >
           Back to Applications
@@ -529,10 +434,6 @@ export default function MobileApplicationReview() {
       </Box>
     );
   }
-
-  // --------------------------------------------------
-  // MAIN MOBILE UI
-  // --------------------------------------------------
 
   return (
     <Box
@@ -564,7 +465,7 @@ export default function MobileApplicationReview() {
           <Button
             size="small"
             onClick={() =>
-              navigate("/applications")
+              navigate("/mobile/application-review")
             }
             sx={{
               minWidth: "auto",
@@ -587,18 +488,13 @@ export default function MobileApplicationReview() {
               variant="caption"
               color="text.secondary"
             >
-              {application.application_number ||
-                "-"}
+              {application.application_number || "-"}
             </Typography>
           </Box>
 
           <Chip
-            label={formatStatus(
-              application.status
-            )}
-            color={getStatusColor(
-              application.status
-            )}
+            label={formatStatus(application.status)}
+            color={getStatusColor(application.status)}
             size="small"
             sx={{ fontWeight: "bold" }}
           />
@@ -606,6 +502,7 @@ export default function MobileApplicationReview() {
       </Box>
 
       <Box sx={{ p: 1.5 }}>
+
         {/* ERROR */}
 
         {error && (
@@ -632,7 +529,7 @@ export default function MobileApplicationReview() {
           </Alert>
         )}
 
-        {/* APPLICANT SUMMARY */}
+        {/* APPLICANT */}
 
         <Card sx={{ mb: 1.5 }}>
           <CardContent>
@@ -682,15 +579,14 @@ export default function MobileApplicationReview() {
               <InfoRow
                 label="Address"
                 value={
-                  application.physical_address ||
-                  "-"
+                  application.physical_address || "-"
                 }
               />
             </Stack>
           </CardContent>
         </Card>
 
-        {/* LOAN SUMMARY */}
+        {/* LOAN REQUEST */}
 
         <Card
           sx={{
@@ -724,8 +620,7 @@ export default function MobileApplicationReview() {
               <InfoRow
                 label="Purpose"
                 value={
-                  application.loan_purpose ||
-                  "-"
+                  application.loan_purpose || "-"
                 }
               />
 
@@ -752,8 +647,7 @@ export default function MobileApplicationReview() {
           <InfoRow
             label="Employment status"
             value={
-              application.employment_status ||
-              "-"
+              application.employment_status || "-"
             }
           />
 
@@ -785,13 +679,12 @@ export default function MobileApplicationReview() {
           <InfoRow
             label="Account number"
             value={
-              application.account_number ||
-              "-"
+              application.account_number || "-"
             }
           />
         </Section>
 
-        {/* COLLECTION */}
+        {/* COLLECTIONS */}
 
         <Section title="Collections">
           <InfoRow
@@ -803,7 +696,7 @@ export default function MobileApplicationReview() {
           />
         </Section>
 
-        {/* CUSTOMER CHECK */}
+        {/* EXISTING CUSTOMER */}
 
         <Section title="Existing Customer">
           {customerLoading && (
@@ -831,8 +724,7 @@ export default function MobileApplicationReview() {
               <InfoRow
                 label="Customer number"
                 value={
-                  customer.customer_number ||
-                  "-"
+                  customer.customer_number || "-"
                 }
               />
 
@@ -849,23 +741,11 @@ export default function MobileApplicationReview() {
                   customer.cellphone || "-"
                 }
               />
-
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={() =>
-                  navigate(
-                    `/customers/${customer.id}`
-                  )
-                }
-              >
-                View Customer Profile
-              </Button>
             </Stack>
           )}
         </Section>
 
-        {/* ID */}
+        {/* IDENTIFICATION */}
 
         <Section title="Identification">
           <Alert severity="info">
@@ -897,51 +777,36 @@ export default function MobileApplicationReview() {
           </Alert>
         </Section>
 
-        {/* LINKED RECORDS */}
+        {/* LINKED RECORD INFORMATION */}
 
         {(application.customer_id ||
           application.loan_id) && (
           <Section title="Linked Records">
-            <Stack spacing={1.5}>
+            <Stack spacing={1}>
               {application.customer_id && (
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  onClick={() =>
-                    navigate(
-                      `/customers/${application.customer_id}`
-                    )
-                  }
-                >
-                  View Customer
-                </Button>
+                <InfoRow
+                  label="Customer record"
+                  value="Customer linked to this application"
+                />
               )}
 
               {application.loan_id && (
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  onClick={() =>
-                    navigate(
-                      `/loans/${application.loan_id}`
-                    )
-                  }
-                >
-                  View Loan
-                </Button>
+                <InfoRow
+                  label="Loan record"
+                  value="Loan linked to this application"
+                />
               )}
             </Stack>
           </Section>
         )}
 
-        {/* APPLICATION INFO */}
+        {/* APPLICATION INFORMATION */}
 
         <Section title="Application Information">
           <InfoRow
             label="Application number"
             value={
-              application.application_number ||
-              "-"
+              application.application_number || "-"
             }
           />
 
@@ -979,9 +844,12 @@ export default function MobileApplicationReview() {
               <strong>
                 Maker-checker control
               </strong>
+
               <br />
-              You created this application. Another
-              authorised user must approve it.
+
+              You created this application.
+              Another authorised user must
+              approve it.
             </Alert>
           )}
 
@@ -994,6 +862,7 @@ export default function MobileApplicationReview() {
           >
             This application has already been
             approved.
+
             {application.loan_id && (
               <>
                 {" "}
@@ -1017,7 +886,7 @@ export default function MobileApplicationReview() {
         )}
       </Box>
 
-      {/* MOBILE ACTION BAR */}
+      {/* BOTTOM ACTION BAR */}
 
       <Box
         sx={{
@@ -1030,7 +899,8 @@ export default function MobileApplicationReview() {
           borderTop: "1px solid",
           borderColor: "divider",
           p: 1.5,
-          boxShadow: "0 -4px 12px rgba(0,0,0,0.08)",
+          boxShadow:
+            "0 -4px 12px rgba(0,0,0,0.08)",
         }}
       >
         <Stack
@@ -1158,10 +1028,6 @@ export default function MobileApplicationReview() {
   );
 }
 
-// --------------------------------------------------
-// MOBILE COMPONENTS
-// --------------------------------------------------
-
 function Section({ title, children }) {
   return (
     <Card sx={{ mb: 1.5 }}>
@@ -1188,7 +1054,9 @@ function InfoRow({ label, value }) {
       <Typography
         variant="caption"
         color="text.secondary"
-        sx={{ display: "block" }}
+        sx={{
+          display: "block",
+        }}
       >
         {label}
       </Typography>
