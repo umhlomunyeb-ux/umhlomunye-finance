@@ -111,12 +111,16 @@ export default function Bank() {
     reference: "",
   });
 
+  const [borrowingAgreementFile, setBorrowingAgreementFile] = useState(null);
+
   const [repaymentForm, setRepaymentForm] = useState({
     amount: "",
     repaymentDate: today(),
     description: "",
     reference: "",
   });
+
+  const [proofOfPaymentFile, setProofOfPaymentFile] = useState(null);
 
   async function loadBankData() {
     try {
@@ -157,6 +161,16 @@ export default function Bank() {
     setBorrowingDialog(false);
     setRepaymentDialog(false);
     setSelectedBorrowing(null);
+
+    setRepaymentForm({
+      amount: "",
+      repaymentDate: today(),
+      description: "",
+      reference: "",
+    });
+
+    setBorrowingAgreementFile(null);
+    setProofOfPaymentFile(null);
   }
 
   function showSuccess(message) {
@@ -166,6 +180,63 @@ export default function Bank() {
     setTimeout(() => {
       setSuccess("");
     }, 4000);
+  }
+
+  function prepareRepaymentForBorrowing(borrowing) {
+    if (!borrowing) {
+      setSelectedBorrowing(null);
+
+      setRepaymentForm({
+        amount: "",
+        repaymentDate: today(),
+        description: "",
+        reference: "",
+      });
+
+      return;
+    }
+
+    setSelectedBorrowing(borrowing);
+
+    setRepaymentForm({
+      amount: "",
+      repaymentDate: today(),
+      description: "",
+      reference: borrowing.reference
+        ? `${borrowing.reference}-repayment`
+        : "",
+    });
+  }
+
+  function openRepaymentDialog() {
+    if (!isAdmin) {
+      setError("Only an Administrator can record debt repayments.");
+      return;
+    }
+
+    setError("");
+
+    setSelectedBorrowing(null);
+
+    setRepaymentForm({
+      amount: "",
+      repaymentDate: today(),
+      description: "",
+      reference: "",
+    });
+
+    setRepaymentDialog(true);
+  }
+
+  function handleBorrowingSelection(event) {
+    const borrowingId = event.target.value;
+
+    const borrowing =
+      outstandingBorrowings.find(
+        (item) => String(item.id) === String(borrowingId)
+      ) || null;
+
+    prepareRepaymentForBorrowing(borrowing);
   }
 
   async function handleInitialBalance(event) {
@@ -264,6 +335,11 @@ export default function Bank() {
       return;
     }
 
+    if (!borrowingAgreementFile) {
+      setError("Please upload the borrowing agreement/evidence document.");
+      return;
+    }
+
     try {
       setSaving(true);
       setError("");
@@ -274,6 +350,7 @@ export default function Bank() {
         borrowingDate: borrowingForm.borrowingDate,
         description: borrowingForm.description,
         reference: borrowingForm.reference,
+        borrowingAgreementFile,
       });
 
       closeDialogs();
@@ -285,6 +362,7 @@ export default function Bank() {
         description: "",
         reference: "",
       });
+      setBorrowingAgreementFile(null);
 
       showSuccess("Company borrowing recorded successfully.");
       await loadBankData();
@@ -300,7 +378,7 @@ export default function Bank() {
     event.preventDefault();
 
     if (!selectedBorrowing) {
-      setError("Please select a borrowing.");
+      setError("Please select a debt to repay.");
       return;
     }
 
@@ -317,6 +395,11 @@ export default function Bank() {
       return;
     }
 
+    if (!proofOfPaymentFile) {
+      setError("Please upload proof of payment.");
+      return;
+    }
+
     try {
       setSaving(true);
       setError("");
@@ -327,16 +410,10 @@ export default function Bank() {
         repaymentDate: repaymentForm.repaymentDate,
         description: repaymentForm.description,
         reference: repaymentForm.reference,
+        proofOfPaymentFile,
       });
 
       closeDialogs();
-
-      setRepaymentForm({
-        amount: "",
-        repaymentDate: today(),
-        description: "",
-        reference: "",
-      });
 
       showSuccess("Company debt repayment recorded successfully.");
       await loadBankData();
@@ -351,9 +428,15 @@ export default function Bank() {
   const outstandingBorrowings = useMemo(() => {
     return borrowings.filter(
       (borrowing) =>
-        borrowing.status !== "Paid" && borrowing.status !== "Voided"
+        borrowing.status !== "Paid" &&
+        borrowing.status !== "Voided" &&
+        Number(borrowing.outstanding_amount || 0) > 0
     );
   }, [borrowings]);
+
+  const selectedRepaymentNumber = selectedBorrowing
+    ? Number(selectedBorrowing.last_repayment_number || 0) + 1
+    : null;
 
   if (loading) {
     return (
@@ -372,28 +455,37 @@ export default function Bank() {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        justifyContent="space-between"
-        alignItems={{ xs: "flex-start", md: "center" }}
-        spacing={2}
-        mb={3}
-      >
-        <Box>
-          <Typography variant="h4" fontWeight={700}>
-            Bank
-          </Typography>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h4" fontWeight={700}>
+          Bank
+        </Typography>
 
-          <Typography color="text.secondary">
-            Track company funds, borrowings and debt repayments.
-          </Typography>
-        </Box>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>
+          Track company funds, borrowings and debt repayments.
+        </Typography>
 
         {isAdmin && (
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm: "repeat(2, 1fr)",
+                md: "repeat(4, 1fr)",
+              },
+              gap: 1,
+              width: "100%",
+            }}
+          >
             <Button
               variant="outlined"
               onClick={() => setInitialDialog(true)}
+              sx={{
+                height: 32,
+                minHeight: 32,
+                fontSize: "0.8rem",
+                whiteSpace: "nowrap",
+              }}
             >
               Set Initial Balance
             </Button>
@@ -401,6 +493,12 @@ export default function Bank() {
             <Button
               variant="contained"
               onClick={() => setMoneyDialog(true)}
+              sx={{
+                height: 32,
+                minHeight: 32,
+                fontSize: "0.8rem",
+                whiteSpace: "nowrap",
+              }}
             >
               Add Money
             </Button>
@@ -409,12 +507,32 @@ export default function Bank() {
               variant="contained"
               color="secondary"
               onClick={() => setBorrowingDialog(true)}
+              sx={{
+                height: 32,
+                minHeight: 32,
+                fontSize: "0.8rem",
+                whiteSpace: "nowrap",
+              }}
             >
               Record Borrowing
             </Button>
-          </Stack>
+
+            <Button
+              variant="contained"
+              color="warning"
+              onClick={openRepaymentDialog}
+              sx={{
+                height: 32,
+                minHeight: 32,
+                fontSize: "0.8rem",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Debt Repayment
+            </Button>
+          </Box>
         )}
-      </Stack>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
@@ -714,12 +832,13 @@ export default function Bank() {
                         <td style={{ padding: "12px" }}>
                           {isAdmin &&
                             borrowing.status !== "Paid" &&
-                            borrowing.status !== "Voided" && (
+                            borrowing.status !== "Voided" &&
+                            Number(borrowing.outstanding_amount || 0) > 0 && (
                               <Button
                                 size="small"
                                 variant="outlined"
                                 onClick={() => {
-                                  setSelectedBorrowing(borrowing);
+                                  prepareRepaymentForBorrowing(borrowing);
                                   setRepaymentDialog(true);
                                 }}
                               >
@@ -737,6 +856,7 @@ export default function Bank() {
         </Card>
       )}
 
+      {/* INITIAL BALANCE DIALOG */}
       <Dialog
         open={initialDialog}
         onClose={closeDialogs}
@@ -833,6 +953,7 @@ export default function Bank() {
         </Box>
       </Dialog>
 
+      {/* ADD MONEY DIALOG */}
       <Dialog
         open={moneyDialog}
         onClose={closeDialogs}
@@ -912,6 +1033,7 @@ export default function Bank() {
         </Box>
       </Dialog>
 
+      {/* BORROWING DIALOG */}
       <Dialog
         open={borrowingDialog}
         onClose={closeDialogs}
@@ -990,6 +1112,30 @@ export default function Bank() {
                 }
                 fullWidth
               />
+
+              <Button
+                variant="outlined"
+                component="label"
+                fullWidth
+                sx={{ justifyContent: "flex-start" }}
+              >
+                {borrowingAgreementFile
+                  ? `Borrowing Document: ${borrowingAgreementFile.name}`
+                  : "Upload Borrowing Agreement / Evidence *"}
+                <input
+                  hidden
+                  type="file"
+                  onChange={(event) =>
+                    setBorrowingAgreementFile(
+                      event.target.files?.[0] || null
+                    )
+                  }
+                />
+              </Button>
+
+              <Typography variant="caption" color="text.secondary">
+                Required. Upload the agreement or supporting evidence for this company borrowing.
+              </Typography>
             </Stack>
           </DialogContent>
 
@@ -1008,6 +1154,7 @@ export default function Bank() {
         </Box>
       </Dialog>
 
+      {/* DEBT REPAYMENT DIALOG */}
       <Dialog
         open={repaymentDialog}
         onClose={closeDialogs}
@@ -1018,78 +1165,169 @@ export default function Bank() {
           <DialogTitle>Repay Company Debt</DialogTitle>
 
           <DialogContent>
-            {selectedBorrowing && (
-              <Alert severity="info" sx={{ mb: 2 }}>
-                <strong>{selectedBorrowing.lender_name}</strong>
-                <br />
-                Outstanding debt:{" "}
-                {formatCurrency(selectedBorrowing.outstanding_amount)}
-              </Alert>
-            )}
-
             <Stack spacing={2} mt={1}>
               <TextField
-                label="Repayment Amount"
-                type="number"
-                value={repaymentForm.amount}
-                onChange={(event) =>
-                  setRepaymentForm({
-                    ...repaymentForm,
-                    amount: event.target.value,
-                  })
-                }
-                inputProps={{ min: 0.01, step: "0.01" }}
+                select
+                label="Debt to Repay"
+                value={selectedBorrowing?.id || ""}
+                onChange={handleBorrowingSelection}
                 fullWidth
                 required
-              />
-
-              <TextField
-                label="Repayment Date"
-                type="date"
-                value={repaymentForm.repaymentDate}
-                onChange={(event) =>
-                  setRepaymentForm({
-                    ...repaymentForm,
-                    repaymentDate: event.target.value,
-                  })
+                helperText={
+                  outstandingBorrowings.length
+                    ? "Select the company borrowing you want to repay."
+                    : "There are no outstanding company borrowings."
                 }
-                InputLabelProps={{ shrink: true }}
-                fullWidth
-                required
-              />
+              >
+                {!outstandingBorrowings.length ? (
+                  <MenuItem value="" disabled>
+                    No outstanding debts
+                  </MenuItem>
+                ) : (
+                  outstandingBorrowings.map((borrowing) => (
+                    <MenuItem key={borrowing.id} value={borrowing.id}>
+                      {borrowing.reference || "No Reference"} —{" "}
+                      {borrowing.lender_name} —{" "}
+                      {formatCurrency(borrowing.outstanding_amount)}
+                    </MenuItem>
+                  ))
+                )}
+              </TextField>
 
-              <TextField
-                label="Description"
-                value={repaymentForm.description}
-                onChange={(event) =>
-                  setRepaymentForm({
-                    ...repaymentForm,
-                    description: event.target.value,
-                  })
-                }
-                placeholder="Example: Director loan repayment"
-                fullWidth
-                required
-              />
+              {selectedBorrowing && (
+                <>
+                  <Alert severity="info">
+                    <Typography fontWeight={700}>
+                      {selectedBorrowing.lender_name}
+                    </Typography>
 
-              <TextField
-                label="Reference"
-                value={repaymentForm.reference}
-                onChange={(event) =>
-                  setRepaymentForm({
-                    ...repaymentForm,
-                    reference: event.target.value,
-                  })
-                }
-                fullWidth
-              />
+                    <Typography variant="body2">
+                      Original borrowing:{" "}
+                      {formatCurrency(selectedBorrowing.original_amount)}
+                    </Typography>
+
+                    <Typography variant="body2">
+                      Amount already repaid:{" "}
+                      {formatCurrency(selectedBorrowing.amount_repaid)}
+                    </Typography>
+
+                    <Typography variant="body2" fontWeight={700}>
+                      Outstanding debt:{" "}
+                      {formatCurrency(selectedBorrowing.outstanding_amount)}
+                    </Typography>
+                  </Alert>
+
+                  <Divider />
+
+                  <TextField
+                    label="Repayment Number"
+                    value={`Repayment ${selectedRepaymentNumber}`}
+                    fullWidth
+                    InputProps={{
+                      readOnly: true,
+                    }}
+                  />
+
+                  <TextField
+                    label="Reference"
+                    value={repaymentForm.reference}
+                    fullWidth
+                    InputProps={{
+                      readOnly: true,
+                    }}
+                    helperText="Automatically generated from the borrowing reference."
+                  />
+
+                  <TextField
+                    label="Repayment Amount"
+                    type="number"
+                    value={repaymentForm.amount}
+                    onChange={(event) =>
+                      setRepaymentForm({
+                        ...repaymentForm,
+                        amount: event.target.value,
+                      })
+                    }
+                    inputProps={{
+                      min: 0.01,
+                      max: Number(
+                        selectedBorrowing.outstanding_amount || 0
+                      ),
+                      step: "0.01",
+                    }}
+                    fullWidth
+                    required
+                    helperText={`Maximum repayment: ${formatCurrency(
+                      selectedBorrowing.outstanding_amount
+                    )}`}
+                  />
+
+                  <TextField
+                    label="Repayment Date"
+                    type="date"
+                    value={repaymentForm.repaymentDate}
+                    onChange={(event) =>
+                      setRepaymentForm({
+                        ...repaymentForm,
+                        repaymentDate: event.target.value,
+                      })
+                    }
+                    InputLabelProps={{ shrink: true }}
+                    fullWidth
+                    required
+                  />
+
+                  <TextField
+                    label="Description"
+                    value={repaymentForm.description}
+                    onChange={(event) =>
+                      setRepaymentForm({
+                        ...repaymentForm,
+                        description: event.target.value,
+                      })
+                    }
+                    placeholder="Example: Director loan repayment"
+                    fullWidth
+                    required
+                  />
+
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    fullWidth
+                    sx={{ justifyContent: "flex-start" }}
+                  >
+                    {proofOfPaymentFile
+                      ? `Proof of Payment: ${proofOfPaymentFile.name}`
+                      : "Upload Proof of Payment *"}
+                    <input
+                      hidden
+                      type="file"
+                      onChange={(event) =>
+                        setProofOfPaymentFile(
+                          event.target.files?.[0] || null
+                        )
+                      }
+                    />
+                  </Button>
+
+                  <Typography variant="caption" color="text.secondary">
+                    Required. Upload proof of payment for this debt repayment.
+                  </Typography>
+                </>
+              )}
             </Stack>
           </DialogContent>
 
           <DialogActions>
             <Button onClick={closeDialogs}>Cancel</Button>
 
-            <Button type="submit" variant="contained" disabled={saving}>
+            <Button
+              type="submit"
+              variant="contained"
+              color="warning"
+              disabled={saving || !selectedBorrowing}
+            >
               {saving ? "Saving..." : "Record Repayment"}
             </Button>
           </DialogActions>

@@ -3,42 +3,40 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 export default defineConfig({
-  plugins: [
-    react(),
+  plugins: [react(), VitePWA({
+    registerType: "autoUpdate",
 
-    VitePWA({
-      registerType: "autoUpdate",
+    manifest: {
+      name: "Umhlomunye Finance",
+      short_name: "Umhlomunye",
+      description: "Umhlomunye Finance Loan Management System",
 
-      manifest: {
-        name: "Umhlomunye Finance",
-        short_name: "Umhlomunye",
-        description: "Umhlomunye Finance Loan Management System",
+      theme_color: "#0b1f3a",
+      background_color: "#ffffff",
 
-        theme_color: "#0b1f3a",
-        background_color: "#ffffff",
+      display: "standalone",
+      orientation: "portrait",
 
-        display: "standalone",
-        orientation: "portrait",
+      start_url: "/mobile/application-review",
+      scope: "/mobile/",
 
-        start_url: "/mobile/application-review",
-        scope: "/mobile/",
+      icons: [
+        {
+          src: "/icon.svg",
+          sizes: "any",
+          type: "image/svg+xml",
+          purpose: "any",
+        },
+      ],
+    },
 
-        icons: [
-          {
-            src: "/icon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
-            purpose: "any",
-          },
-        ],
-      },
-
-      workbox: {
-        cleanupOutdatedCaches: true,
-      },
-    }),
-  ],
+    workbox: {
+      cleanupOutdatedCaches: true,
+    },
+  }), cloudflare()],
 
   resolve: {
     alias: {

@@ -1,36 +1,70 @@
 import { createContext, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-export const AuthContext = createContext();
+export const AuthContext = createContext({
+  user: null,
+  loading: true,
+});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function getUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    let mounted = true;
 
-      setUser(user);
-      setLoading(false);
-    }
+    const initializeAuth = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-    getUser();
+        if (!mounted) return;
+
+        setUser(session?.user ?? null);
+      } catch (error) {
+        console.error(
+          "AUTH INITIALIZATION ERROR:",
+          error
+        );
+
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    initializeAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!mounted) return;
 
-    return () => subscription.unsubscribe();
+        setUser(session?.user ?? null);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user }}>
-      {!loading && children}
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+      }}
+    >
+      {children}
     </AuthContext.Provider>
   );
 }

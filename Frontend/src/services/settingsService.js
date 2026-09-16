@@ -2,26 +2,125 @@ import { supabase } from "../lib/supabase";
 import { isCurrentUserAdmin } from "./userService";
 
 const DEFAULT_SETTINGS = {
-  company_name: "Umhlomunye Finance",
+  // Company identity
+  company_name: "",
+  short_name: "",
 
+  // Company information
+  financial_year_end: null,
+  company_address: "",
+  company_logo_url: "",
+
+  // Derived system identity
+  system_name: "",
+  mobile_app_name: "",
+
+  // Loan amount rules
   minimum_loan_amount: 100,
   maximum_loan_amount: 15000,
 
+  // Interest-rate rules
   tier_1_max_amount: 2000,
   tier_1_interest_rate: 40,
-
   tier_2_interest_rate: 30,
 
+  // Loan-term rules
+  term_1_max_amount: 5000,
+  term_1_months: 1,
+
+  term_2_max_amount: 8000,
+  term_2_months: 3,
+
+  term_3_months: 6,
+
+  // Global loan-term safety limit
   maximum_loan_term_months: 6,
 
+  // Interest-cycle rules
+  interest_cycle_enabled: true,
   interest_cycle_days: 8,
+  interest_cycle_time: "00:01:00",
 
+  // Regional settings
   currency: "ZAR",
   timezone: "Africa/Johannesburg",
 };
 
+
+/**
+ * Build the system identity from the registered company information.
+ *
+ * System name:
+ *   Company Name + " LMS"
+ *
+ * Mobile app name:
+ *   Short Name + " LMS"
+ *
+ * These are derived values and are intentionally not stored
+ * as independent database fields.
+ */
+function buildSystemIdentity(companyName, shortName) {
+  const cleanCompanyName =
+    typeof companyName === "string"
+      ? companyName.trim()
+      : "";
+
+  const cleanShortName =
+    typeof shortName === "string"
+      ? shortName.trim()
+      : "";
+
+  return {
+    system_name: cleanCompanyName
+      ? `${cleanCompanyName} LMS`
+      : "",
+
+    mobile_app_name: cleanShortName
+      ? `${cleanShortName} LMS`
+      : "",
+  };
+}
+
+
+/**
+ * Normalize the financial year-end month.
+ *
+ * The database stores this as an integer:
+ *
+ * 1  = January
+ * 2  = February
+ * ...
+ * 12 = December
+ *
+ * null means it has not yet been configured.
+ */
+function normalizeFinancialYearEnd(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const month = Number(value);
+
+  if (
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12
+  ) {
+    return null;
+  }
+
+  return month;
+}
+
+
 /**
  * Get the current system settings.
+ *
+ * All loan rules must be obtained from this record.
  */
 export async function getSystemSettings() {
   const { data, error } = await supabase
@@ -37,17 +136,57 @@ export async function getSystemSettings() {
   }
 
   if (!data) {
-    return DEFAULT_SETTINGS;
+    return {
+      ...DEFAULT_SETTINGS,
+    };
   }
+
+  const companyName =
+    typeof data.company_name === "string"
+      ? data.company_name.trim()
+      : "";
+
+  const shortName =
+    typeof data.short_name === "string"
+      ? data.short_name.trim()
+      : "";
+
+  const identity = buildSystemIdentity(
+    companyName,
+    shortName
+  );
 
   return {
     ...DEFAULT_SETTINGS,
     ...data,
+
+    company_name: companyName,
+    short_name: shortName,
+
+    financial_year_end:
+      normalizeFinancialYearEnd(
+        data.financial_year_end
+      ),
+
+    company_address:
+      data.company_address || "",
+
+    company_logo_url:
+      data.company_logo_url || "",
+
+    system_name:
+      identity.system_name,
+
+    mobile_app_name:
+      identity.mobile_app_name,
   };
 }
 
+
 /**
  * Update the system settings.
+ *
+ * Only an Administrator may change system settings.
  */
 export async function updateSystemSettings(settings) {
   const admin = await isCurrentUserAdmin();
@@ -78,16 +217,54 @@ export async function updateSystemSettings(settings) {
   const userId =
     userData?.user?.id || null;
 
+  const companyName =
+    settings.company_name?.trim() || "";
+
+  const shortName =
+    settings.short_name?.trim() || "";
+
+  const financialYearEnd =
+    normalizeFinancialYearEnd(
+      settings.financial_year_end
+    );
+
   const payload = {
+    // ----------------------------------------------------------
+    // Company identity
+    // ----------------------------------------------------------
+
     company_name:
-      settings.company_name?.trim() ||
-      "Umhlomunye Finance",
+      companyName,
+
+    short_name:
+      shortName || null,
+
+    // ----------------------------------------------------------
+    // Company information
+    // ----------------------------------------------------------
+
+    financial_year_end:
+      financialYearEnd,
+
+    company_address:
+      settings.company_address?.trim() || null,
+
+    company_logo_url:
+      settings.company_logo_url || null,
+
+    // ----------------------------------------------------------
+    // Loan amount settings
+    // ----------------------------------------------------------
 
     minimum_loan_amount:
       Number(settings.minimum_loan_amount),
 
     maximum_loan_amount:
       Number(settings.maximum_loan_amount),
+
+    // ----------------------------------------------------------
+    // Interest-rate settings
+    // ----------------------------------------------------------
 
     tier_1_max_amount:
       Number(settings.tier_1_max_amount),
@@ -98,13 +275,50 @@ export async function updateSystemSettings(settings) {
     tier_2_interest_rate:
       Number(settings.tier_2_interest_rate),
 
+    // ----------------------------------------------------------
+    // Loan-term settings
+    // ----------------------------------------------------------
+
+    term_1_max_amount:
+      Number(settings.term_1_max_amount),
+
+    term_1_months:
+      Number(settings.term_1_months),
+
+    term_2_max_amount:
+      Number(settings.term_2_max_amount),
+
+    term_2_months:
+      Number(settings.term_2_months),
+
+    term_3_months:
+      Number(settings.term_3_months),
+
+    // ----------------------------------------------------------
+    // Global loan-term safety limit
+    // ----------------------------------------------------------
+
     maximum_loan_term_months:
       Number(
         settings.maximum_loan_term_months
       ),
 
+    // ----------------------------------------------------------
+    // Interest-cycle settings
+    // ----------------------------------------------------------
+
+    interest_cycle_enabled:
+      Boolean(settings.interest_cycle_enabled),
+
     interest_cycle_days:
       Number(settings.interest_cycle_days),
+
+    interest_cycle_time:
+      settings.interest_cycle_time || null,
+
+    // ----------------------------------------------------------
+    // Regional settings
+    // ----------------------------------------------------------
 
     currency:
       settings.currency || "ZAR",
@@ -113,10 +327,15 @@ export async function updateSystemSettings(settings) {
       settings.timezone ||
       "Africa/Johannesburg",
 
+    // ----------------------------------------------------------
+    // Audit
+    // ----------------------------------------------------------
+
     updated_at:
       new Date().toISOString(),
 
-    updated_by: userId,
+    updated_by:
+      userId,
   };
 
   const { data, error } =
@@ -136,28 +355,436 @@ export async function updateSystemSettings(settings) {
     throw error;
   }
 
+  const savedCompanyName =
+    typeof data.company_name === "string"
+      ? data.company_name.trim()
+      : "";
+
+  const savedShortName =
+    typeof data.short_name === "string"
+      ? data.short_name.trim()
+      : "";
+
+  const identity =
+    buildSystemIdentity(
+      savedCompanyName,
+      savedShortName
+    );
+
+  return {
+    ...DEFAULT_SETTINGS,
+    ...data,
+
+    company_name:
+      savedCompanyName,
+
+    short_name:
+      savedShortName,
+
+    financial_year_end:
+      normalizeFinancialYearEnd(
+        data.financial_year_end
+      ),
+
+    company_address:
+      data.company_address || "",
+
+    company_logo_url:
+      data.company_logo_url || "",
+
+    system_name:
+      identity.system_name,
+
+    mobile_app_name:
+      identity.mobile_app_name,
+  };
+}
+
+
+/* ============================================================
+   MOBILE APP PAIRING
+   ============================================================ */
+
+
+/**
+ * Generate a new secure mobile-app pairing credential.
+ *
+ * The actual token and numeric code are generated inside
+ * PostgreSQL and returned only once.
+ *
+ * Only an authenticated administrator can call this.
+ */
+export async function createMobilePairing() {
+  const admin = await isCurrentUserAdmin();
+
+  if (!admin) {
+    throw new Error(
+      "Only an Administrator can generate mobile pairing credentials."
+    );
+  }
+
+  const { data, error } =
+    await supabase.rpc(
+      "create_mobile_pairing"
+    );
+
+  if (error) {
+    console.error(
+      "createMobilePairing:",
+      error
+    );
+
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(
+      "The mobile pairing credentials could not be generated."
+    );
+  }
+
   return data;
 }
 
+
 /**
- * Determine the applicable interest rate.
- *
- * Default:
- * R100 - R2,000  = 40%
- * Above R2,000   = 30%
+ * Get all mobile devices connected to this LMS.
  */
-export function getInterestRateForAmount(amount, settings) {
+export async function getMobileDevices() {
+  const admin = await isCurrentUserAdmin();
+
+  if (!admin) {
+    throw new Error(
+      "Only an Administrator can view connected mobile devices."
+    );
+  }
+
+  const { data, error } =
+    await supabase.rpc(
+      "get_mobile_devices"
+    );
+
+  if (error) {
+    console.error(
+      "getMobileDevices:",
+      error
+    );
+
+    throw error;
+  }
+
+  return Array.isArray(data)
+    ? data
+    : [];
+}
+
+
+/**
+ * Revoke one mobile device.
+ */
+export async function revokeMobileDevice(
+  deviceId
+) {
+  const admin = await isCurrentUserAdmin();
+
+  if (!admin) {
+    throw new Error(
+      "Only an Administrator can revoke a mobile device."
+    );
+  }
+
+  if (!deviceId) {
+    throw new Error(
+      "Mobile device ID is required."
+    );
+  }
+
+  const { data, error } =
+    await supabase.rpc(
+      "revoke_mobile_device",
+      {
+        p_device_id: deviceId,
+      }
+    );
+
+  if (error) {
+    console.error(
+      "revokeMobileDevice:",
+      error
+    );
+
+    throw error;
+  }
+
+  return data;
+}
+
+
+/**
+ * Revoke every mobile device connected to this LMS.
+ */
+export async function revokeAllMobileDevices() {
+  const admin = await isCurrentUserAdmin();
+
+  if (!admin) {
+    throw new Error(
+      "Only an Administrator can revoke mobile devices."
+    );
+  }
+
+  const { data, error } =
+    await supabase.rpc(
+      "revoke_all_mobile_devices"
+    );
+
+  if (error) {
+    console.error(
+      "revokeAllMobileDevices:",
+      error
+    );
+
+    throw error;
+  }
+
+  return data;
+}
+
+
+/* ============================================================
+   LOAN RULES
+   ============================================================ */
+
+
+/**
+ * Determine the applicable interest rate for a loan amount.
+ *
+ * The threshold and rates come entirely from Settings.
+ */
+export function getInterestRateForAmount(
+  amount,
+  settings
+) {
   const value = Number(amount);
 
-  if (!Number.isFinite(value) || value <= 0) {
+  if (
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
     return 0;
   }
 
-  const tierLimit = Number(settings?.tier_1_max_amount ?? 2000);
-  const tier1Rate = Number(settings?.tier_1_interest_rate ?? 40);
-  const tier2Rate = Number(settings?.tier_2_interest_rate ?? 30);
+  if (!settings) {
+    throw new Error(
+      "Loan settings could not be loaded."
+    );
+  }
 
-  return value <= tierLimit ? tier1Rate : tier2Rate;
+  const tierLimit =
+    Number(settings.tier_1_max_amount);
+
+  const tier1Rate =
+    Number(settings.tier_1_interest_rate);
+
+  const tier2Rate =
+    Number(settings.tier_2_interest_rate);
+
+  if (
+    !Number.isFinite(tierLimit) ||
+    !Number.isFinite(tier1Rate) ||
+    !Number.isFinite(tier2Rate)
+  ) {
+    throw new Error(
+      "Interest-rate settings are incomplete or invalid."
+    );
+  }
+
+  return value <= tierLimit
+    ? tier1Rate
+    : tier2Rate;
 }
+
+
+/**
+ * Determine the applicable loan term from Settings.
+ */
+export function getLoanTermForAmount(
+  amount,
+  settings
+) {
+  const value = Number(amount);
+
+  if (
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
+    throw new Error(
+      "Enter a valid loan amount."
+    );
+  }
+
+  if (!settings) {
+    throw new Error(
+      "Loan settings could not be loaded."
+    );
+  }
+
+  const minimum =
+    Number(settings.minimum_loan_amount);
+
+  const maximum =
+    Number(settings.maximum_loan_amount);
+
+  const term1Max =
+    Number(settings.term_1_max_amount);
+
+  const term1Months =
+    Number(settings.term_1_months);
+
+  const term2Max =
+    Number(settings.term_2_max_amount);
+
+  const term2Months =
+    Number(settings.term_2_months);
+
+  const term3Months =
+    Number(settings.term_3_months);
+
+  const maximumTerm =
+    Number(
+      settings.maximum_loan_term_months
+    );
+
+  if (
+    !Number.isFinite(minimum) ||
+    !Number.isFinite(maximum) ||
+    !Number.isFinite(term1Max) ||
+    !Number.isFinite(term1Months) ||
+    !Number.isFinite(term2Max) ||
+    !Number.isFinite(term2Months) ||
+    !Number.isFinite(term3Months) ||
+    !Number.isFinite(maximumTerm)
+  ) {
+    throw new Error(
+      "Loan term settings are incomplete or invalid."
+    );
+  }
+
+  if (value < minimum) {
+    throw new Error(
+      `Loan amount must be at least ${minimum}.`
+    );
+  }
+
+  if (value > maximum) {
+    throw new Error(
+      `Loan amount cannot exceed ${maximum}.`
+    );
+  }
+
+  if (
+    term1Max < minimum ||
+    term2Max < term1Max ||
+    term3Months <= 0 ||
+    term1Months <= 0 ||
+    term2Months <= 0 ||
+    maximumTerm <= 0
+  ) {
+    throw new Error(
+      "Loan term settings are invalid."
+    );
+  }
+
+  let termMonths;
+
+  if (value <= term1Max) {
+    termMonths = term1Months;
+  } else if (value <= term2Max) {
+    termMonths = term2Months;
+  } else {
+    termMonths = term3Months;
+  }
+
+  if (termMonths > maximumTerm) {
+    throw new Error(
+      "The configured loan term exceeds the maximum permitted loan term."
+    );
+  }
+
+  return termMonths;
+}
+
+
+/**
+ * Validate the interest-cycle configuration.
+ *
+ * No business-rule fallback is supplied here.
+ * The values must come from Settings.
+ */
+export function validateInterestCycleSettings(
+  settings
+) {
+  if (!settings) {
+    throw new Error(
+      "Loan settings could not be loaded."
+    );
+  }
+
+  const enabled =
+    settings.interest_cycle_enabled;
+
+  const days =
+    Number(settings.interest_cycle_days);
+
+  const time =
+    settings.interest_cycle_time;
+
+  const timezone =
+    settings.timezone;
+
+  if (typeof enabled !== "boolean") {
+    throw new Error(
+      "Interest-cycle enabled setting is invalid."
+    );
+  }
+
+  if (enabled) {
+    if (
+      !Number.isFinite(days) ||
+      days <= 0
+    ) {
+      throw new Error(
+        "Interest-cycle days setting is incomplete or invalid."
+      );
+    }
+
+    if (
+      typeof time !== "string" ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(
+        time
+      )
+    ) {
+      throw new Error(
+        "Interest-cycle time setting is incomplete or invalid."
+      );
+    }
+  }
+
+  if (
+    typeof timezone !== "string" ||
+    !timezone.trim()
+  ) {
+    throw new Error(
+      "Timezone setting is incomplete or invalid."
+    );
+  }
+
+  return {
+    enabled,
+    days,
+    time,
+    timezone,
+  };
+}
+
 
 export { DEFAULT_SETTINGS };

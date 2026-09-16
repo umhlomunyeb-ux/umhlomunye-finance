@@ -21,7 +21,6 @@ import {
   DialogTitle,
   Divider,
   Grid,
-  IconButton,
   Paper,
   Stack,
   Tab,
@@ -31,455 +30,477 @@ import {
 
 import {
   ArrowBack,
-  Close,
   Description,
   Download,
-  Email,
   FolderOpen,
   History,
+  OpenInNew,
+  Payment,
   PictureAsPdf,
-  Print,
   ReceiptLong,
+  Verified,
 } from "@mui/icons-material";
 
-import {
-  getLoan,
-  getLoanTransactions,
-  runDailyLoanProcessing,
-  subscribeToLoan,
-  removeLoanSubscription,
-} from "../../services/loanService";
+import { getLoan } from "../../services/LoanService";
+import { getLoanStatement } from "../../services/statementService";
+import { getLoanTransactions } from "../../services/transactionService";
+import RecordPayment from "../Repayments/RecordPayment";
 
-import {
-  getLoanStatement,
-  getExistingLoanStatementDocument,
-} from "../../services/statementService";
-
-import LoanTransactions from "../../components/loans/LoanTransactions";
-
-
-/* =========================================================
-   HELPERS
-========================================================= */
+const actionButtonSx = {
+  minWidth: 180,
+  width: 180,
+  height: 42,
+  textTransform: "none",
+  fontWeight: 700,
+  whiteSpace: "nowrap",
+};
 
 function toNumber(value) {
   const number = Number(value);
-
-  return Number.isFinite(number)
-    ? number
-    : 0;
+  return Number.isFinite(number) ? number : 0;
 }
 
-
-function formatMoney(value) {
-  return `R ${toNumber(value).toFixed(2)}`;
+function formatCurrency(value) {
+  return `R${toNumber(value).toFixed(2)}`;
 }
-
 
 function formatDate(value) {
-  if (!value) {
-    return "—";
-  }
+  if (!value) return "-";
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "—";
+    return "-";
   }
 
-  return date.toLocaleDateString("en-ZA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return date.toLocaleDateString("en-ZA");
 }
 
-
 function formatDateTime(value) {
-  if (!value) {
-    return "—";
-  }
+  if (!value) return "-";
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "—";
+    return "-";
   }
 
   return date.toLocaleString("en-ZA");
 }
 
+function getTransactionDebit(transaction) {
+  return toNumber(transaction?.debit);
+}
 
-/* =========================================================
-   BLOB → BASE64
-========================================================= */
+function getTransactionCredit(transaction) {
+  return toNumber(transaction?.credit);
+}
 
-async function blobToBase64(blob) {
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
+function getTransactionBalance(transaction) {
+  return toNumber(transaction?.balance);
+}
 
-    reader.onloadend = () => {
-      const result = String(
-        reader.result || ""
-      );
+/*
+ * IMPORTANT:
+ * Transactions must always display in chronological order.
+ *
+ * Oldest / first recorded transaction = TOP
+ * Newest / latest transaction = BOTTOM
+ *
+ * transaction_date is the primary chronological field.
+ * created_at is used as a tie-breaker when two transactions
+ * have the same transaction date/time.
+ */
+function sortTransactionsChronologically(transactionList) {
+  return [...(transactionList || [])].sort((a, b) => {
+    const dateA = new Date(
+      a?.transaction_date || a?.created_at || 0
+    ).getTime();
 
-      const commaIndex =
-        result.indexOf(",");
+    const dateB = new Date(
+      b?.transaction_date || b?.created_at || 0
+    ).getTime();
 
-      resolve(
-        commaIndex >= 0
-          ? result.slice(
-              commaIndex + 1
-            )
-          : result
-      );
-    };
+    if (dateA !== dateB) {
+      return dateA - dateB;
+    }
 
-    reader.onerror = reject;
+    const createdA = new Date(
+      a?.created_at || 0
+    ).getTime();
 
-    reader.readAsDataURL(blob);
+    const createdB = new Date(
+      b?.created_at || 0
+    ).getTime();
+
+    if (createdA !== createdB) {
+      return createdA - createdB;
+    }
+
+    return String(a?.id || "").localeCompare(
+      String(b?.id || "")
+    );
   });
 }
-
-
-/* =========================================================
-   SAFE FILE NAME
-========================================================= */
-
-function safeFileName(value) {
-  return String(value || "Loan Document")
-    .replace(/\.pdf$/i, "")
-    .replace(/[^\w.-]+/g, "_");
-}
-
-
-/* =========================================================
-   GET SETTLEMENT VALIDITY DATE
-     
-   BUSINESS RULE:
-   If interest updates on the 15th,
-   settlement quote is valid until the 14th.
-========================================================= */
-
-function getSettlementValidUntil(nextInterestDate) {
-  if (!nextInterestDate) {
-    return null;
-  }
-
-  const date = new Date(
-    nextInterestDate
-  );
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  date.setDate(
-    date.getDate() - 1
-  );
-
-  return date;
-}
-
-
-/* =========================================================
-   COMPONENT
-========================================================= */
 
 export default function LoanProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  const [loan, setLoan] = useState(null);
+  const [customer, setCustomer] = useState(null);
+  const [agreement, setAgreement] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [transactions, setTransactions] = useState([]);
 
-  /* =======================================================
-     STATE
-  ======================================================= */
+  const [statement, setStatement] = useState({
+    transactions: [],
+    overdues: [],
+  });
 
-  const [loan, setLoan] =
-    useState(null);
-
-  const [transactions, setTransactions] =
-    useState([]);
-
-  const [agreement, setAgreement] =
-    useState(null);
-
-  const [documents, setDocuments] =
-    useState([]);
-
-  const [statement, setStatement] =
-    useState({
-      transactions: [],
-      overdues: [],
-    });
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [loadingDocuments, setLoadingDocuments] =
+  const [loading, setLoading] = useState(true);
+  const [loadingTransactions, setLoadingTransactions] =
+    useState(false);
+  const [generatingStatement, setGeneratingStatement] =
+    useState(false);
+  const [generatingPaidUpLetter, setGeneratingPaidUpLetter] =
     useState(false);
 
-  const [openingDocument, setOpeningDocument] =
+  const [error, setError] = useState("");
+
+  const [tab, setTab] = useState(0);
+
+  const [paymentDialogOpen, setPaymentDialogOpen] =
     useState(false);
 
-  const [generatingSettlement, setGeneratingSettlement] =
-    useState(false);
+  const currentLoanBalance = useMemo(() => {
+    if (!loan) return 0;
 
-  const [sendingEmail, setSendingEmail] =
-    useState(false);
+    const value =
+      loan.current_balance ??
+      loan.balance ??
+      0;
 
-  const [emailSuccess, setEmailSuccess] =
-    useState("");
-
-  const [tab, setTab] =
-    useState(0);
-
-  const [error, setError] =
-    useState("");
-
-
-  /* -------------------------------------------------------
-     DOCUMENT VIEWER
-  ------------------------------------------------------- */
-
-  const [documentViewerOpen, setDocumentViewerOpen] =
-    useState(false);
-
-  const [documentViewerUrl, setDocumentViewerUrl] =
-    useState("");
-
-  const [documentViewerName, setDocumentViewerName] =
-    useState("");
-
-  const [documentViewerType, setDocumentViewerType] =
-    useState("");
-
-  const [documentViewerBlobUrl, setDocumentViewerBlobUrl] =
-    useState(null);
-
-
-  /* =======================================================
-     CUSTOMER NAME
-  ======================================================= */
-
-  const customerName = useMemo(() => {
-    if (!loan?.customers) {
-      return "Customer";
-    }
-
-    return (
-      `${loan.customers.first_name || ""} ${
-        loan.customers.last_name || ""
-      }`.trim() || "Customer"
-    );
+    return toNumber(value);
   }, [loan]);
 
-
-  /* =======================================================
-     LOAD DOCUMENTS
-  ======================================================= */
-
-  const loadDocuments = useCallback(
-    async () => {
-      if (!id) {
-        return;
-      }
-
-      setLoadingDocuments(true);
-
-      try {
-        const {
-          data,
-          error: documentError,
-        } = await supabase
-          .from("documents")
-          .select(`
-            id,
-            customer_id,
-            loan_id,
-            agreement_id,
-            document_type,
-            document_name,
-            document_path,
-            created_by,
-            created_at
-          `)
-          .eq("loan_id", id)
-          .order("created_at", {
-            ascending: false,
-          });
-
-        if (documentError) {
-          throw documentError;
-        }
-
-        setDocuments(data || []);
-      } catch (documentError) {
-        console.error(
-          "LOAD DOCUMENTS ERROR:",
-          documentError
-        );
-
-        setError(
-          documentError?.message ||
-            "Unable to load loan documents."
-        );
-      } finally {
-        setLoadingDocuments(false);
-      }
-    },
-    [id]
+  const isPaidUp = useMemo(
+    () => currentLoanBalance <= 0,
+    [currentLoanBalance]
   );
 
+  const agreementStatus = useMemo(
+    () =>
+      String(
+        agreement?.status || ""
+      )
+        .trim()
+        .toLowerCase(),
+    [agreement]
+  );
 
-  /* =======================================================
-     LOAD AGREEMENT
-  ======================================================= */
+  const isAgreementPending = useMemo(
+    () => agreementStatus === "pending",
+    [agreementStatus]
+  );
 
-  const loadAgreement = useCallback(
-    async () => {
-      if (!id) {
-        return;
-      }
+  const isAgreementSigned = useMemo(
+    () => agreementStatus === "signed",
+    [agreementStatus]
+  );
+
+  const hasAgreement = useMemo(
+    () => Boolean(agreement?.id),
+    [agreement]
+  );
+
+  const safeLoanNumber = useMemo(
+    () =>
+      loan?.loan_number ||
+      `LOAN-${id}`,
+    [loan, id]
+  );
+
+  const loadTransactions = useCallback(
+    async (loanId) => {
+      if (!loanId) return [];
+
+      setLoadingTransactions(true);
 
       try {
-        const {
-          data,
-          error: agreementError,
-        } = await supabase
-          .from("loan_agreements")
-          .select(`
-            id,
-            loan_id,
-            customer_id,
-            agreement_number,
-            agreement_version,
-            verification_token,
-            signing_token,
-            status,
-            accepted_at,
-            generated_at,
-            created_at,
-            document_path
-          `)
-          .eq("loan_id", id)
-          .order("created_at", {
-            ascending: false,
+        const data =
+          await getLoanTransactions(loanId);
+
+        const normalized = (data || []).map(
+          (transaction) => ({
+            ...transaction,
+            debit: toNumber(
+              transaction.debit
+            ),
+            credit: toNumber(
+              transaction.credit
+            ),
+            balance: toNumber(
+              transaction.balance
+            ),
           })
-          .limit(1)
-          .maybeSingle();
+        );
 
-        if (agreementError) {
-          throw agreementError;
-        }
+        const chronological =
+          sortTransactionsChronologically(
+            normalized
+          );
 
-        setAgreement(data || null);
-      } catch (agreementError) {
+        setTransactions(chronological);
+
+        return chronological;
+      } catch (err) {
+        console.error(
+          "LOAD TRANSACTIONS ERROR:",
+          err
+        );
+        throw err;
+      } finally {
+        setLoadingTransactions(false);
+      }
+    },
+    []
+  );
+
+  const loadAgreement = useCallback(
+    async (loanId) => {
+      if (!loanId) return null;
+
+      const {
+        data,
+        error: agreementError,
+      } = await supabase
+        .from("loan_agreements")
+        .select("*")
+        .eq("loan_id", loanId)
+        .maybeSingle();
+
+      if (agreementError) {
         console.error(
           "LOAD AGREEMENT ERROR:",
           agreementError
         );
+        throw agreementError;
       }
+
+      setAgreement(data || null);
+
+      return data || null;
     },
-    [id]
+    []
   );
 
+  const loadDocuments = useCallback(
+    async (loanId, customerId) => {
+      if (!loanId) return [];
 
-  /* =======================================================
-     LOAD STATEMENT DATA
-  ======================================================= */
-
-  const loadStatement = useCallback(
-    async () => {
-      if (!id) {
-        return;
-      }
-
-      try {
-        const data =
-          await getLoanStatement(id);
-
-        setStatement({
-          transactions:
-            data?.transactions || [],
-          overdues:
-            data?.overdues || [],
+      let query = supabase
+        .from("documents")
+        .select("*")
+        .eq("loan_id", loanId)
+        .order("created_at", {
+          ascending: false,
         });
-      } catch (statementError) {
-        console.error(
-          "LOAD STATEMENT ERROR:",
-          statementError
+
+      if (customerId) {
+        query = query.or(
+          `loan_id.eq.${loanId},customer_id.eq.${customerId}`
         );
-
-        setStatement({
-          transactions: [],
-          overdues: [],
-        });
       }
+
+      const {
+        data,
+        error: documentsError,
+      } = await query;
+
+      if (documentsError) {
+        console.error(
+          "LOAD DOCUMENTS ERROR:",
+          documentsError
+        );
+        throw documentsError;
+      }
+
+      const uniqueDocuments = [];
+      const seen = new Set();
+
+      for (const document of data || []) {
+        const key =
+          document.id ||
+          document.path ||
+          `${document.document_type}-${document.document_name}`;
+
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueDocuments.push(document);
+        }
+      }
+
+      setDocuments(uniqueDocuments);
+
+      return uniqueDocuments;
     },
-    [id]
+    []
   );
-
-
-  /* =======================================================
-     LOAD LOAN
-  ======================================================= */
 
   const loadLoan = useCallback(
-    async (
-      processInterest = false
-    ) => {
+    async () => {
       if (!id) {
-        setError(
-          "Loan ID is missing."
-        );
-
+        setError("Loan ID is missing.");
         setLoading(false);
-
         return;
       }
 
-      try {
-        setError("");
+      setLoading(true);
+      setError("");
 
-        if (processInterest) {
-          try {
-            await runDailyLoanProcessing();
-          } catch (processingError) {
-            console.warn(
-              "DAILY LOAN PROCESSING WARNING:",
-              processingError
+      try {
+        const loanData =
+          await getLoan(id);
+
+        if (!loanData) {
+          throw new Error(
+            "Loan not found."
+          );
+        }
+
+        /*
+         * =====================================================
+         * LOAD CUSTOMER INFORMATION
+         *
+         * LoanService returns the Supabase relationship as
+         * "customers", not "customer".
+         *
+         * We normalize it to "customer" so the rest of this
+         * LoanProfile can continue using loan.customer.
+         * =====================================================
+         */
+        let customerData =
+          loanData.customer ||
+          loanData.customers ||
+          null;
+
+        /*
+         * If the relationship was not returned for any reason,
+         * explicitly load the customer using customer_id.
+         */
+        if (
+          !customerData &&
+          loanData.customer_id
+        ) {
+          const {
+            data: fetchedCustomer,
+            error: customerError,
+          } = await supabase
+            .from("customers")
+            .select("*")
+            .eq(
+              "id",
+              loanData.customer_id
+            )
+            .maybeSingle();
+
+          if (customerError) {
+            console.error(
+              "LOAD CUSTOMER ERROR:",
+              customerError
             );
+          } else {
+            customerData =
+              fetchedCustomer || null;
           }
         }
 
-        const [
-          loanData,
-          transactionData,
-        ] = await Promise.all([
-          getLoan(id),
-          getLoanTransactions(id),
-        ]);
+        /*
+         * Normalize the customer name so the UI can display
+         * it even when the customers table stores first_name
+         * and last_name separately.
+         */
+        if (customerData) {
+          customerData = {
+            ...customerData,
+            full_name:
+              customerData.full_name ||
+              customerData.name ||
+              [
+                customerData.first_name,
+                customerData.last_name,
+              ]
+                .filter(Boolean)
+                .join(" ") ||
+              "-",
+          };
+        }
 
-        setLoan(loanData);
+        setCustomer(customerData);
 
-        setTransactions(
-          transactionData || []
-        );
+        /*
+         * Attach the customer as "customer" to the loan object.
+         * This keeps all existing loan.customer references
+         * working throughout LoanProfile.
+         */
+        setLoan({
+          ...loanData,
+          customer: customerData,
+        });
 
-        await Promise.all([
-          loadAgreement(),
-          loadDocuments(),
-          loadStatement(),
-        ]);
-      } catch (loadError) {
+        const transactionData =
+          await loadTransactions(id);
+
+        try {
+          await loadAgreement(id);
+        } catch (agreementError) {
+          console.error(
+            agreementError
+          );
+        }
+
+        try {
+          await loadDocuments(
+            id,
+            loanData.customer_id
+          );
+        } catch (documentsError) {
+          console.error(
+            documentsError
+          );
+        }
+
+        try {
+          const statementData =
+            await getLoanStatement(id);
+
+          setStatement({
+            transactions:
+              transactionData,
+            overdues:
+              statementData?.overdues ||
+              [],
+          });
+        } catch (statementError) {
+          console.error(
+            "LOAD STATEMENT DATA ERROR:",
+            statementError
+          );
+
+          setStatement({
+            transactions:
+              transactionData,
+            overdues: [],
+          });
+        }
+      } catch (err) {
         console.error(
-          "LOAD LOAN PROFILE ERROR:",
-          loadError
+          "LOAD LOAN ERROR:",
+          err
         );
-
         setError(
-          loadError?.message ||
+          err?.message ||
             "Unable to load loan."
         );
       } finally {
@@ -490,116 +511,47 @@ export default function LoanProfile() {
       id,
       loadAgreement,
       loadDocuments,
-      loadStatement,
+      loadTransactions,
     ]
   );
 
-
-  /* =======================================================
-     INITIAL LOAD
-  ======================================================= */
-
   useEffect(() => {
-    loadLoan(true);
+    loadLoan();
   }, [loadLoan]);
 
+  const handlePaymentComplete =
+    async () => {
+      setPaymentDialogOpen(false);
 
-  /* =======================================================
-     REALTIME
-  ======================================================= */
-
-  useEffect(() => {
-    if (!id) {
-      return undefined;
-    }
-
-    let channel;
-
-    try {
-      channel = subscribeToLoan(
-        id,
-        async () => {
-          await loadLoan(false);
-        }
-      );
-    } catch (subscriptionError) {
-      console.error(
-        "LOAN SUBSCRIPTION ERROR:",
-        subscriptionError
-      );
-    }
-
-    return () => {
-      if (channel) {
-        removeLoanSubscription(
-          channel
-        );
+      try {
+        await loadLoan();
+      } catch (err) {
+        console.error(err);
       }
     };
-  }, [id, loadLoan]);
 
-
-  /* =======================================================
-     DOCUMENT LOOKUPS
-  ======================================================= */
-
-  const signedAgreementDocument =
-    useMemo(() => {
-      return documents.find(
-        (document) =>
-          document.document_type ===
-            "Signed Loan Agreement" &&
-          document.document_path &&
-          (
-            !agreement?.id ||
-            document.agreement_id ===
-              agreement.id
-          )
-      );
-    }, [
-      documents,
-      agreement,
-    ]);
-
-
-  const statementDocument =
-    useMemo(() => {
-      return documents.find(
-        (document) =>
-          document.document_type ===
-            "Statement" &&
-          document.document_path
-      );
-    }, [documents]);
-
-
-  /* =======================================================
-     CREATE SIGNED STORAGE URL
-  ======================================================= */
-
-  const getSignedDocumentUrl =
+  const getDocumentUrl =
     useCallback(
-      async (
-        documentPath
-      ) => {
-        if (!documentPath) {
+      async (document) => {
+        if (!document?.path) {
           throw new Error(
-            "Document file is not available."
+            "Document path is missing."
           );
         }
 
         const {
           data,
-          error: signedUrlError,
-        } = await supabase.storage
-          .from("loan-documents")
-          .createSignedUrl(
-            documentPath,
-            60 * 60
-          );
+          error: urlError,
+        } =
+          await supabase.storage
+            .from("loan-documents")
+            .createSignedUrl(
+              document.path,
+              60 * 60
+            );
 
-        if (signedUrlError) {
-          throw signedUrlError;
+        if (urlError) {
+          throw urlError;
         }
 
         if (!data?.signedUrl) {
@@ -613,1298 +565,971 @@ export default function LoanProfile() {
       []
     );
 
-
-  /* =======================================================
-     OPEN DOCUMENT VIEWER
-  ======================================================= */
-
-  const openDocumentViewer =
+  const handleOpenDocument =
     useCallback(
-      async ({
-        documentPath,
-        documentName,
-        documentType,
-        blobUrl = null,
-      }) => {
+      async (document) => {
         try {
-          setError("");
-          setEmailSuccess("");
-          setOpeningDocument(true);
+          const url =
+            await getDocumentUrl(
+              document
+            );
 
-          let url = blobUrl;
-
-          if (!url) {
-            url =
-              await getSignedDocumentUrl(
-                documentPath
-              );
-          }
-
-          setDocumentViewerUrl(
-            url
+          window.open(
+            url,
+            "_blank",
+            "noopener,noreferrer"
           );
-
-          setDocumentViewerName(
-            documentName ||
-              "Document"
-          );
-
-          setDocumentViewerType(
-            documentType ||
-              "Document"
-          );
-
-          setDocumentViewerBlobUrl(
-            blobUrl
-          );
-
-          setDocumentViewerOpen(
-            true
-          );
-        } catch (openError) {
+        } catch (err) {
           console.error(
             "OPEN DOCUMENT ERROR:",
-            openError
+            err
           );
 
-          setError(
-            openError?.message ||
+          window.alert(
+            err?.message ||
               "Unable to open document."
           );
-        } finally {
-          setOpeningDocument(false);
         }
       },
-      [getSignedDocumentUrl]
+      [getDocumentUrl]
     );
 
-
-  /* =======================================================
-     CLOSE DOCUMENT VIEWER
-  ======================================================= */
-
-  const closeDocumentViewer =
-    useCallback(() => {
-      setDocumentViewerOpen(
-        false
-      );
-
-      if (
-        documentViewerBlobUrl
-      ) {
-        URL.revokeObjectURL(
-          documentViewerBlobUrl
-        );
-      }
-
-      setDocumentViewerBlobUrl(
-        null
-      );
-
-      setDocumentViewerUrl(
-        ""
-      );
-
-      setDocumentViewerName(
-        ""
-      );
-
-      setDocumentViewerType(
-        ""
-      );
-
-      setEmailSuccess("");
-    }, [
-      documentViewerBlobUrl,
-    ]);
-
-
-  /* =======================================================
-     VIEW STATEMENT
-     
-     IMPORTANT:
-     THIS NEVER GENERATES A STATEMENT.
-     IT ONLY RETRIEVES THE EXISTING ONE.
-  ======================================================= */
-
-  const handleViewStatement =
-    async () => {
-      try {
-        setError("");
-        setOpeningDocument(true);
-
-        const existingStatement =
-          statementDocument ||
-          await getExistingLoanStatementDocument(
-            id
-          );
-
-        if (
-          !existingStatement?.document_path
-        ) {
+  const generateStatementPdf =
+    useCallback(
+      async (
+        freshTransactions = transactions
+      ) => {
+        if (!loan) {
           throw new Error(
-            "No statement exists for this loan yet."
+            "Loan information is not available."
           );
         }
 
-        await openDocumentViewer({
-          documentPath:
-            existingStatement.document_path,
-
-          documentName:
-            existingStatement.document_name ||
-            `Loan Statement - ${
-              loan?.loan_number || ""
-            }`,
-
-          documentType:
-            "Statement",
-        });
-      } catch (statementError) {
-        console.error(
-          "VIEW STATEMENT ERROR:",
-          statementError
-        );
-
-        setError(
-          statementError?.message ||
-            "Unable to open the statement."
-        );
-      } finally {
-        setOpeningDocument(false);
-      }
-    };
-
-
-  /* =======================================================
-     VIEW AGREEMENT
-  ======================================================= */
-
-  const handleViewAgreement =
-    async () => {
-      try {
-        setError("");
-
-        if (
-          !signedAgreementDocument?.document_path
-        ) {
-          throw new Error(
-            "The signed loan agreement is not available."
-          );
-        }
-
-        await openDocumentViewer({
-          documentPath:
-            signedAgreementDocument.document_path,
-
-          documentName:
-            signedAgreementDocument.document_name ||
-            "Signed Loan Agreement",
-
-          documentType:
-            "Signed Loan Agreement",
-        });
-      } catch (agreementError) {
-        console.error(
-          "VIEW AGREEMENT ERROR:",
-          agreementError
-        );
-
-        setError(
-          agreementError?.message ||
-            "Unable to open the agreement."
-        );
-      }
-    };
-
-
-  /* =======================================================
-     GENERATE SETTLEMENT LETTER
-     
-     BUSINESS RULE:
-     
-     If next interest update date = 15th,
-     settlement quote is valid until the 14th.
-     
-     The QR code contains the same settlement
-     information displayed on the PDF.
-  ======================================================= */
-
-  const generateSettlementLetter =
-    async () => {
-      if (!loan) {
-        throw new Error(
-          "Loan information is not available."
-        );
-      }
-
-      const doc =
-        new jsPDF();
-
-      const loanNumber =
-        loan.loan_number ||
-        "N/A";
-
-      const customerNumber =
-        loan.customers?.customer_number ||
-        "N/A";
-
-      const issuedDate =
-        new Date();
-
-      const today =
-        issuedDate.toLocaleDateString(
-          "en-ZA"
-        );
-
-      const currentBalance =
-        toNumber(
-          loan.current_balance
-        );
-
-      const nextInterestDate =
-        loan.next_interest_date;
-
-      let validUntilDate =
-        getSettlementValidUntil(
-          nextInterestDate
-        );
-
-      /*
-       * Fallback only if the loan does not
-       * currently have a next interest date.
-       */
-      if (!validUntilDate) {
-        validUntilDate =
-          new Date(
-            issuedDate
+        const chronologicalTransactions =
+          sortTransactionsChronologically(
+            freshTransactions
           );
 
-        validUntilDate.setDate(
-          validUntilDate.getDate() +
-            1
+        const pdf = new jsPDF();
+
+        const pageWidth =
+          pdf.internal.pageSize.getWidth();
+
+        pdf.setFontSize(18);
+        pdf.setFont(
+          "helvetica",
+          "bold"
         );
-      }
-
-      const validUntil =
-        validUntilDate.toLocaleDateString(
-          "en-ZA"
-        );
-
-
-      /* ---------------------------------------------------
-         QR CODE
-      --------------------------------------------------- */
-
-      const qrText = [
-        "UMHLOMUNYE FINANCE",
-        "Settlement Letter",
-        `Loan Number: ${loanNumber}`,
-        `Customer Number: ${customerNumber}`,
-        `Customer: ${customerName}`,
-        `Settlement Amount: ${formatMoney(
-          currentBalance
-        )}`,
-        `Date Issued: ${today}`,
-        `Valid Until: ${validUntil}`,
-        `Next Interest Update: ${
-          nextInterestDate
-            ? formatDate(
-                nextInterestDate
-              )
-            : "Not available"
-        }`,
-      ].join("\n");
-
-      const qrDataUrl =
-        await QRCode.toDataURL(
-          qrText,
-          {
-            width: 220,
-            margin: 1,
-            errorCorrectionLevel:
-              "M",
-          }
+        pdf.text(
+          "UMHLOMUNYE FINANCE",
+          14,
+          18
         );
 
-
-      /* ---------------------------------------------------
-         PROFESSIONAL HEADER
-         
-         QR CODE IS TOP-RIGHT
-      --------------------------------------------------- */
-
-      doc.setFontSize(
-        20
-      );
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.text(
-        "UMHLOMUNYE FINANCE",
-        15,
-        20
-      );
-
-      doc.setFontSize(
-        10
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      doc.text(
-        "Our dreams, Our hope",
-        15,
-        27
-      );
-
-
-      /* ---------------------------------------------------
-         QR TOP RIGHT
-      --------------------------------------------------- */
-
-      doc.addImage(
-        qrDataUrl,
-        "PNG",
-        158,
-        7,
-        37,
-        37
-      );
-
-      doc.setFontSize(
-        7
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      doc.text(
-        "Scan to verify",
-        176.5,
-        47,
-        {
-          align: "center",
-        }
-      );
-
-
-      /* ---------------------------------------------------
-         HEADER LINE
-      --------------------------------------------------- */
-
-      doc.setDrawColor(
-        120
-      );
-
-      doc.line(
-        15,
-        53,
-        195,
-        53
-      );
-
-
-      /* ---------------------------------------------------
-         TITLE
-      --------------------------------------------------- */
-
-      doc.setFontSize(
-        16
-      );
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.text(
-        "SETTLEMENT LETTER",
-        105,
-        68,
-        {
-          align: "center",
-        }
-      );
-
-
-      /* ---------------------------------------------------
-         ISSUE + VALIDITY
-      --------------------------------------------------- */
-
-      doc.setFontSize(
-        10
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      doc.text(
-        `Date Issued: ${today}`,
-        15,
-        82
-      );
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.text(
-        `Settlement Quote Valid Until: ${validUntil}`,
-        15,
-        90
-      );
-
-
-      /* ---------------------------------------------------
-         CUSTOMER INFORMATION
-      --------------------------------------------------- */
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.text(
-        "CUSTOMER INFORMATION",
-        15,
-        108
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      doc.text(
-        `Customer Name: ${customerName}`,
-        15,
-        117
-      );
-
-      doc.text(
-        `Customer Number: ${customerNumber}`,
-        15,
-        124
-      );
-
-      doc.text(
-        `Loan Number: ${loanNumber}`,
-        15,
-        131
-      );
-
-
-      /* ---------------------------------------------------
-         SETTLEMENT AMOUNT
-      --------------------------------------------------- */
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.text(
-        "SETTLEMENT AMOUNT",
-        15,
-        150
-      );
-
-      doc.setFontSize(
-        16
-      );
-
-      doc.text(
-        formatMoney(
-          currentBalance
-        ),
-        15,
-        162
-      );
-
-      doc.setFontSize(
-        10
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-
-      /* ---------------------------------------------------
-         SETTLEMENT MESSAGE
-      --------------------------------------------------- */
-
-      const settlementText =
-        currentBalance <= 0
-          ? "This loan has been fully settled. No further amount is outstanding."
-          : `The current outstanding settlement amount on loan ${loanNumber} is ${formatMoney(
-              currentBalance
-            )}. This settlement quotation is valid until ${validUntil}.`;
-
-      const textLines =
-        doc.splitTextToSize(
-          settlementText,
-          175
+        pdf.setFontSize(9);
+        pdf.setFont(
+          "helvetica",
+          "normal"
+        );
+        pdf.text(
+          "Our dreams, Our hope",
+          14,
+          24
         );
 
-      doc.text(
-        textLines,
-        15,
-        176
-      );
+        pdf.setFontSize(10);
+        pdf.text(
+          "20 Jacaranda Street, Kinross, 2270",
+          14,
+          31
+        );
+        pdf.text(
+          "Tel: 078 078 3879",
+          14,
+          36
+        );
+        pdf.text(
+          "WhatsApp: 060 508 6672",
+          14,
+          41
+        );
+        pdf.text(
+          "Email: umhlomunyeb@gmail.com",
+          14,
+          46
+        );
 
+        pdf.setFontSize(15);
+        pdf.setFont(
+          "helvetica",
+          "bold"
+        );
+        pdf.text(
+          "LOAN STATEMENT",
+          14,
+          58
+        );
 
-      /* ---------------------------------------------------
-         LOAN SUMMARY
-      --------------------------------------------------- */
+        pdf.setFontSize(10);
+        pdf.setFont(
+          "helvetica",
+          "normal"
+        );
 
-      const summaryStart =
-        198;
+        pdf.text(
+          `Loan Number: ${safeLoanNumber}`,
+          14,
+          66
+        );
 
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
+        pdf.text(
+          `Customer: ${
+            loan.customer
+              ?.full_name ||
+            customer?.full_name ||
+            customer?.name ||
+            "Customer"
+          }`,
+          14,
+          72
+        );
 
-      doc.text(
-        "LOAN SUMMARY",
-        15,
-        summaryStart
-      );
+        pdf.text(
+          `Principal Amount: ${formatCurrency(
+            loan.principal_amount
+          )}`,
+          14,
+          78
+        );
 
-      autoTable(
-        doc,
-        {
-          startY:
-            summaryStart + 5,
+        pdf.text(
+          `Current Balance: ${formatCurrency(
+            currentLoanBalance
+          )}`,
+          14,
+          84
+        );
 
+        pdf.text(
+          `Statement Date: ${formatDate(
+            new Date()
+          )}`,
+          14,
+          90
+        );
+
+        const tableRows =
+          chronologicalTransactions.map(
+            (transaction) => [
+              formatDate(
+                transaction.transaction_date
+              ),
+              transaction.transaction_type ||
+                "-",
+              transaction.description ||
+                "-",
+              formatCurrency(
+                getTransactionDebit(
+                  transaction
+                )
+              ),
+              formatCurrency(
+                getTransactionCredit(
+                  transaction
+                )
+              ),
+              formatCurrency(
+                getTransactionBalance(
+                  transaction
+                )
+              ),
+            ]
+          );
+
+        autoTable(pdf, {
+          startY: 98,
           head: [
             [
+              "Date",
+              "Type",
               "Description",
-              "Amount",
+              "Debit",
+              "Credit",
+              "Balance",
             ],
           ],
-
-          body: [
-            [
-              "Principal Amount",
-              formatMoney(
-                loan.principal_amount
-              ),
-            ],
-
-            [
-              "Interest Amount",
-              formatMoney(
-                loan.interest_amount
-              ),
-            ],
-
-            [
-              "Total Repayment",
-              formatMoney(
-                loan.total_repayment
-              ),
-            ],
-
-            [
-              "Total Paid",
-              formatMoney(
-                loan.total_paid
-              ),
-            ],
-
-            [
-              "Current Settlement Balance",
-              formatMoney(
-                loan.current_balance
-              ),
-            ],
-          ],
-
-          theme:
-            "grid",
-
+          body:
+            tableRows.length > 0
+              ? tableRows
+              : [
+                  [
+                    "-",
+                    "-",
+                    "No transactions found.",
+                    "-",
+                    "-",
+                    "-",
+                  ],
+                ],
+          theme: "grid",
           styles: {
-            fontSize: 9,
+            fontSize: 8,
+            cellPadding: 3,
           },
-
           headStyles: {
-            fontStyle:
-              "bold",
+            fontStyle: "bold",
           },
-        }
-      );
-
-
-      /* ---------------------------------------------------
-         VALIDITY NOTE
-      --------------------------------------------------- */
-
-      let finalY =
-        doc.lastAutoTable?.finalY ||
-        245;
-
-      finalY +=
-        12;
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.text(
-        "SETTLEMENT VALIDITY",
-        15,
-        finalY
-      );
-
-      finalY +=
-        7;
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      const validityText =
-        `This settlement quotation is valid until ${validUntil}. ` +
-        (
-          nextInterestDate
-            ? `The next interest update date is ${formatDate(
-                nextInterestDate
-              )}. `
-            : ""
-        ) +
-        "If settlement is not completed within the validity period, " +
-        "a new settlement quotation may be required.";
-
-      const validityLines =
-        doc.splitTextToSize(
-          validityText,
-          175
-        );
-
-      doc.text(
-        validityLines,
-        15,
-        finalY
-      );
-
-
-      /* ---------------------------------------------------
-         SIGNATURE
-      --------------------------------------------------- */
-
-      finalY +=
-        validityLines.length *
-          5 +
-        18;
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.text(
-        "Umhlomunye Finance",
-        15,
-        finalY
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      doc.text(
-        "Authorised Representative",
-        15,
-        finalY + 7
-      );
-
-
-      /* ---------------------------------------------------
-         FOOTER
-      --------------------------------------------------- */
-
-      doc.setFontSize(
-        8
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      doc.text(
-        "This document reflects the loan information available in the Umhlomunye Finance system at the time of issuance.",
-        105,
-        285,
-        {
-          align: "center",
-        }
-      );
-
-
-      return {
-        doc,
-        validUntil,
-        qrText,
-      };
-    };
-
-
-  /* =======================================================
-     VIEW SETTLEMENT LETTER
-  ======================================================= */
-
-  const handleViewSettlement =
-    async () => {
-      try {
-        setError("");
-        setEmailSuccess("");
-        setGeneratingSettlement(
-          true
-        );
-
-        const {
-          doc,
-        } =
-          await generateSettlementLetter();
-
-        const blob =
-          doc.output(
-            "blob"
-          );
-
-        const blobUrl =
-          URL.createObjectURL(
-            blob
-          );
-
-        await openDocumentViewer({
-          documentName:
-            `Settlement Letter - ${
-              loan?.loan_number || ""
-            }`,
-
-          documentType:
-            "Settlement Letter",
-
-          blobUrl,
+          columnStyles: {
+            0: {
+              cellWidth: 24,
+            },
+            1: {
+              cellWidth: 24,
+            },
+            2: {
+              cellWidth: 55,
+            },
+            3: {
+              halign: "right",
+              cellWidth: 25,
+            },
+            4: {
+              halign: "right",
+              cellWidth: 25,
+            },
+            5: {
+              halign: "right",
+              cellWidth: 25,
+            },
+          },
         });
-      } catch (
-        settlementError
-      ) {
-        console.error(
-          "SETTLEMENT LETTER ERROR:",
-          settlementError
-        );
 
-        setError(
-          settlementError?.message ||
-            "Unable to generate settlement letter."
-        );
-      } finally {
-        setGeneratingSettlement(
-          false
-        );
-      }
-    };
+        let finalY =
+          pdf.lastAutoTable?.finalY ||
+          110;
 
+        if (
+          statement.overdues?.length >
+          0
+        ) {
+          finalY += 12;
 
-  /* =======================================================
-     PRINT DOCUMENT
-  ======================================================= */
-
-  const handlePrint =
-    () => {
-      if (!documentViewerUrl) {
-        return;
-      }
-
-      const printWindow =
-        window.open(
-          documentViewerUrl,
-          "_blank"
-        );
-
-      if (!printWindow) {
-        setError(
-          "Please allow pop-ups to print the document."
-        );
-
-        return;
-      }
-    };
-
-
-  /* =======================================================
-     DOWNLOAD DOCUMENT
-  ======================================================= */
-
-  const handleDownload =
-    async () => {
-      if (!documentViewerUrl) {
-        return;
-      }
-
-      try {
-        setError("");
-
-        const response =
-          await fetch(
-            documentViewerUrl
+          pdf.setFontSize(12);
+          pdf.setFont(
+            "helvetica",
+            "bold"
+          );
+          pdf.text(
+            "Overdue Items",
+            14,
+            finalY
           );
 
-        if (!response.ok) {
-          throw new Error(
-            "Unable to download document."
-          );
-        }
-
-        const blob =
-          await response.blob();
-
-        const blobUrl =
-          URL.createObjectURL(
-            blob
-          );
-
-        const anchor =
-          document.createElement(
-            "a"
-          );
-
-        anchor.href =
-          blobUrl;
-
-        anchor.download =
-          documentViewerName
-            ? `${safeFileName(
-                documentViewerName
-              )}.pdf`
-            : "document.pdf";
-
-        document.body.appendChild(
-          anchor
-        );
-
-        anchor.click();
-
-        anchor.remove();
-
-        setTimeout(
-          () => {
-            URL.revokeObjectURL(
-              blobUrl
+          const overdueRows =
+            statement.overdues.map(
+              (overdue) => [
+                formatDate(
+                  overdue.due_date ||
+                    overdue.expected_date
+                ),
+                formatCurrency(
+                  overdue.amount_due ||
+                    overdue.expected_amount
+                ),
+                formatCurrency(
+                  overdue.amount_paid ||
+                    overdue.paid_amount
+                ),
+                formatCurrency(
+                  overdue.amount_outstanding ||
+                    overdue.outstanding_amount
+                ),
+                overdue.status || "-",
+              ]
             );
-          },
-          1000
-        );
-      } catch (
-        downloadError
-      ) {
-        console.error(
-          "DOWNLOAD DOCUMENT ERROR:",
-          downloadError
-        );
 
-        setError(
-          downloadError?.message ||
-            "Unable to download document."
-        );
-      }
-    };
+          autoTable(pdf, {
+            startY: finalY + 5,
+            head: [
+              [
+                "Due Date",
+                "Expected",
+                "Paid",
+                "Outstanding",
+                "Status",
+              ],
+            ],
+            body: overdueRows,
+            theme: "grid",
+            styles: {
+              fontSize: 8,
+              cellPadding: 3,
+            },
+          });
 
-
-  /* =======================================================
-     EMAIL DOCUMENT
-     
-     IMPORTANT:
-     
-     The actual PDF currently being viewed is downloaded
-     from documentViewerUrl and converted to Base64.
-     
-     The Base64 PDF is sent as a REAL attachment to Brevo.
-     
-     For Settlement Letters:
-     
-     1. The exact PDF being viewed is emailed.
-     2. Only after the email succeeds, that exact PDF
-        is saved into Supabase Storage.
-     3. A new Documents record is created.
-     4. Previous settlement letters are never overwritten.
-  ======================================================= */
-
-  const handleEmail =
-    async () => {
-      if (!documentViewerUrl) {
-        return;
-      }
-
-      if (!loan) {
-        setError(
-          "Loan information is not available."
-        );
-
-        return;
-      }
-
-      const recipientEmail =
-        loan?.customers?.email ||
-        loan?.customers?.email_address ||
-        loan?.customers?.emailAddress ||
-        "";
-
-      if (!recipientEmail) {
-        setError(
-          "Customer email address is not available."
-        );
-
-        return;
-      }
-
-      try {
-        setError("");
-        setEmailSuccess("");
-        setSendingEmail(
-          true
-        );
-
-
-        /* -------------------------------------------------
-           GET THE EXACT PDF CURRENTLY BEING VIEWED
-        ------------------------------------------------- */
-
-        const response =
-          await fetch(
-            documentViewerUrl
-          );
-
-        if (!response.ok) {
-          throw new Error(
-            "Unable to retrieve the document for emailing."
-          );
+          finalY =
+            pdf.lastAutoTable?.finalY ||
+            finalY + 20;
         }
 
-        const blob =
-          await response.blob();
+        finalY += 15;
 
-        if (
-          !blob ||
-          blob.size === 0
-        ) {
-          throw new Error(
-            "The document is empty and cannot be emailed."
-          );
-        }
+        pdf.setFontSize(9);
+        pdf.setFont(
+          "helvetica",
+          "normal"
+        );
+        pdf.text(
+          "This statement is generated from the Umhlomunye Finance loan records.",
+          14,
+          finalY
+        );
 
-        const base64 =
-          await blobToBase64(
-            blob
-          );
+        const verificationToken =
+          loan.statement_verification_token ||
+          loan.verification_token ||
+          null;
 
+        if (verificationToken) {
+          const verificationUrl =
+            `${window.location.origin}/verify-statement/${verificationToken}`;
 
-        /* -------------------------------------------------
-           FILE NAME
-        ------------------------------------------------- */
-
-        const fileName =
-          `${safeFileName(
-            documentViewerName ||
-              documentViewerType ||
-              "Loan Document"
-          )}.pdf`;
-
-
-        /* -------------------------------------------------
-           SEND ACTUAL PDF ATTACHMENT
-        ------------------------------------------------- */
-
-        const {
-          data,
-          error: emailError,
-        } =
-          await supabase.functions.invoke(
-            "send-loan-email",
-            {
-              body: {
-                notificationType:
-                  "DOCUMENT",
-
-                loanId:
-                  loan.id,
-
-                recipientEmail,
-
-                recipientName:
-                  customerName,
-
-                clientName:
-                  customerName,
-
-                loanNumber:
-                  loan.loan_number ||
-                  "",
-
-                documentType:
-                  documentViewerType ||
-                  "Loan Document",
-
-                documentName:
-                  fileName,
-
-                attachment: {
-                  name:
-                    fileName,
-
-                  content:
-                    base64,
-
-                  contentType:
-                    "application/pdf",
-                },
-              },
-            }
-          );
-
-
-        if (emailError) {
-          throw emailError;
-        }
-
-        if (
-          !data?.success
-        ) {
-          throw new Error(
-            data?.error ||
-              "Unable to send the email."
-          );
-        }
-
-
-        /* -------------------------------------------------
-           SAVE EXACT SENT SETTLEMENT LETTER
-           
-           Only after Brevo confirms success.
-           
-           Each settlement gets a unique storage path,
-           therefore old settlement letters remain intact.
-        ------------------------------------------------- */
-
-        if (
-          documentViewerType ===
-          "Settlement Letter"
-        ) {
-          if (
-            !loan.customer_id
-          ) {
-            throw new Error(
-              "Customer ID is missing from the loan."
-            );
-          }
-
-
-          const timestamp =
-            new Date()
-              .toISOString()
-              .replace(
-                /[:.]/g,
-                "-"
-              );
-
-
-          const storagePath =
-            `settlements/${loan.customer_id}/${loan.id}/${timestamp}-${fileName}`;
-
-
-          const {
-            error:
-              uploadError,
-          } =
-            await supabase.storage
-              .from(
-                "loan-documents"
-              )
-              .upload(
-                storagePath,
-                blob,
+          try {
+            const qrDataUrl =
+              await QRCode.toDataURL(
+                verificationUrl,
                 {
-                  contentType:
-                    "application/pdf",
-
-                  upsert:
-                    false,
+                  width: 110,
+                  margin: 1,
                 }
               );
 
+            pdf.addImage(
+              qrDataUrl,
+              "PNG",
+              pageWidth - 45,
+              14,
+              30,
+              30
+            );
 
-          if (
-            uploadError
-          ) {
-            throw uploadError;
+            pdf.setFontSize(7);
+            pdf.text(
+              "Scan to verify",
+              pageWidth - 43,
+              48
+            );
+          } catch (qrError) {
+            console.error(
+              "QR CODE ERROR:",
+              qrError
+            );
           }
+        }
 
+        return pdf;
+      },
+      [
+        customer,
+        currentLoanBalance,
+        loan,
+        safeLoanNumber,
+        statement.overdues,
+        transactions,
+      ]
+    );
 
+  const handlePrintStatement =
+    useCallback(async () => {
+      if (!loan) return;
+
+      setGeneratingStatement(true);
+
+      try {
+        const freshTransactions =
+          await loadTransactions(id);
+
+        const chronologicalTransactions =
+          sortTransactionsChronologically(
+            freshTransactions
+          );
+
+        setStatement((current) => ({
+          ...current,
+          transactions:
+            chronologicalTransactions,
+        }));
+
+        const pdf =
+          await generateStatementPdf(
+            chronologicalTransactions
+          );
+
+        const timestamp =
+          new Date()
+            .toISOString()
+            .replace(
+              /[:.]/g,
+              "-"
+            );
+
+        const fileName =
+          `${safeLoanNumber}-statement-${timestamp}.pdf`;
+
+        const blob =
+          pdf.output("blob");
+
+        const path =
+          `statements/${loan.customer_id}/${loan.id}/${fileName}`;
+
+        const {
+          error: uploadError,
+        } =
+          await supabase.storage
+            .from("loan-documents")
+            .upload(
+              path,
+              blob,
+              {
+                contentType:
+                  "application/pdf",
+                upsert: false,
+              }
+            );
+
+        if (uploadError) {
+          console.error(
+            "STATEMENT UPLOAD ERROR:",
+            uploadError
+          );
+        } else {
           const {
-            data:
-              authData,
+            data: userData,
           } =
             await supabase.auth.getUser();
 
-
-          const createdBy =
-            authData?.user?.id ||
-            null;
-
-
           const {
-            error:
-              documentInsertError,
+            error: documentError,
           } =
             await supabase
-              .from(
-                "documents"
-              )
+              .from("documents")
               .insert({
                 customer_id:
                   loan.customer_id,
-
-                loan_id:
-                  loan.id,
-
+                loan_id: loan.id,
                 agreement_id:
+                  agreement?.id ||
                   null,
-
                 document_type:
-                  "Settlement Letter",
-
+                  "Loan Statement",
                 document_name:
                   fileName,
-
-                document_path:
-                  storagePath,
-
+                path,
                 created_by:
-                  createdBy,
+                  userData?.user?.id ||
+                  null,
               });
 
-
-          if (
-            documentInsertError
-          ) {
-            /*
-             * If the Documents record fails,
-             * remove the uploaded copy so that
-             * the database and storage do not disagree.
-             */
-            await supabase.storage
-              .from(
-                "loan-documents"
-              )
-              .remove([
-                storagePath,
-              ]);
-
-            throw documentInsertError;
+          if (documentError) {
+            console.error(
+              "STATEMENT DOCUMENT RECORD ERROR:",
+              documentError
+            );
+          } else {
+            await loadDocuments(
+              id,
+              loan.customer_id
+            );
           }
-
-
-          await loadDocuments();
         }
 
-
-        /* -------------------------------------------------
-           SUCCESS
-        ------------------------------------------------- */
-
-        setEmailSuccess(
-          `The ${(
-            documentViewerType ||
-            "document"
-          ).toLowerCase()} was emailed successfully to ${recipientEmail}.`
-        );
-      } catch (
-        emailSendError
-      ) {
+        pdf.save(fileName);
+      } catch (err) {
         console.error(
-          "EMAIL DOCUMENT ERROR:",
-          emailSendError
+          "GENERATE STATEMENT ERROR:",
+          err
         );
 
-        setError(
-          emailSendError?.message ||
-            "Unable to email the document."
+        window.alert(
+          err?.message ||
+            "Unable to generate statement."
         );
       } finally {
-        setSendingEmail(
+        setGeneratingStatement(
           false
         );
       }
-    };
+    }, [
+      agreement,
+      generateStatementPdf,
+      id,
+      loadDocuments,
+      loadTransactions,
+      loan,
+      safeLoanNumber,
+    ]);
 
+  const handleOpenStatement =
+    useCallback(async () => {
+      if (!loan) return;
 
-  /* =======================================================
-     TAB CHANGE
-  ======================================================= */
+      setGeneratingStatement(true);
 
-  const handleTabChange =
-    (
-      _event,
-      newValue
-    ) => {
-      setTab(
-        newValue
+      try {
+        const freshTransactions =
+          await loadTransactions(id);
+
+        const chronologicalTransactions =
+          sortTransactionsChronologically(
+            freshTransactions
+          );
+
+        setStatement((current) => ({
+          ...current,
+          transactions:
+            chronologicalTransactions,
+        }));
+
+        const pdf =
+          await generateStatementPdf(
+            chronologicalTransactions
+          );
+
+        const blobUrl =
+          pdf.output("bloburl");
+
+        window.open(
+          blobUrl,
+          "_blank",
+          "noopener,noreferrer"
+        );
+      } catch (err) {
+        console.error(
+          "OPEN STATEMENT ERROR:",
+          err
+        );
+
+        window.alert(
+          err?.message ||
+            "Unable to open statement."
+        );
+      } finally {
+        setGeneratingStatement(
+          false
+        );
+      }
+    }, [
+      generateStatementPdf,
+      id,
+      loadTransactions,
+      loan,
+    ]);
+
+  const handlePaidUpLetter =
+    useCallback(async () => {
+      if (!loan || !isPaidUp) return;
+
+      setGeneratingPaidUpLetter(
+        true
       );
 
-      if (
-        newValue === 1
-      ) {
-        loadStatement();
+      try {
+        const pdf = new jsPDF();
+
+        const pageWidth =
+          pdf.internal.pageSize.getWidth();
+
+        pdf.setFontSize(18);
+        pdf.setFont(
+          "helvetica",
+          "bold"
+        );
+        pdf.text(
+          "UMHLOMUNYE FINANCE",
+          14,
+          18
+        );
+
+        pdf.setFontSize(9);
+        pdf.setFont(
+          "helvetica",
+          "normal"
+        );
+        pdf.text(
+          "Our dreams, Our hope",
+          14,
+          24
+        );
+
+        pdf.setFontSize(10);
+        pdf.text(
+          "20 Jacaranda Street, Kinross, 2270",
+          14,
+          31
+        );
+        pdf.text(
+          "Tel: 078 078 3879",
+          14,
+          36
+        );
+        pdf.text(
+          "WhatsApp: 060 508 6672",
+          14,
+          41
+        );
+        pdf.text(
+          "Email: umhlomunyeb@gmail.com",
+          14,
+          46
+        );
+
+        pdf.setFontSize(17);
+        pdf.setFont(
+          "helvetica",
+          "bold"
+        );
+        pdf.text(
+          "PAID-UP LETTER",
+          14,
+          63
+        );
+
+        pdf.setFontSize(11);
+        pdf.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        const customerName =
+          loan.customer
+            ?.full_name ||
+          customer?.full_name ||
+          customer?.name ||
+          "Customer";
+
+        pdf.text(
+          `Date: ${formatDate(
+            new Date()
+          )}`,
+          14,
+          76
+        );
+
+        pdf.text(
+          `Loan Number: ${safeLoanNumber}`,
+          14,
+          84
+        );
+
+        pdf.text(
+          `Customer: ${customerName}`,
+          14,
+          92
+        );
+
+        const body =
+          "This letter confirms that the above-mentioned loan account has been paid in full and that the current outstanding balance recorded on the account is R0.00.";
+
+        const wrappedBody =
+          pdf.splitTextToSize(
+            body,
+            pageWidth - 28
+          );
+
+        pdf.text(
+          wrappedBody,
+          14,
+          108
+        );
+
+        const nextY =
+          108 +
+          wrappedBody.length * 7 +
+          15;
+
+        pdf.text(
+          "The loan account is therefore recorded as paid up as at the date of this letter.",
+          14,
+          nextY
+        );
+
+        pdf.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        pdf.text(
+          "UMHLOMUNYE FINANCE",
+          14,
+          nextY + 30
+        );
+
+        pdf.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        pdf.text(
+          "Authorised Representative",
+          14,
+          nextY + 37
+        );
+
+        if (
+          loan.statement_verification_token
+        ) {
+          const verificationUrl =
+            `${window.location.origin}/verify-statement/${loan.statement_verification_token}`;
+
+          try {
+            const qrDataUrl =
+              await QRCode.toDataURL(
+                verificationUrl,
+                {
+                  width: 120,
+                  margin: 1,
+                }
+              );
+
+            pdf.addImage(
+              qrDataUrl,
+              "PNG",
+              pageWidth - 48,
+              14,
+              32,
+              32
+            );
+
+            pdf.setFontSize(7);
+            pdf.text(
+              "Verify",
+              pageWidth - 39,
+              50
+            );
+          } catch (qrError) {
+            console.error(
+              "PAID-UP QR ERROR:",
+              qrError
+            );
+          }
+        }
+
+        const timestamp =
+          new Date()
+            .toISOString()
+            .replace(
+              /[:.]/g,
+              "-"
+            );
+
+        const fileName =
+          `${safeLoanNumber}-paid-up-letter-${timestamp}.pdf`;
+
+        const blob =
+          pdf.output("blob");
+
+        const path =
+          `paid-up-letters/${loan.customer_id}/${loan.id}/${fileName}`;
+
+        const {
+          error: uploadError,
+        } =
+          await supabase.storage
+            .from("loan-documents")
+            .upload(
+              path,
+              blob,
+              {
+                contentType:
+                  "application/pdf",
+                upsert: false,
+              }
+            );
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const {
+          data: userData,
+        } =
+          await supabase.auth.getUser();
+
+        const {
+          error: documentError,
+        } =
+          await supabase
+            .from("documents")
+            .insert({
+              customer_id:
+                loan.customer_id,
+              loan_id: loan.id,
+              agreement_id:
+                agreement?.id ||
+                null,
+              document_type:
+                "Paid-Up Letter",
+              document_name:
+                fileName,
+              path,
+              created_by:
+                userData?.user?.id ||
+                null,
+            });
+
+        if (documentError) {
+          throw documentError;
+        }
+
+        await loadDocuments(
+          id,
+          loan.customer_id
+        );
+
+        pdf.save(fileName);
+      } catch (err) {
+        console.error(
+          "PAID-UP LETTER ERROR:",
+          err
+        );
+
+        window.alert(
+          err?.message ||
+            "Unable to generate paid-up letter."
+        );
+      } finally {
+        setGeneratingPaidUpLetter(
+          false
+        );
+      }
+    }, [
+      agreement,
+      customer,
+      id,
+      isPaidUp,
+      loadDocuments,
+      loan,
+      safeLoanNumber,
+    ]);
+
+  const handleDownloadDocument =
+    useCallback(
+      async (document) => {
+        try {
+          const url =
+            await getDocumentUrl(
+              document
+            );
+
+          const response =
+            await fetch(url);
+
+          if (!response.ok) {
+            throw new Error(
+              "Unable to download document."
+            );
+          }
+
+          const blob =
+            await response.blob();
+
+          const blobUrl =
+            URL.createObjectURL(blob);
+
+          const link =
+            window.document.createElement(
+              "a"
+            );
+
+          link.href = blobUrl;
+
+          link.download =
+            document.document_name ||
+            document.name ||
+            "document.pdf";
+
+          window.document.body.appendChild(
+            link
+          );
+
+          link.click();
+
+          link.remove();
+
+          URL.revokeObjectURL(
+            blobUrl
+          );
+        } catch (err) {
+          console.error(
+            "DOWNLOAD DOCUMENT ERROR:",
+            err
+          );
+
+          window.alert(
+            err?.message ||
+              "Unable to download document."
+          );
+        }
+      },
+      [getDocumentUrl]
+    );
+
+  const handleViewAgreement =
+    () => {
+      if (!agreement?.id) return;
+
+      const agreementDocument =
+        documents.find(
+          (document) =>
+            document.agreement_id ===
+              agreement.id &&
+            String(
+              document.document_type ||
+                ""
+            )
+              .toLowerCase()
+              .includes("agreement")
+        );
+
+      if (agreementDocument) {
+        handleOpenDocument(
+          agreementDocument
+        );
+        return;
       }
 
-      if (
-        newValue === 2
-      ) {
-        loadDocuments();
+      const fallbackDocument =
+        documents.find((document) =>
+          String(
+            document.document_type ||
+              ""
+          )
+            .toLowerCase()
+            .includes(
+              "signed loan agreement"
+            )
+        );
+
+      if (fallbackDocument) {
+        handleOpenDocument(
+          fallbackDocument
+        );
+        return;
       }
+
+      window.alert(
+        "Agreement document is not available yet."
+      );
     };
-
-
-  /* =======================================================
-     LOADING
-  ======================================================= */
 
   if (loading) {
     return (
       <Box
         sx={{
-          display:
-            "flex",
-
-          justifyContent:
-            "center",
-
-          alignItems:
-            "center",
-
-          minHeight:
-            "60vh",
+          minHeight: "60vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <CircularProgress />
@@ -1912,34 +1537,18 @@ export default function LoanProfile() {
     );
   }
 
-
-  /* =======================================================
-     NO LOAN
-  ======================================================= */
-
-  if (!loan) {
+  if (error) {
     return (
-      <Box
-        sx={{
-          p: 3,
-        }}
-      >
+      <Box sx={{ p: 3 }}>
         <Alert severity="error">
-          {error ||
-            "Loan could not be found."}
+          {error}
         </Alert>
 
         <Button
-          sx={{
-            mt: 2,
-          }}
-          startIcon={
-            <ArrowBack />
-          }
+          sx={{ mt: 2 }}
+          startIcon={<ArrowBack />}
           onClick={() =>
-            navigate(
-              "/loans"
-            )
+            navigate("/loans")
           }
         >
           Back to Loans
@@ -1948,25 +1557,35 @@ export default function LoanProfile() {
     );
   }
 
+  if (!loan) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="warning">
+          Loan could not be found.
+        </Alert>
 
-  /* =======================================================
-     RENDER
-  ======================================================= */
+        <Button
+          sx={{ mt: 2 }}
+          startIcon={<ArrowBack />}
+          onClick={() =>
+            navigate("/loans")
+          }
+        >
+          Back to Loans
+        </Button>
+      </Box>
+    );
+  }
 
   return (
     <Box
       sx={{
         p: {
-          xs: 2,
+          xs: 1.5,
           md: 3,
         },
       }}
     >
-
-      {/* ===================================================
-          PAGE HEADER
-      =================================================== */}
-
       <Stack
         direction={{
           xs: "column",
@@ -1978,22 +1597,17 @@ export default function LoanProfile() {
           md: "center",
         }}
         spacing={2}
-        sx={{
-          mb: 3,
-        }}
+        sx={{ mb: 3 }}
       >
         <Box>
           <Button
-            startIcon={
-              <ArrowBack />
-            }
+            startIcon={<ArrowBack />}
             onClick={() =>
-              navigate(
-                "/loans"
-              )
+              navigate("/loans")
             }
             sx={{
               mb: 1,
+              textTransform: "none",
             }}
           >
             Back to Loans
@@ -2001,37 +1615,32 @@ export default function LoanProfile() {
 
           <Typography
             variant="h4"
-            fontWeight={700}
+            sx={{ fontWeight: 800 }}
           >
             Loan Profile
           </Typography>
 
           <Typography
+            variant="body2"
             color="text.secondary"
           >
-            {loan.loan_number}
+            {safeLoanNumber}
           </Typography>
         </Box>
 
         <Chip
           label={
-            loan.loan_status ||
-            "Unknown"
+            isPaidUp
+              ? "Paid Up"
+              : "Active"
           }
           color={
-            String(
-              loan.loan_status
-            ).toLowerCase() ===
-            "active"
+            isPaidUp
               ? "success"
-              : String(
-                    loan.loan_status
-                  ).toLowerCase() ===
-                  "completed"
-                ? "primary"
-                : "default"
+              : "primary"
           }
           sx={{
+            fontWeight: 700,
             alignSelf: {
               xs: "flex-start",
               md: "center",
@@ -2040,1109 +1649,1935 @@ export default function LoanProfile() {
         />
       </Stack>
 
-
-      {/* ===================================================
-          ERROR
-      =================================================== */}
-
-      {error && (
-        <Alert
-          severity="error"
-          sx={{
-            mb: 3,
-          }}
-          onClose={() =>
-            setError("")
-          }
-        >
-          {error}
-        </Alert>
-      )}
-
-
-      {/* ===================================================
-          EMAIL SUCCESS
-      =================================================== */}
-
-      {emailSuccess && (
-        <Alert
-          severity="success"
-          sx={{
-            mb: 3,
-          }}
-          onClose={() =>
-            setEmailSuccess("")
-          }
-        >
-          {emailSuccess}
-        </Alert>
-      )}
-
-
-      {/* ===================================================
-          CUSTOMER + LOAN SUMMARY
-      =================================================== */}
+      {/* =====================================================
+          CUSTOMER / LOAN / ACTIONS
+      ====================================================== */}
 
       <Grid
         container
-        spacing={2}
-        sx={{
-          mb: 3,
-        }}
+        spacing={2.5}
+        alignItems="stretch"
+        sx={{ mb: 2.5 }}
       >
-
+        {/* CUSTOMER INFORMATION */}
         <Grid
           item
           xs={12}
           md={6}
+          sx={{
+            minWidth: 0,
+            display: "flex",
+          }}
         >
-          <Card>
-            <CardContent>
-
+          <Card
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              width: "100%",
+              height: "100%",
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <CardContent
+              sx={{
+                p: 3,
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               <Typography
                 variant="h6"
-                fontWeight={700}
-                gutterBottom
+                sx={{
+                  fontWeight: 800,
+                  mb: 2.5,
+                }}
               >
-                Customer
+                Customer Information
               </Typography>
 
-              <Divider
+              <Grid
+                container
+                spacing={2.5}
                 sx={{
-                  mb: 2,
+                  flex: 1,
                 }}
-              />
+              >
+                {/* ROW 1 - FULL NAME */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={6}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Full Name
+                    </Typography>
 
-              <Stack spacing={1}>
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                        overflowWrap:
+                          "anywhere",
+                      }}
+                    >
+                      {loan.customer
+                        ?.full_name ||
+                        customer?.full_name ||
+                        customer?.name ||
+                        [
+                          customer?.first_name,
+                          customer?.last_name,
+                        ]
+                          .filter(Boolean)
+                          .join(" ") ||
+                        "-"}
+                    </Typography>
+                  </Box>
+                </Grid>
 
-                <Typography>
-                  <strong>
-                    Name:
-                  </strong>{" "}
-                  {customerName}
-                </Typography>
+                {/* ROW 1 - ID NUMBER */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={6}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      ID Number
+                    </Typography>
 
-                <Typography>
-                  <strong>
-                    Customer Number:
-                  </strong>{" "}
-                  {loan.customers
-                    ?.customer_number ||
-                    "—"}
-                </Typography>
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                        overflowWrap:
+                          "anywhere",
+                      }}
+                    >
+                      {loan.customer
+                        ?.id_number ||
+                        customer?.id_number ||
+                        customer?.identity_number ||
+                        "-"}
+                    </Typography>
+                  </Box>
+                </Grid>
 
-                <Typography>
-                  <strong>
-                    Loan Number:
-                  </strong>{" "}
-                  {loan.loan_number ||
-                    "—"}
-                </Typography>
+                {/* ROW 2 - PHONE */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={6}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Phone
+                    </Typography>
 
-              </Stack>
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                        overflowWrap:
+                          "anywhere",
+                      }}
+                    >
+                      {loan.customer
+                        ?.phone ||
+                        loan.customer
+                          ?.phone_number ||
+                        customer?.phone ||
+                        customer?.phone_number ||
+                        "-"}
+                    </Typography>
+                  </Box>
+                </Grid>
 
+                {/* ROW 2 - EMAIL */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={6}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Email
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                        overflowWrap:
+                          "anywhere",
+                      }}
+                    >
+                      {loan.customer
+                        ?.email ||
+                        customer?.email ||
+                        "-"}
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
         </Grid>
 
-
+        {/* LOAN INFORMATION */}
         <Grid
           item
           xs={12}
           md={6}
+          sx={{
+            minWidth: 0,
+            display: "flex",
+          }}
         >
-          <Card>
-            <CardContent>
-
+          <Card
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              width: "100%",
+              height: "100%",
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <CardContent
+              sx={{
+                p: 3,
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               <Typography
                 variant="h6"
-                fontWeight={700}
-                gutterBottom
-              >
-                Loan Summary
-              </Typography>
-
-              <Divider
                 sx={{
-                  mb: 2,
+                  fontWeight: 800,
+                  mb: 2.5,
                 }}
-              />
+              >
+                Loan Information
+              </Typography>
 
               <Grid
                 container
-                spacing={2}
+                spacing={2.5}
+                sx={{
+                  flex: 1,
+                }}
               >
-
-                <Grid
-                  item
-                  xs={6}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Principal
-                  </Typography>
-
-                  <Typography
-                    fontWeight={700}
-                  >
-                    {formatMoney(
-                      loan.principal_amount
-                    )}
-                  </Typography>
-                </Grid>
-
-
-                <Grid
-                  item
-                  xs={6}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Interest
-                  </Typography>
-
-                  <Typography
-                    fontWeight={700}
-                  >
-                    {formatMoney(
-                      loan.interest_amount
-                    )}
-                  </Typography>
-                </Grid>
-
-
-                <Grid
-                  item
-                  xs={6}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Total Repayment
-                  </Typography>
-
-                  <Typography
-                    fontWeight={700}
-                  >
-                    {formatMoney(
-                      loan.total_repayment
-                    )}
-                  </Typography>
-                </Grid>
-
-
-                <Grid
-                  item
-                  xs={6}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Total Paid
-                  </Typography>
-
-                  <Typography
-                    fontWeight={700}
-                  >
-                    {formatMoney(
-                      loan.total_paid
-                    )}
-                  </Typography>
-                </Grid>
-
-
+                {/* ROW 1 - LOAN NUMBER */}
                 <Grid
                   item
                   xs={12}
+                  sm={4}
+                  sx={{ minWidth: 0 }}
                 >
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      mt: 1,
-                    }}
-                  >
+                  <Box sx={{ minWidth: 0 }}>
                     <Typography
-                      variant="body2"
+                      variant="caption"
                       color="text.secondary"
+                      display="block"
+                    >
+                      Loan Number
+                    </Typography>
+
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                        overflowWrap:
+                          "anywhere",
+                      }}
+                    >
+                      {safeLoanNumber}
+                    </Typography>
+                  </Box>
+                </Grid>
+
+                {/* ROW 1 - LOAN STATUS */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={4}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Loan Status
+                    </Typography>
+
+                    <Box sx={{ mt: 0.5 }}>
+                      <Chip
+                        size="small"
+                        label={
+                          isPaidUp
+                            ? "Paid Up"
+                            : "Active"
+                        }
+                        color={
+                          isPaidUp
+                            ? "success"
+                            : "primary"
+                        }
+                        sx={{
+                          fontWeight: 700,
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* ROW 1 - PRINCIPAL AMOUNT */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={4}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Principal Amount
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                      }}
+                    >
+                      {formatCurrency(
+                        loan.principal_amount
+                      )}
+                    </Typography>
+                  </Box>
+                </Grid>
+
+                {/* ROW 2 - CURRENT BALANCE */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={4}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
                     >
                       Current Balance
                     </Typography>
 
                     <Typography
                       variant="h5"
-                      fontWeight={800}
+                      sx={{
+                        fontWeight: 800,
+                      }}
                     >
-                      {formatMoney(
-                        loan.current_balance
+                      {formatCurrency(
+                        currentLoanBalance
                       )}
                     </Typography>
-                  </Paper>
+                  </Box>
                 </Grid>
 
-              </Grid>
+                {/* ROW 2 - INTEREST RATE */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={4}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Interest Rate
+                    </Typography>
 
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                      }}
+                    >
+                      {loan.interest_rate !=
+                      null
+                        ? `${loan.interest_rate}%`
+                        : loan.interest_percentage !=
+                          null
+                        ? `${loan.interest_percentage}%`
+                        : "-"}
+                    </Typography>
+                  </Box>
+                </Grid>
+
+                {/* ROW 2 - AGREEMENT */}
+                <Grid
+                  item
+                  xs={12}
+                  sm={4}
+                  sx={{ minWidth: 0 }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Agreement
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                        overflowWrap:
+                          "anywhere",
+                      }}
+                    >
+                      {agreement
+                        ?.agreement_number ||
+                        "Not created"}
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
         </Grid>
 
-      </Grid>
-
-
-      {/* ===================================================
-          THREE MAIN DOCUMENT BUTTONS
-      =================================================== */}
-
-      <Card
-        sx={{
-          mb: 3,
-        }}
-      >
-        <CardContent>
-
-          <Typography
-            variant="h6"
-            fontWeight={700}
-            gutterBottom
-          >
-            Loan Documents
-          </Typography>
-
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{
-              mb: 2,
-            }}
-          >
-            Open the latest loan documents.
-          </Typography>
-
-          <Stack
-            direction={{
-              xs: "column",
-              sm: "row",
-            }}
-            spacing={2}
-          >
-
-            {/* STATEMENT */}
-
-            <Button
-              variant="contained"
-              startIcon={
-                openingDocument ? (
-                  <CircularProgress
-                    size={18}
-                    color="inherit"
-                  />
-                ) : (
-                  <ReceiptLong />
-                )
-              }
-              onClick={
-                handleViewStatement
-              }
-              disabled={
-                openingDocument ||
-                !statementDocument
-              }
-              sx={{
-                minWidth: {
-                  xs: "100%",
-                  sm: 170,
-                },
-              }}
-            >
-              Statement
-            </Button>
-
-
-            {/* AGREEMENT */}
-
-            <Button
-              variant="contained"
-              startIcon={
-                <Description />
-              }
-              onClick={
-                handleViewAgreement
-              }
-              disabled={
-                openingDocument ||
-                !signedAgreementDocument
-              }
-              sx={{
-                minWidth: {
-                  xs: "100%",
-                  sm: 170,
-                },
-              }}
-            >
-              Agreement
-            </Button>
-
-
-            {/* SETTLEMENT LETTER */}
-
-            <Button
-              variant="contained"
-              startIcon={
-                generatingSettlement ? (
-                  <CircularProgress
-                    size={18}
-                    color="inherit"
-                  />
-                ) : (
-                  <PictureAsPdf />
-                )
-              }
-              onClick={
-                handleViewSettlement
-              }
-              disabled={
-                generatingSettlement
-              }
-              sx={{
-                minWidth: {
-                  xs: "100%",
-                  sm: 210,
-                },
-              }}
-            >
-              Settlement Letter
-            </Button>
-
-          </Stack>
-
-
-          {!statementDocument && (
-            <Alert
-              severity="warning"
-              sx={{
-                mt: 2,
-              }}
-            >
-              No statement document exists
-              for this loan.
-            </Alert>
-          )}
-
-
-          {!signedAgreementDocument && (
-            <Alert
-              severity="warning"
-              sx={{
-                mt: 2,
-              }}
-            >
-              No signed loan agreement is
-              available for this loan.
-            </Alert>
-          )}
-
-        </CardContent>
-      </Card>
-
-
-      {/* ===================================================
-          TABS
-      =================================================== */}
-
-      <Card>
-
-        <Tabs
-          value={tab}
-          onChange={
-            handleTabChange
-          }
-          variant="scrollable"
-          scrollButtons="auto"
+        {/* LOAN ACTIONS */}
+        <Grid
+          item
+          xs={12}
+          sx={{ minWidth: 0 }}
         >
-
-          <Tab
-            icon={
-              <History />
-            }
-            iconPosition="start"
-            label="Transactions"
-          />
-
-          <Tab
-            icon={
-              <ReceiptLong />
-            }
-            iconPosition="start"
-            label="Statement"
-          />
-
-          <Tab
-            icon={
-              <FolderOpen />
-            }
-            iconPosition="start"
-            label="Documents"
-          />
-
-        </Tabs>
-
-
-        <Divider />
-
-
-        {/* =================================================
-            TRANSACTIONS TAB
-        ================================================= */}
-
-        {tab === 0 && (
-          <CardContent>
-
-            <LoanTransactions
-              loanId={id}
-              transactions={
-                transactions
-              }
-            />
-
-          </CardContent>
-        )}
-
-
-        {/* =================================================
-            STATEMENT TAB
-        ================================================= */}
-
-        {tab === 1 && (
-          <CardContent>
-
-            <Stack
-              direction={{
-                xs: "column",
-                md: "row",
-              }}
-              justifyContent="space-between"
-              spacing={2}
-              sx={{
-                mb: 2,
-              }}
-            >
-
-              <Box>
-
-                <Typography
-                  variant="h6"
-                  fontWeight={700}
-                >
-                  Loan Statement
-                </Typography>
-
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  This is the current
-                  transaction history for
-                  this loan.
-                </Typography>
-
-              </Box>
-
-
-              <Button
-                variant="outlined"
-                startIcon={
-                  <ReceiptLong />
-                }
-                onClick={
-                  handleViewStatement
-                }
-                disabled={
-                  !statementDocument
-                }
+          <Card
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              minWidth: 0,
+            }}
+          >
+            <CardContent sx={{ p: 3 }}>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 800,
+                  mb: 2,
+                }}
               >
-                Open Statement
-              </Button>
-
-            </Stack>
-
-
-            {statement.transactions
-              .length === 0 ? (
-
-              <Alert severity="info">
-                No transactions found.
-              </Alert>
-
-            ) : (
+                Loan Actions
+              </Typography>
 
               <Box
                 sx={{
-                  overflowX:
-                    "auto",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 1.5,
+                  width: "100%",
+                  minWidth: 0,
                 }}
               >
-
-                <Box
-                  component="table"
-                  sx={{
-                    width: "100%",
-                    borderCollapse:
-                      "collapse",
-                    minWidth: 700,
-                  }}
+                <Button
+                  variant="contained"
+                  startIcon={<Payment />}
+                  onClick={() =>
+                    setPaymentDialogOpen(
+                      true
+                    )
+                  }
+                  sx={actionButtonSx}
                 >
+                  Record Payment
+                </Button>
 
-                  <Box
-                    component="thead"
+                <Button
+                  variant="outlined"
+                  startIcon={
+                    <PictureAsPdf />
+                  }
+                  onClick={
+                    handleOpenStatement
+                  }
+                  disabled={
+                    generatingStatement
+                  }
+                  sx={actionButtonSx}
+                >
+                  {generatingStatement
+                    ? "Opening..."
+                    : "View Statement"}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={
+                    <Download />
+                  }
+                  onClick={
+                    handlePrintStatement
+                  }
+                  disabled={
+                    generatingStatement
+                  }
+                  sx={actionButtonSx}
+                >
+                  {generatingStatement
+                    ? "Generating..."
+                    : "Download Statement"}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={
+                    <Description />
+                  }
+                  onClick={() => {
+                    if (
+                      hasAgreement &&
+                      isAgreementPending
+                    ) {
+                      navigate(
+                        `/sign-agreement/offline/${agreement.id}`
+                      );
+                    }
+                  }}
+                  disabled={
+                    !hasAgreement ||
+                    !isAgreementPending
+                  }
+                  sx={actionButtonSx}
+                >
+                  Sign Agreement
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={
+                    <Verified />
+                  }
+                  onClick={
+                    handleViewAgreement
+                  }
+                  disabled={
+                    !hasAgreement ||
+                    !isAgreementSigned
+                  }
+                  sx={actionButtonSx}
+                >
+                  View Agreement
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={
+                    <ReceiptLong />
+                  }
+                  onClick={
+                    handlePaidUpLetter
+                  }
+                  disabled={
+                    !isPaidUp ||
+                    generatingPaidUpLetter
+                  }
+                  sx={actionButtonSx}
+                >
+                  {generatingPaidUpLetter
+                    ? "Generating..."
+                    : "Paid-Up Letter"}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={
+                    <FolderOpen />
+                  }
+                  onClick={() =>
+                    setTab(3)
+                  }
+                  sx={actionButtonSx}
+                >
+                  Documents
+                </Button>
+              </Box>
+
+              <Divider
+                sx={{ my: 2.5 }}
+              />
+
+              <Box
+                sx={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 3,
+                  minWidth: 0,
+                }}
+              >
+                <Box
+                  sx={{ minWidth: 160 }}
+                >
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
                   >
+                    Agreement
+                  </Typography>
 
-                    <Box
-                      component="tr"
-                    >
-
-                      {[
-                        "Date",
-                        "Type",
-                        "Description",
-                        "Debit",
-                        "Credit",
-                        "Balance",
-                      ].map(
-                        (
-                          heading
-                        ) => (
-                          <Box
-                            component="th"
-                            key={
-                              heading
-                            }
-                            sx={{
-                              textAlign:
-                                "left",
-                              p: 1.5,
-                              borderBottom:
-                                "1px solid",
-                              borderColor:
-                                "divider",
-                            }}
-                          >
-                            {heading}
-                          </Box>
-                        )
-                      )}
-
-                    </Box>
-
-                  </Box>
-
-
-                  <Box
-                    component="tbody"
+                  <Typography
+                    sx={{
+                      fontWeight: 700,
+                      overflowWrap:
+                        "anywhere",
+                    }}
                   >
-
-                    {statement.transactions.map(
-                      (
-                        transaction
-                      ) => (
-
-                        <Box
-                          component="tr"
-                          key={
-                            transaction.id
-                          }
-                        >
-
-                          <Box
-                            component="td"
-                            sx={{
-                              p: 1.5,
-                              borderBottom:
-                                "1px solid",
-                              borderColor:
-                                "divider",
-                            }}
-                          >
-                            {formatDate(
-                              transaction.transaction_date
-                            )}
-                          </Box>
-
-
-                          <Box
-                            component="td"
-                            sx={{
-                              p: 1.5,
-                              borderBottom:
-                                "1px solid",
-                              borderColor:
-                                "divider",
-                            }}
-                          >
-                            {transaction.transaction_type ||
-                              "—"}
-                          </Box>
-
-
-                          <Box
-                            component="td"
-                            sx={{
-                              p: 1.5,
-                              borderBottom:
-                                "1px solid",
-                              borderColor:
-                                "divider",
-                            }}
-                          >
-                            {transaction.description ||
-                              "—"}
-                          </Box>
-
-
-                          <Box
-                            component="td"
-                            sx={{
-                              p: 1.5,
-                              borderBottom:
-                                "1px solid",
-                              borderColor:
-                                "divider",
-                            }}
-                          >
-                            {formatMoney(
-                              transaction.debit
-                            )}
-                          </Box>
-
-
-                          <Box
-                            component="td"
-                            sx={{
-                              p: 1.5,
-                              borderBottom:
-                                "1px solid",
-                              borderColor:
-                                "divider",
-                            }}
-                          >
-                            {formatMoney(
-                              transaction.credit
-                            )}
-                          </Box>
-
-
-                          <Box
-                            component="td"
-                            sx={{
-                              p: 1.5,
-                              borderBottom:
-                                "1px solid",
-                              borderColor:
-                                "divider",
-                              fontWeight:
-                                700,
-                            }}
-                          >
-                            {formatMoney(
-                              transaction.balance
-                            )}
-                          </Box>
-
-                        </Box>
-
-                      )
-                    )}
-
-                  </Box>
-
+                    {agreement
+                      ?.agreement_number ||
+                      "Not created"}
+                  </Typography>
                 </Box>
 
-              </Box>
+                <Box
+                  sx={{ minWidth: 160 }}
+                >
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                  >
+                    Agreement Status
+                  </Typography>
 
-            )}
-
-          </CardContent>
-        )}
-
-
-        {/* =================================================
-            DOCUMENTS TAB
-        ================================================= */}
-
-        {tab === 2 && (
-          <CardContent>
-
-            <Typography
-              variant="h6"
-              fontWeight={700}
-              gutterBottom
-            >
-              Documents
-            </Typography>
-
-
-            {loadingDocuments ? (
-
-              <Box
-                sx={{
-                  display:
-                    "flex",
-                  justifyContent:
-                    "center",
-                  py: 4,
-                }}
-              >
-                <CircularProgress />
-              </Box>
-
-            ) : documents.length ===
-              0 ? (
-
-              <Alert severity="info">
-                No documents found for
-                this loan.
-              </Alert>
-
-            ) : (
-
-              <Stack spacing={2}>
-
-                {documents.map(
-                  (
-                    document
-                  ) => (
-
-                    <Paper
-                      key={
-                        document.id
+                  <Box>
+                    <Chip
+                      size="small"
+                      label={
+                        agreement?.status ||
+                        "Not available"
                       }
-                      variant="outlined"
+                      color={
+                        isAgreementSigned
+                          ? "success"
+                          : isAgreementPending
+                          ? "warning"
+                          : "default"
+                      }
                       sx={{
-                        p: 2,
+                        mt: 0.5,
+                        fontWeight: 700,
+                      }}
+                    />
+                  </Box>
+                </Box>
+
+                <Box
+                  sx={{ minWidth: 160 }}
+                >
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                  >
+                    Agreement Version
+                  </Typography>
+
+                  <Typography
+                    sx={{
+                      fontWeight: 700,
+                    }}
+                  >
+                    {agreement
+                      ?.agreement_version ||
+                      "-"}
+                  </Typography>
+                </Box>
+
+                {agreement?.signed_at && (
+                  <Box
+                    sx={{
+                      minWidth: 220,
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                    >
+                      Signed
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                        overflowWrap:
+                          "anywhere",
                       }}
                     >
+                      {formatDateTime(
+                        agreement.signed_at
+                      )}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+
+              {!hasAgreement && (
+                <Alert
+                  severity="info"
+                  sx={{ mt: 2 }}
+                >
+                  No loan agreement has
+                  been created for this
+                  loan yet.
+                </Alert>
+              )}
+
+              {hasAgreement &&
+                isAgreementPending && (
+                  <Alert
+                    severity="warning"
+                    sx={{ mt: 2 }}
+                  >
+                    Agreement is pending
+                    customer acceptance.
+                    The customer can sign
+                    it on this computer
+                    using the{" "}
+                    <strong>
+                      Sign Agreement
+                    </strong>{" "}
+                    button.
+                  </Alert>
+                )}
+
+              {hasAgreement &&
+                isAgreementSigned && (
+                  <Alert
+                    severity="success"
+                    sx={{ mt: 2 }}
+                  >
+                    This loan agreement
+                    has been signed.
+                  </Alert>
+                )}
+
+              {!isPaidUp && (
+                <Alert
+                  severity="info"
+                  sx={{ mt: 2 }}
+                >
+                  The Paid-Up Letter
+                  remains unavailable
+                  until the loan balance
+                  reaches R0.00.
+                </Alert>
+              )}
+
+              {isPaidUp && (
+                <Alert
+                  severity="success"
+                  sx={{ mt: 2 }}
+                >
+                  This loan has a zero
+                  outstanding balance.
+                  The Paid-Up Letter is
+                  available.
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* =====================================================
+          TABS
+      ====================================================== */}
+
+      <Grid container spacing={2.5}>
+        <Grid item xs={12}>
+          <Paper
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              overflow: "hidden",
+            }}
+          >
+            <Tabs
+              value={tab}
+              onChange={(_, value) =>
+                setTab(value)
+              }
+              variant="scrollable"
+              scrollButtons="auto"
+            >
+              <Tab
+                icon={<History />}
+                iconPosition="start"
+                label="Transactions"
+              />
+
+              <Tab
+                icon={
+                  <PictureAsPdf />
+                }
+                iconPosition="start"
+                label="Statement"
+              />
+
+              <Tab
+                icon={<Description />}
+                iconPosition="start"
+                label="Agreement"
+              />
+
+              <Tab
+                icon={<FolderOpen />}
+                iconPosition="start"
+                label="Documents"
+              />
+            </Tabs>
+
+            <Divider />
+
+            {/* TRANSACTIONS */}
+            {tab === 0 && (
+              <Box sx={{ p: 2.5 }}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  sx={{ mb: 2 }}
+                >
+                  <Box>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                      }}
+                    >
+                      Loan Transactions
+                    </Typography>
+
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                    >
+                      Transactions for{" "}
+                      {safeLoanNumber}
+                    </Typography>
+                  </Box>
+
+                  {loadingTransactions && (
+                    <CircularProgress
+                      size={24}
+                    />
+                  )}
+                </Stack>
+
+                <Box
+                  sx={{
+                    overflowX: "auto",
+                  }}
+                >
+                  <Box
+                    component="table"
+                    sx={{
+                      width: "100%",
+                      borderCollapse:
+                        "collapse",
+                      minWidth: 800,
+                      "& th, & td": {
+                        borderBottom:
+                          "1px solid",
+                        borderColor:
+                          "divider",
+                        padding:
+                          "12px 10px",
+                        textAlign: "left",
+                      },
+                      "& th": {
+                        fontWeight: 800,
+                        backgroundColor:
+                          "background.default",
+                      },
+                    }}
+                  >
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>
+                          Description
+                        </th>
+                        <th
+                          style={{
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          Debit
+                        </th>
+                        <th
+                          style={{
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          Credit
+                        </th>
+                        <th
+                          style={{
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          Balance
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {transactions.length ===
+                        0 && (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            style={{
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            No transactions
+                            found.
+                          </td>
+                        </tr>
+                      )}
+
+                      {transactions.map(
+                        (transaction) => (
+                          <tr
+                            key={
+                              transaction.id
+                            }
+                          >
+                            <td>
+                              {formatDate(
+                                transaction.transaction_date
+                              )}
+                            </td>
+
+                            <td>
+                              {transaction.transaction_type ||
+                                "-"}
+                            </td>
+
+                            <td>
+                              {transaction.description ||
+                                "-"}
+                            </td>
+
+                            <td
+                              style={{
+                                textAlign:
+                                  "right",
+                              }}
+                            >
+                              {getTransactionDebit(
+                                transaction
+                              ) > 0
+                                ? formatCurrency(
+                                    getTransactionDebit(
+                                      transaction
+                                    )
+                                  )
+                                : "-"}
+                            </td>
+
+                            <td
+                              style={{
+                                textAlign:
+                                  "right",
+                              }}
+                            >
+                              {getTransactionCredit(
+                                transaction
+                              ) > 0
+                                ? formatCurrency(
+                                    getTransactionCredit(
+                                      transaction
+                                    )
+                                  )
+                                : "-"}
+                            </td>
+
+                            <td
+                              style={{
+                                textAlign:
+                                  "right",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {formatCurrency(
+                                getTransactionBalance(
+                                  transaction
+                                )
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </Box>
+                </Box>
+              </Box>
+            )}
+
+            {/* STATEMENT */}
+            {tab === 1 && (
+              <Box sx={{ p: 2.5 }}>
+                <Stack
+                  direction={{
+                    xs: "column",
+                    sm: "row",
+                  }}
+                  justifyContent="space-between"
+                  alignItems={{
+                    xs: "stretch",
+                    sm: "center",
+                  }}
+                  spacing={2}
+                  sx={{ mb: 2 }}
+                >
+                  <Box>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                      }}
+                    >
+                      Loan Statement
+                    </Typography>
+
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                    >
+                      Statement for{" "}
+                      {safeLoanNumber}
+                    </Typography>
+                  </Box>
+
+                  <Stack
+                    direction={{
+                      xs: "column",
+                      sm: "row",
+                    }}
+                    spacing={1}
+                  >
+                    <Button
+                      variant="outlined"
+                      startIcon={
+                        <OpenInNew />
+                      }
+                      onClick={
+                        handleOpenStatement
+                      }
+                      disabled={
+                        generatingStatement
+                      }
+                      sx={{
+                        textTransform:
+                          "none",
+                      }}
+                    >
+                      Open PDF
+                    </Button>
+
+                    <Button
+                      variant="contained"
+                      startIcon={
+                        <Download />
+                      }
+                      onClick={
+                        handlePrintStatement
+                      }
+                      disabled={
+                        generatingStatement
+                      }
+                      sx={{
+                        textTransform:
+                          "none",
+                      }}
+                    >
+                      Download PDF
+                    </Button>
+                  </Stack>
+                </Stack>
+
+                <Card
+                  elevation={0}
+                  sx={{
+                    border: "1px solid",
+                    borderColor:
+                      "divider",
+                    mb: 2,
+                  }}
+                >
+                  <CardContent>
+                    <Grid
+                      container
+                      spacing={2}
+                    >
+                      <Grid
+                        item
+                        xs={12}
+                        sm={4}
+                      >
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                        >
+                          Loan Number
+                        </Typography>
+
+                        <Typography
+                          sx={{
+                            fontWeight: 800,
+                          }}
+                        >
+                          {safeLoanNumber}
+                        </Typography>
+                      </Grid>
+
+                      <Grid
+                        item
+                        xs={12}
+                        sm={4}
+                      >
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                        >
+                          Principal
+                        </Typography>
+
+                        <Typography
+                          sx={{
+                            fontWeight: 800,
+                          }}
+                        >
+                          {formatCurrency(
+                            loan.principal_amount
+                          )}
+                        </Typography>
+                      </Grid>
+
+                      <Grid
+                        item
+                        xs={12}
+                        sm={4}
+                      >
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                        >
+                          Current Balance
+                        </Typography>
+
+                        <Typography
+                          sx={{
+                            fontWeight: 800,
+                          }}
+                        >
+                          {formatCurrency(
+                            currentLoanBalance
+                          )}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+                </Card>
+
+                <Box
+                  sx={{
+                    overflowX: "auto",
+                  }}
+                >
+                  <Box
+                    component="table"
+                    sx={{
+                      width: "100%",
+                      borderCollapse:
+                        "collapse",
+                      minWidth: 800,
+                      "& th, & td": {
+                        borderBottom:
+                          "1px solid",
+                        borderColor:
+                          "divider",
+                        padding:
+                          "12px 10px",
+                        textAlign: "left",
+                      },
+                      "& th": {
+                        fontWeight: 800,
+                        backgroundColor:
+                          "background.default",
+                      },
+                    }}
+                  >
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>
+                          Description
+                        </th>
+                        <th
+                          style={{
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          Debit
+                        </th>
+                        <th
+                          style={{
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          Credit
+                        </th>
+                        <th
+                          style={{
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          Balance
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {transactions.length ===
+                        0 && (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            style={{
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            No transactions
+                            found.
+                          </td>
+                        </tr>
+                      )}
+
+                      {transactions.map(
+                        (transaction) => (
+                          <tr
+                            key={
+                              transaction.id
+                            }
+                          >
+                            <td>
+                              {formatDate(
+                                transaction.transaction_date
+                              )}
+                            </td>
+
+                            <td>
+                              {transaction.transaction_type ||
+                                "-"}
+                            </td>
+
+                            <td>
+                              {transaction.description ||
+                                "-"}
+                            </td>
+
+                            <td
+                              style={{
+                                textAlign:
+                                  "right",
+                              }}
+                            >
+                              {getTransactionDebit(
+                                transaction
+                              ) > 0
+                                ? formatCurrency(
+                                    getTransactionDebit(
+                                      transaction
+                                    )
+                                  )
+                                : "-"}
+                            </td>
+
+                            <td
+                              style={{
+                                textAlign:
+                                  "right",
+                              }}
+                            >
+                              {getTransactionCredit(
+                                transaction
+                              ) > 0
+                                ? formatCurrency(
+                                    getTransactionCredit(
+                                      transaction
+                                    )
+                                  )
+                                : "-"}
+                            </td>
+
+                            <td
+                              style={{
+                                textAlign:
+                                  "right",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {formatCurrency(
+                                getTransactionBalance(
+                                  transaction
+                                )
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </Box>
+                </Box>
+
+                {statement.overdues?.length >
+                  0 && (
+                  <Box sx={{ mt: 4 }}>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                        mb: 2,
+                      }}
+                    >
+                      Overdues
+                    </Typography>
+
+                    <Box
+                      sx={{
+                        overflowX:
+                          "auto",
+                      }}
+                    >
+                      <Box
+                        component="table"
+                        sx={{
+                          width: "100%",
+                          borderCollapse:
+                            "collapse",
+                          minWidth: 700,
+                          "& th, & td": {
+                            borderBottom:
+                              "1px solid",
+                            borderColor:
+                              "divider",
+                            padding:
+                              "12px 10px",
+                          },
+                          "& th": {
+                            fontWeight: 800,
+                            backgroundColor:
+                              "background.default",
+                          },
+                        }}
+                      >
+                        <thead>
+                          <tr>
+                            <th>
+                              Due Date
+                            </th>
+                            <th>
+                              Expected
+                            </th>
+                            <th>
+                              Paid
+                            </th>
+                            <th>
+                              Outstanding
+                            </th>
+                            <th>
+                              Status
+                            </th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {statement.overdues.map(
+                            (
+                              overdue,
+                              index
+                            ) => (
+                              <tr
+                                key={
+                                  overdue.id ||
+                                  index
+                                }
+                              >
+                                <td>
+                                  {formatDate(
+                                    overdue.due_date ||
+                                      overdue.expected_date
+                                  )}
+                                </td>
+
+                                <td>
+                                  {formatCurrency(
+                                    overdue.amount_due ||
+                                      overdue.expected_amount
+                                  )}
+                                </td>
+
+                                <td>
+                                  {formatCurrency(
+                                    overdue.amount_paid ||
+                                      overdue.paid_amount
+                                  )}
+                                </td>
+
+                                <td>
+                                  {formatCurrency(
+                                    overdue.amount_outstanding ||
+                                      overdue.outstanding_amount
+                                  )}
+                                </td>
+
+                                <td>
+                                  <Chip
+                                    size="small"
+                                    label={
+                                      overdue.status ||
+                                      "-"
+                                    }
+                                    color={
+                                      String(
+                                        overdue.status ||
+                                          ""
+                                      ).toLowerCase() ===
+                                      "resolved"
+                                        ? "success"
+                                        : "warning"
+                                    }
+                                  />
+                                </td>
+                              </tr>
+                            )
+                          )}
+                        </tbody>
+                      </Box>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            {/* AGREEMENT */}
+            {tab === 2 && (
+              <Box sx={{ p: 2.5 }}>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    fontWeight: 800,
+                    mb: 2,
+                  }}
+                >
+                  Loan Agreement
+                </Typography>
+
+                {!agreement ? (
+                  <Alert severity="info">
+                    No agreement has been
+                    created for this loan.
+                  </Alert>
+                ) : (
+                  <Card
+                    elevation={0}
+                    sx={{
+                      border: "1px solid",
+                      borderColor:
+                        "divider",
+                    }}
+                  >
+                    <CardContent>
+                      <Grid
+                        container
+                        spacing={2}
+                      >
+                        <Grid
+                          item
+                          xs={12}
+                          sm={6}
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Agreement Number
+                          </Typography>
+
+                          <Typography
+                            sx={{
+                              fontWeight: 800,
+                            }}
+                          >
+                            {agreement.agreement_number ||
+                              "-"}
+                          </Typography>
+                        </Grid>
+
+                        <Grid
+                          item
+                          xs={12}
+                          sm={6}
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Version
+                          </Typography>
+
+                          <Typography
+                            sx={{
+                              fontWeight: 800,
+                            }}
+                          >
+                            {agreement.agreement_version ||
+                              "-"}
+                          </Typography>
+                        </Grid>
+
+                        <Grid
+                          item
+                          xs={12}
+                          sm={6}
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Status
+                          </Typography>
+
+                          <Box
+                            sx={{ mt: 0.5 }}
+                          >
+                            <Chip
+                              label={
+                                agreement.status ||
+                                "Unknown"
+                              }
+                              color={
+                                isAgreementSigned
+                                  ? "success"
+                                  : isAgreementPending
+                                  ? "warning"
+                                  : "default"
+                              }
+                            />
+                          </Box>
+                        </Grid>
+
+                        <Grid
+                          item
+                          xs={12}
+                          sm={6}
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Generated
+                          </Typography>
+
+                          <Typography
+                            sx={{
+                              fontWeight: 700,
+                            }}
+                          >
+                            {formatDateTime(
+                              agreement.generated_at ||
+                                agreement.created_at
+                            )}
+                          </Typography>
+                        </Grid>
+
+                        {agreement.accepted_at && (
+                          <Grid
+                            item
+                            xs={12}
+                            sm={6}
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              Accepted
+                            </Typography>
+
+                            <Typography
+                              sx={{
+                                fontWeight: 700,
+                              }}
+                            >
+                              {formatDateTime(
+                                agreement.accepted_at
+                              )}
+                            </Typography>
+                          </Grid>
+                        )}
+
+                        {agreement.signed_at && (
+                          <Grid
+                            item
+                            xs={12}
+                            sm={6}
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              Signed
+                            </Typography>
+
+                            <Typography
+                              sx={{
+                                fontWeight: 700,
+                              }}
+                            >
+                              {formatDateTime(
+                                agreement.signed_at
+                              )}
+                            </Typography>
+                          </Grid>
+                        )}
+                      </Grid>
+
+                      <Divider
+                        sx={{
+                          my: 2.5,
+                        }}
+                      />
 
                       <Stack
                         direction={{
                           xs: "column",
                           sm: "row",
                         }}
-                        justifyContent="space-between"
-                        alignItems={{
-                          xs: "stretch",
-                          sm: "center",
-                        }}
-                        spacing={2}
+                        spacing={1.5}
                       >
-
-                        <Box>
-
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            alignItems="center"
-                            sx={{
-                              mb: 0.5,
-                            }}
-                          >
-
-                            <PictureAsPdf
-                              fontSize="small"
-                            />
-
-                            <Typography
-                              fontWeight={
-                                700
-                              }
-                            >
-                              {
-                                document.document_name
-                              }
-                            </Typography>
-
-                          </Stack>
-
-
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                          >
-                            Type:{" "}
-                            {
-                              document.document_type
+                        <Button
+                          variant="contained"
+                          startIcon={
+                            <Description />
+                          }
+                          onClick={() => {
+                            if (
+                              isAgreementPending &&
+                              agreement.id
+                            ) {
+                              navigate(
+                                `/sign-agreement/offline/${agreement.id}`
+                              );
                             }
-                          </Typography>
-
-
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                          >
-                            Created:{" "}
-                            {formatDateTime(
-                              document.created_at
-                            )}
-                          </Typography>
-
-                        </Box>
-
+                          }}
+                          disabled={
+                            !isAgreementPending
+                          }
+                          sx={{
+                            textTransform:
+                              "none",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Sign Agreement on
+                          This Computer
+                        </Button>
 
                         <Button
                           variant="outlined"
                           startIcon={
-                            <FolderOpen />
+                            <OpenInNew />
                           }
-                          onClick={() =>
-                            openDocumentViewer(
-                              {
-                                documentPath:
-                                  document.document_path,
-
-                                documentName:
-                                  document.document_name,
-
-                                documentType:
-                                  document.document_type,
-                              }
-                            )
+                          onClick={
+                            handleViewAgreement
                           }
                           disabled={
-                            !document.document_path
+                            !isAgreementSigned
                           }
+                          sx={{
+                            textTransform:
+                              "none",
+                            fontWeight: 700,
+                          }}
                         >
-                          View
+                          View Signed Agreement
                         </Button>
-
                       </Stack>
-
-                    </Paper>
-
-                  )
+                    </CardContent>
+                  </Card>
                 )}
-
-              </Stack>
-
+              </Box>
             )}
 
-          </CardContent>
-        )}
+            {/* DOCUMENTS */}
+            {tab === 3 && (
+              <Box sx={{ p: 2.5 }}>
+                <Stack
+                  direction={{
+                    xs: "column",
+                    sm: "row",
+                  }}
+                  justifyContent="space-between"
+                  alignItems={{
+                    xs: "stretch",
+                    sm: "center",
+                  }}
+                  spacing={2}
+                  sx={{ mb: 2 }}
+                >
+                  <Box>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                      }}
+                    >
+                      Loan Documents
+                    </Typography>
 
-      </Card>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                    >
+                      Documents associated
+                      with{" "}
+                      {safeLoanNumber}
+                    </Typography>
+                  </Box>
 
+                  <Button
+                    variant="outlined"
+                    startIcon={
+                      <FolderOpen />
+                    }
+                    onClick={() =>
+                      loadDocuments(
+                        id,
+                        loan.customer_id
+                      )
+                    }
+                    sx={{
+                      textTransform:
+                        "none",
+                    }}
+                  >
+                    Refresh
+                  </Button>
+                </Stack>
 
-      {/* ===================================================
-          DOCUMENT VIEWER
-      =================================================== */}
+                {documents.length ===
+                0 ? (
+                  <Alert severity="info">
+                    No documents found
+                    for this loan.
+                  </Alert>
+                ) : (
+                  <Stack spacing={1.5}>
+                    {documents.map(
+                      (document) => (
+                        <Paper
+                          key={
+                            document.id ||
+                            document.path ||
+                            document.document_name
+                          }
+                          variant="outlined"
+                          sx={{ p: 2 }}
+                        >
+                          <Stack
+                            direction={{
+                              xs: "column",
+                              sm: "row",
+                            }}
+                            justifyContent="space-between"
+                            alignItems={{
+                              xs: "stretch",
+                              sm: "center",
+                            }}
+                            spacing={2}
+                          >
+                            <Box>
+                              <Typography
+                                sx={{
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {document.document_name ||
+                                  document.name ||
+                                  "Document"}
+                              </Typography>
 
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                {document.document_type ||
+                                  "Document"}
+                              </Typography>
+
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                {formatDateTime(
+                                  document.created_at
+                                )}
+                              </Typography>
+                            </Box>
+
+                            <Stack
+                              direction={{
+                                xs: "column",
+                                sm: "row",
+                              }}
+                              spacing={1}
+                            >
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={
+                                  <OpenInNew />
+                                }
+                                onClick={() =>
+                                  handleOpenDocument(
+                                    document
+                                  )
+                                }
+                                sx={{
+                                  textTransform:
+                                    "none",
+                                }}
+                              >
+                                Open
+                              </Button>
+
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={
+                                  <Download />
+                                }
+                                onClick={() =>
+                                  handleDownloadDocument(
+                                    document
+                                  )
+                                }
+                                sx={{
+                                  textTransform:
+                                    "none",
+                                }}
+                              >
+                                Download
+                              </Button>
+                            </Stack>
+                          </Stack>
+                        </Paper>
+                      )
+                    )}
+                  </Stack>
+                )}
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* PAYMENT DIALOG */}
       <Dialog
-        open={
-          documentViewerOpen
+        open={paymentDialogOpen}
+        onClose={() =>
+          setPaymentDialogOpen(false)
         }
-        onClose={
-          closeDocumentViewer
-        }
-        fullScreen
+        fullWidth
+        maxWidth="sm"
       >
-
-        <DialogTitle
-          sx={{
-            display:
-              "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "space-between",
-            gap: 2,
-          }}
-        >
-
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-          >
-
-            <PictureAsPdf />
-
-            <Box>
-
-              <Typography
-                fontWeight={700}
-              >
-                {documentViewerName ||
-                  "Document"}
-              </Typography>
-
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
-                {documentViewerType}
-              </Typography>
-
-            </Box>
-
-          </Stack>
-
-
-          <IconButton
-            onClick={
-              closeDocumentViewer
-            }
-            aria-label="Close"
-          >
-            <Close />
-          </IconButton>
-
+        <DialogTitle>
+          Record Payment
         </DialogTitle>
 
-
-        <Divider />
-
-
-        <DialogContent
-          sx={{
-            p: 0,
-            backgroundColor:
-              "#525659",
-            overflow:
-              "hidden",
-          }}
-        >
-
-          {documentViewerUrl ? (
-
-            <Box
-              component="iframe"
-              src={
-                documentViewerUrl
-              }
-              title={
-                documentViewerName ||
-                "Document Viewer"
-              }
-              sx={{
-                width: "100%",
-                height: "100%",
-                border: 0,
-                display:
-                  "block",
-              }}
-            />
-
-          ) : (
-
-            <Box
-              sx={{
-                display:
-                  "flex",
-                justifyContent:
-                  "center",
-                alignItems:
-                  "center",
-                height: "100%",
-              }}
-            >
-              <CircularProgress />
-            </Box>
-
-          )}
-
+        <DialogContent dividers>
+          <RecordPayment
+            loanId={loan.id}
+            onSuccess={
+              handlePaymentComplete
+            }
+            onCancel={() =>
+              setPaymentDialogOpen(false)
+            }
+          />
         </DialogContent>
 
-
-        <DialogActions
-          sx={{
-            p: 2,
-            gap: 1,
-            borderTop:
-              "1px solid",
-            borderColor:
-              "divider",
-            flexWrap:
-              "wrap",
-          }}
-        >
-
+        <DialogActions>
           <Button
-            variant="contained"
-            startIcon={
-              <Print />
+            onClick={() =>
+              setPaymentDialogOpen(false)
             }
-            onClick={
-              handlePrint
-            }
-            disabled={
-              !documentViewerUrl
-            }
-          >
-            Print
-          </Button>
-
-
-          <Button
-            variant="contained"
-            startIcon={
-              <Download />
-            }
-            onClick={
-              handleDownload
-            }
-            disabled={
-              !documentViewerUrl
-            }
-          >
-            Download
-          </Button>
-
-
-          <Button
-            variant="contained"
-            startIcon={
-              sendingEmail ? (
-                <CircularProgress
-                  size={18}
-                  color="inherit"
-                />
-              ) : (
-                <Email />
-              )
-            }
-            onClick={
-              handleEmail
-            }
-            disabled={
-              !documentViewerUrl ||
-              sendingEmail
-            }
-          >
-            {sendingEmail
-              ? "Sending..."
-              : "Email"}
-          </Button>
-
-
-          <Button
-            variant="outlined"
-            onClick={
-              closeDocumentViewer
-            }
-            disabled={
-              sendingEmail
-            }
+            sx={{
+              textTransform: "none",
+            }}
           >
             Close
           </Button>
-
         </DialogActions>
-
       </Dialog>
-
     </Box>
   );
 }

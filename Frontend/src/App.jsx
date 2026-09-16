@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 
 import Login from "./pages/Login/Login";
 import Dashboard from "./pages/Dashboard/Dashboard";
@@ -8,6 +9,7 @@ import Repayments from "./pages/Repayments/Repayments";
 import Statements from "./pages/Statements/Statements";
 import Reports from "./pages/Reports/Reports";
 import Settings from "./pages/Settings/Settings";
+import Documents from "./pages/Documents/Documents";
 import LoanProfile from "./pages/Loans/LoanProfile";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import MainLayout from "./components/layout/MainLayout";
@@ -24,28 +26,43 @@ import TestEmail from "./pages/TestEmail";
 import PendingApplications from "./pages/Applications/PendingApplications";
 import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
+import MobileLanding from "./mobile/pages/MobileLanding";
+import MobilePreview from "./mobile/pages/MobilePreview";
+
+import MobileApp from "./mobile/MobileApp";
 
 export default function App() {
+  /*
+   * NATIVE MOBILE APPLICATION
+   *
+   * Android/iOS only:
+   * Login
+   *   ↓
+   * Pending Applications
+   *   ↓
+   * Application Review
+   *
+   * The desktop system is not rendered inside the native app.
+   */
+  if (Capacitor.isNativePlatform()) {
+    return <MobileApp />;
+  }
+
+  /*
+   * EXISTING DESKTOP WEB APPLICATION
+   *
+   * This section remains unchanged.
+   */
   return (
     <>
       <Toaster position="top-right" />
 
       <BrowserRouter>
         <Routes>
-
-          {/* =========================
-              PUBLIC
-          ========================== */}
-
-          <Route
-            path="/"
-            element={<Login />}
-          />
-
-          <Route
-            path="/apply"
-            element={<PublicApplication />}
-          />
+          {/* PUBLIC */}
+          <Route path="/" element={<Login />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/apply" element={<PublicApplication />} />
 
           <Route
             path="/sign-agreement/:token"
@@ -62,15 +79,17 @@ export default function App() {
             element={<VerifyAgreement />}
           />
 
+                      <Route 
+              path="/mobile" 
+              element={<MobileLanding />} 
+            />
 
-          {/* =========================
-              MOBILE APPLICATION REVIEW
-              
-              Protected, but intentionally
-              outside MainLayout so the
-              phone only shows the review UI.
-          ========================== */}
+            <Route 
+              path="/mobile/preview" 
+              element={<MobilePreview />} 
+            />
 
+          {/* MOBILE APPLICATION REVIEW - WEB */}
           <Route
             path="/mobile/application-review"
             element={
@@ -89,11 +108,7 @@ export default function App() {
             }
           />
 
-
-          {/* =========================
-              DESKTOP PROTECTED SYSTEM
-          ========================== */}
-
+          {/* DESKTOP PROTECTED SYSTEM */}
           <Route
             element={
               <ProtectedRoute>
@@ -142,6 +157,11 @@ export default function App() {
             />
 
             <Route
+              path="/documents"
+              element={<Documents />}
+            />
+
+            <Route
               path="/applications"
               element={<Applications />}
             />
@@ -170,8 +190,8 @@ export default function App() {
               path="/pending-applications"
               element={<PendingApplications />}
             />
-          </Route>
 
+          </Route>
         </Routes>
       </BrowserRouter>
     </>

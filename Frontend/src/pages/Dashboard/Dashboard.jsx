@@ -10,8 +10,6 @@ import {
   Chip,
   CircularProgress,
   Divider,
-  Grid,
-  IconButton,
   Paper,
   Stack,
   Table,
@@ -20,21 +18,17 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Tooltip,
   Typography,
 } from "@mui/material";
 
-import RefreshIcon from "@mui/icons-material/Refresh";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
-import PeopleIcon from "@mui/icons-material/People";
 import PaymentsIcon from "@mui/icons-material/Payments";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import ScheduleIcon from "@mui/icons-material/Schedule";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 
 import { supabase } from "../../lib/supabase";
-import { runDailyLoanProcessing } from "../../services/loanService";
+import { getCurrentUserProfile } from "../../services/userService";
+import { getSystemSettings } from "../../services/settingsService";
 
 function money(value) {
   return `R${Number(value || 0).toLocaleString("en-ZA", {
@@ -48,9 +42,7 @@ function formatDate(value) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString("en-ZA", {
     year: "numeric",
@@ -64,9 +56,7 @@ function formatDateTime(value) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleString("en-ZA", {
     year: "numeric",
@@ -87,26 +77,31 @@ function getCustomerName(loan) {
   );
 }
 
-function StatCard({
-  title,
-  value,
-  subtitle,
-  icon,
-}) {
+function StatCard({ title, value, subtitle, icon }) {
   return (
     <Card
       elevation={2}
       sx={{
         height: "100%",
+        width: "100%",
         borderRadius: 3,
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <CardContent>
+      <CardContent
+        sx={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
         <Stack
           direction="row"
           justifyContent="space-between"
           alignItems="flex-start"
           spacing={2}
+          sx={{ width: "100%" }}
         >
           <Box>
             <Typography
@@ -135,43 +130,26 @@ function StatCard({
             )}
           </Box>
 
-          <Box
-            sx={{
-              width: 46,
-              height: 46,
-              borderRadius: 2,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: "action.hover",
-            }}
-          >
-            {icon}
-          </Box>
+          {icon && (
+            <Box
+              sx={{
+                width: 46,
+                height: 46,
+                minWidth: 46,
+                borderRadius: 2,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: "action.hover",
+              }}
+            >
+              {icon}
+            </Box>
+          )}
         </Stack>
       </CardContent>
     </Card>
   );
-}
-
-function statusColor(status) {
-  switch (String(status || "").toLowerCase()) {
-    case "active":
-      return "success";
-
-    case "completed":
-      return "primary";
-
-    case "overdue":
-      return "error";
-
-    case "void":
-    case "cancelled":
-      return "default";
-
-    default:
-      return "warning";
-  }
 }
 
 export default function Dashboard() {
@@ -182,31 +160,62 @@ export default function Dashboard() {
   const [applications, setApplications] = useState([]);
 
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
 
+  const [userName, setUserName] = useState("User");
+  const [companyName, setCompanyName] =
+    useState("Umhlomunye Finance");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadHeaderInformation() {
+      try {
+        const [profile, settings] =
+          await Promise.all([
+            getCurrentUserProfile(),
+            getSystemSettings(),
+          ]);
+
+        if (!mounted) return;
+
+        const fullName =
+          profile?.full_name?.trim();
+
+        setUserName(
+          fullName || profile?.username || "User"
+        );
+
+        setCompanyName(
+          settings?.company_name ||
+            "Umhlomunye Finance"
+        );
+      } catch (err) {
+        console.error(
+          "DASHBOARD HEADER ERROR:",
+          err
+        );
+
+        if (!mounted) return;
+
+        setUserName("User");
+        setCompanyName(
+          "Umhlomunye Finance"
+        );
+      }
+    }
+
+    loadHeaderInformation();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const loadDashboard = useCallback(
-    async (runProcessing = true) => {
+    async () => {
       try {
         setError("");
-
-        if (runProcessing) {
-          setProcessing(true);
-
-          try {
-            await runDailyLoanProcessing();
-          } catch (processingError) {
-            console.error(
-              "Daily processing failed:",
-              processingError
-            );
-
-            // Do not prevent the dashboard from loading
-            // if processing fails.
-          } finally {
-            setProcessing(false);
-          }
-        }
 
         const [
           loansResult,
@@ -263,13 +272,23 @@ export default function Dashboard() {
         }
 
         setLoans(loansResult.data || []);
-        setTransactions(transactionsResult.data || []);
-        setApplications(applicationsResult.data || []);
+
+        setTransactions(
+          transactionsResult.data || []
+        );
+
+        setApplications(
+          applicationsResult.data || []
+        );
       } catch (err) {
-        console.error("DASHBOARD ERROR:", err);
+        console.error(
+          "DASHBOARD ERROR:",
+          err
+        );
 
         setError(
-          err.message || "Unable to load dashboard data."
+          err.message ||
+            "Unable to load dashboard data."
         );
       } finally {
         setLoading(false);
@@ -279,7 +298,41 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    loadDashboard(true);
+    loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const refreshInterval =
+      setInterval(() => {
+        loadDashboard();
+      }, 30000);
+
+    return () => {
+      clearInterval(refreshInterval);
+    };
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState ===
+        "visible"
+      ) {
+        loadDashboard();
+      }
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+    };
   }, [loadDashboard]);
 
   useEffect(() => {
@@ -293,7 +346,7 @@ export default function Dashboard() {
           table: "loans",
         },
         () => {
-          loadDashboard(false);
+          loadDashboard();
         }
       )
       .on(
@@ -304,7 +357,7 @@ export default function Dashboard() {
           table: "loan_transactions",
         },
         () => {
-          loadDashboard(false);
+          loadDashboard();
         }
       )
       .on(
@@ -315,7 +368,7 @@ export default function Dashboard() {
           table: "loan_applications",
         },
         () => {
-          loadDashboard(false);
+          loadDashboard();
         }
       )
       .subscribe();
@@ -329,19 +382,10 @@ export default function Dashboard() {
     () =>
       loans.filter(
         (loan) =>
-          String(loan.loan_status).toLowerCase() ===
-            "active" &&
+          String(
+            loan.loan_status
+          ).toLowerCase() === "active" &&
           !loan.is_deleted
-      ),
-    [loans]
-  );
-
-  const completedLoans = useMemo(
-    () =>
-      loans.filter(
-        (loan) =>
-          String(loan.loan_status).toLowerCase() ===
-          "completed"
       ),
     [loans]
   );
@@ -350,7 +394,10 @@ export default function Dashboard() {
     () =>
       loans.reduce(
         (sum, loan) =>
-          sum + Number(loan.principal_amount || 0),
+          sum +
+          Number(
+            loan.principal_amount || 0
+          ),
         0
       ),
     [loans]
@@ -360,7 +407,10 @@ export default function Dashboard() {
     () =>
       activeLoans.reduce(
         (sum, loan) =>
-          sum + Number(loan.current_balance || 0),
+          sum +
+          Number(
+            loan.current_balance || 0
+          ),
         0
       ),
     [activeLoans]
@@ -370,7 +420,10 @@ export default function Dashboard() {
     () =>
       loans.reduce(
         (sum, loan) =>
-          sum + Number(loan.total_paid || 0),
+          sum +
+          Number(
+            loan.total_paid || 0
+          ),
         0
       ),
     [loans]
@@ -380,10 +433,37 @@ export default function Dashboard() {
     () =>
       loans.reduce(
         (sum, loan) =>
-          sum + Number(loan.interest_amount || 0),
+          sum +
+          Number(
+            loan.interest_amount || 0
+          ),
         0
       ),
     [loans]
+  );
+
+  const interestCollected = useMemo(
+    () =>
+      transactions
+        .filter(
+          (transaction) =>
+            String(
+              transaction.transaction_type ||
+                ""
+            ).toLowerCase() ===
+            "payment"
+        )
+        .reduce(
+          (sum, transaction) =>
+            sum +
+            Number(
+              transaction.interest_amount ??
+                transaction.interest_collected ??
+                0
+            ),
+          0
+        ),
+    [transactions]
   );
 
   const repaymentTransactions = useMemo(
@@ -392,8 +472,10 @@ export default function Dashboard() {
         .filter(
           (transaction) =>
             String(
-              transaction.transaction_type || ""
-            ).toLowerCase() === "payment"
+              transaction.transaction_type ||
+                ""
+            ).toLowerCase() ===
+            "payment"
         )
         .slice(0, 10),
     [transactions]
@@ -404,7 +486,9 @@ export default function Dashboard() {
 
     return activeLoans
       .filter((loan) => {
-        if (!loan.next_interest_date) return false;
+        if (!loan.next_interest_date) {
+          return false;
+        }
 
         const interestDate = new Date(
           loan.next_interest_date
@@ -414,8 +498,12 @@ export default function Dashboard() {
       })
       .sort(
         (a, b) =>
-          new Date(a.next_interest_date) -
-          new Date(b.next_interest_date)
+          new Date(
+            a.next_interest_date
+          ) -
+          new Date(
+            b.next_interest_date
+          )
       )
       .slice(0, 10);
   }, [activeLoans]);
@@ -430,8 +518,12 @@ export default function Dashboard() {
           justifyContent: "center",
         }}
       >
-        <Stack alignItems="center" spacing={2}>
+        <Stack
+          alignItems="center"
+          spacing={2}
+        >
           <CircularProgress />
+
           <Typography color="text.secondary">
             Loading dashboard...
           </Typography>
@@ -441,12 +533,18 @@ export default function Dashboard() {
   }
 
   return (
-    <Box sx={{ p: { xs: 2, md: 3 } }}>
+    <Box sx={{ width: "100%" }}>
       {/* HEADER */}
       <Stack
-        direction={{ xs: "column", md: "row" }}
+        direction={{
+          xs: "column",
+          md: "row",
+        }}
         justifyContent="space-between"
-        alignItems={{ xs: "flex-start", md: "center" }}
+        alignItems={{
+          xs: "flex-start",
+          md: "center",
+        }}
         spacing={2}
         sx={{ mb: 3 }}
       >
@@ -456,311 +554,139 @@ export default function Dashboard() {
             fontWeight={800}
             sx={{ mb: 0.5 }}
           >
-            Dashboard
+            Welcome, {userName}
           </Typography>
-
-          <Typography color="text.secondary">
-            Umhlomunye Finance loan portfolio overview
-          </Typography>
-
-          {processing && (
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              sx={{ mt: 1 }}
-            >
-              <CircularProgress size={14} />
-
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
-                Processing due loan interest...
-              </Typography>
-            </Stack>
-          )}
         </Box>
-
-        <Stack direction="row" spacing={1}>
-          <Tooltip title="Refresh dashboard">
-            <IconButton
-              onClick={() => loadDashboard(true)}
-              disabled={processing}
-            >
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-
-          <Button
-            variant="contained"
-            onClick={() => navigate("/loans")}
-          >
-            View Loans
-          </Button>
-        </Stack>
       </Stack>
 
+      {/* ERROR */}
       {error && (
         <Alert
-          severity="warning"
-          sx={{ mb: 3 }}
-          onClose={() => setError("")}
+          severity="error"
+          sx={{
+            mb: 3,
+            borderRadius: 2,
+          }}
         >
           {error}
         </Alert>
       )}
 
-      {/* STAT CARDS */}
-      <Grid container spacing={2.5} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
+      {/* =======================================================
+          DASHBOARD STATISTICS
+
+          DESKTOP:
+          4 columns x 2 rows
+
+          Columns 1-3:
+          Six equal statistic cards
+
+          Column 4:
+          Pending Applications spans both rows
+          ======================================================= */}
+
+      <Box
+        sx={{
+          width: "100%",
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm: "repeat(2, minmax(0, 1fr))",
+            md: "repeat(4, minmax(0, 1fr))",
+          },
+          gridTemplateRows: {
+            xs: "auto",
+            sm: "auto",
+            md: "repeat(2, minmax(190px, 1fr))",
+          },
+          gap: 2.5,
+          mb: 3,
+          alignItems: "stretch",
+        }}
+      >
+        {/* ROW 1 - CARD 1 */}
+        <Box
+          sx={{
+            display: "flex",
+            minWidth: 0,
+          }}
+        >
           <StatCard
             title="Total Loans"
             value={loans.length}
-            subtitle={`${activeLoans.length} active`}
+            subtitle="All recorded loans"
             icon={<AccountBalanceWalletIcon />}
           />
-        </Grid>
+        </Box>
 
-        <Grid item xs={12} sm={6} md={3}>
+        {/* ROW 1 - CARD 2 */}
+        <Box
+          sx={{
+            display: "flex",
+            minWidth: 0,
+          }}
+        >
           <StatCard
             title="Portfolio Balance"
             value={money(activeBalance)}
             subtitle="Outstanding active balance"
             icon={<TrendingUpIcon />}
           />
-        </Grid>
+        </Box>
 
-        <Grid item xs={12} sm={6} md={3}>
+        {/* ROW 1 - CARD 3 */}
+        <Box
+          sx={{
+            display: "flex",
+            minWidth: 0,
+          }}
+        >
           <StatCard
             title="Total Paid"
             value={money(totalPaid)}
             subtitle="All recorded repayments"
             icon={<PaymentsIcon />}
           />
-        </Grid>
+        </Box>
 
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Pending Applications"
-            value={applications.length}
-            subtitle="Awaiting review"
-            icon={<PeopleIcon />}
-          />
-        </Grid>
-      </Grid>
+        {/* PENDING APPLICATIONS
+            CARD 4 - SPANS BOTH ROWS */}
+        <Box
+          sx={{
+            display: "flex",
+            minWidth: 0,
 
-      {/* SECONDARY STATISTICS */}
-      <Grid container spacing={2.5} sx={{ mb: 3 }}>
-        <Grid item xs={12} md={4}>
-          <Card elevation={1} sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Total Principal Disbursed
-              </Typography>
+            gridColumn: {
+              xs: "auto",
+              sm: "auto",
+              md: "4",
+            },
 
-              <Typography
-                variant="h5"
-                fontWeight={700}
-                sx={{ mt: 1 }}
-              >
-                {money(totalDisbursed)}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Card elevation={1} sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Contracted Interest
-              </Typography>
-
-              <Typography
-                variant="h5"
-                fontWeight={700}
-                sx={{ mt: 1 }}
-              >
-                {money(totalInterest)}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Card elevation={1} sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Completed Loans
-              </Typography>
-
-              <Typography
-                variant="h5"
-                fontWeight={700}
-                sx={{ mt: 1 }}
-              >
-                {completedLoans.length}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* LOANS + APPLICATIONS */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} lg={8}>
+            gridRow: {
+              xs: "auto",
+              sm: "auto",
+              md: "1 / span 2",
+            },
+          }}
+        >
           <Card
             elevation={2}
-            sx={{ borderRadius: 3 }}
+            sx={{
+              borderRadius: 3,
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }}
           >
-            <CardContent sx={{ p: 0 }}>
-              <Box
-                sx={{
-                  p: 2.5,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <Box>
-                  <Typography variant="h6" fontWeight={700}>
-                    Active Loans
-                  </Typography>
-
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    Current outstanding portfolio
-                  </Typography>
-                </Box>
-
-                <Button
-                  endIcon={<ArrowForwardIcon />}
-                  onClick={() => navigate("/loans")}
-                >
-                  All Loans
-                </Button>
-              </Box>
-
-              <Divider />
-
-              {activeLoans.length === 0 ? (
-                <Box sx={{ p: 4, textAlign: "center" }}>
-                  <Typography color="text.secondary">
-                    No active loans found.
-                  </Typography>
-                </Box>
-              ) : (
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>
-                          <strong>Loan</strong>
-                        </TableCell>
-
-                        <TableCell>
-                          <strong>Customer</strong>
-                        </TableCell>
-
-                        <TableCell align="right">
-                          <strong>Balance</strong>
-                        </TableCell>
-
-                        <TableCell>
-                          <strong>Next Interest</strong>
-                        </TableCell>
-
-                        <TableCell>
-                          <strong>Status</strong>
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
-
-                    <TableBody>
-                      {activeLoans
-                        .slice(0, 10)
-                        .map((loan) => (
-                          <TableRow
-                            key={loan.id}
-                            hover
-                            sx={{
-                              cursor: "pointer",
-                            }}
-                            onClick={() =>
-                              navigate(
-                                `/loans/${loan.id}`
-                              )
-                            }
-                          >
-                            <TableCell>
-                              <Typography
-                                fontWeight={700}
-                              >
-                                {loan.loan_number}
-                              </Typography>
-                            </TableCell>
-
-                            <TableCell>
-                              {getCustomerName(loan)}
-                            </TableCell>
-
-                            <TableCell align="right">
-                              <Typography
-                                fontWeight={700}
-                              >
-                                {money(
-                                  loan.current_balance
-                                )}
-                              </Typography>
-                            </TableCell>
-
-                            <TableCell>
-                              {formatDate(
-                                loan.next_interest_date
-                              )}
-                            </TableCell>
-
-                            <TableCell>
-                              <Chip
-                                size="small"
-                                label={
-                                  loan.loan_status ||
-                                  "Unknown"
-                                }
-                                color={statusColor(
-                                  loan.loan_status
-                                )}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* PENDING APPLICATIONS */}
-        <Grid item xs={12} lg={4}>
-          <Card
-            elevation={2}
-            sx={{ borderRadius: 3, height: "100%" }}
-          >
-            <CardContent>
+            <CardContent
+              sx={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
+              }}
+            >
               <Stack
                 direction="row"
                 justifyContent="space-between"
@@ -772,14 +698,14 @@ export default function Dashboard() {
                     variant="h6"
                     fontWeight={700}
                   >
-                    Applications
+                    Pending Applications
                   </Typography>
 
                   <Typography
                     variant="body2"
                     color="text.secondary"
                   >
-                    Pending review
+                    Applications awaiting review
                   </Typography>
                 </Box>
 
@@ -789,15 +715,32 @@ export default function Dashboard() {
                 />
               </Stack>
 
+              <Divider sx={{ mb: 2 }} />
+
               {applications.length === 0 ? (
-                <Typography
-                  color="text.secondary"
-                  sx={{ py: 3 }}
+                <Box
+                  sx={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    py: 3,
+                  }}
                 >
-                  No pending applications.
-                </Typography>
+                  <Typography color="text.secondary">
+                    No pending applications.
+                  </Typography>
+                </Box>
               ) : (
-                <Stack spacing={1.5}>
+                <Stack
+                  spacing={1.5}
+                  sx={{
+                    flex: 1,
+                    overflowY: "auto",
+                    minHeight: 0,
+                  }}
+                >
                   {applications
                     .slice(0, 6)
                     .map((application) => (
@@ -807,6 +750,12 @@ export default function Dashboard() {
                         sx={{
                           p: 1.5,
                           cursor: "pointer",
+                          transition:
+                            "all 0.2s ease",
+                          "&:hover": {
+                            bgcolor:
+                              "action.hover",
+                          },
                         }}
                         onClick={() =>
                           navigate(
@@ -816,7 +765,10 @@ export default function Dashboard() {
                       >
                         <Typography fontWeight={700}>
                           {application.application_number ||
-                            application.id?.slice(0, 8)}
+                            application.id?.slice(
+                              0,
+                              8
+                            )}
                         </Typography>
 
                         <Typography
@@ -853,53 +805,95 @@ export default function Dashboard() {
               </Button>
             </CardContent>
           </Card>
-        </Grid>
-      </Grid>
+        </Box>
 
-      {/* NEXT INTEREST */}
+        {/* ROW 2 - CARD 1 */}
+        <Box
+          sx={{
+            display: "flex",
+            minWidth: 0,
+          }}
+        >
+          <StatCard
+            title="Total Principal Disbursed"
+            value={money(totalDisbursed)}
+            subtitle="Total principal issued"
+          />
+        </Box>
+
+        {/* ROW 2 - CARD 2 */}
+        <Box
+          sx={{
+            display: "flex",
+            minWidth: 0,
+          }}
+        >
+          <StatCard
+            title="Contracted Interest"
+            value={money(totalInterest)}
+            subtitle="Total interest on recorded loans"
+          />
+        </Box>
+
+        {/* ROW 2 - CARD 3 */}
+        <Box
+          sx={{
+            display: "flex",
+            minWidth: 0,
+          }}
+        >
+          <StatCard
+            title="Interest Collected"
+            value={money(interestCollected)}
+            subtitle="Interest received through repayments"
+          />
+        </Box>
+      </Box>
+
+      {/* UPCOMING INTEREST */}
       <Card
         elevation={2}
         sx={{
           borderRadius: 3,
-          mt: 3,
+          mb: 3,
         }}
       >
-        <CardContent sx={{ p: 0 }}>
-          <Box sx={{ p: 2.5 }}>
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-            >
-              <ScheduleIcon />
+        <CardContent>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{ mb: 2 }}
+          >
+            <Box>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+              >
+                Upcoming Interest Processing
+              </Typography>
 
-              <Box>
-                <Typography
-                  variant="h6"
-                  fontWeight={700}
-                >
-                  Upcoming Interest Processing
-                </Typography>
-
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Loans scheduled for the next interest
-                  calculation
-                </Typography>
-              </Box>
-            </Stack>
-          </Box>
-
-          <Divider />
-
-          {upcomingInterest.length === 0 ? (
-            <Box sx={{ p: 4, textAlign: "center" }}>
-              <Typography color="text.secondary">
-                No upcoming interest dates.
+              <Typography
+                variant="body2"
+                color="text.secondary"
+              >
+                Loans scheduled for the next
+                interest calculation
               </Typography>
             </Box>
+
+            <ScheduleIcon color="action" />
+          </Stack>
+
+          <Divider sx={{ mb: 2 }} />
+
+          {upcomingInterest.length === 0 ? (
+            <Typography
+              color="text.secondary"
+              sx={{ py: 3 }}
+            >
+              No upcoming interest processing.
+            </Typography>
           ) : (
             <TableContainer>
               <Table>
@@ -924,34 +918,45 @@ export default function Dashboard() {
                 </TableHead>
 
                 <TableBody>
-                  {upcomingInterest.map((loan) => (
-                    <TableRow
-                      key={loan.id}
-                      hover
-                      sx={{ cursor: "pointer" }}
-                      onClick={() =>
-                        navigate(`/loans/${loan.id}`)
-                      }
-                    >
-                      <TableCell>
-                        {loan.loan_number}
-                      </TableCell>
+                  {upcomingInterest.map(
+                    (loan) => (
+                      <TableRow
+                        key={loan.id}
+                        hover
+                        sx={{
+                          cursor: "pointer",
+                        }}
+                        onClick={() =>
+                          navigate(
+                            `/loans/${loan.id}`
+                          )
+                        }
+                      >
+                        <TableCell>
+                          <Typography fontWeight={600}>
+                            {loan.loan_number ||
+                              "-"}
+                          </Typography>
+                        </TableCell>
 
-                      <TableCell>
-                        {getCustomerName(loan)}
-                      </TableCell>
+                        <TableCell>
+                          {getCustomerName(loan)}
+                        </TableCell>
 
-                      <TableCell>
-                        {formatDate(
-                          loan.next_interest_date
-                        )}
-                      </TableCell>
+                        <TableCell>
+                          {formatDateTime(
+                            loan.next_interest_date
+                          )}
+                        </TableCell>
 
-                      <TableCell align="right">
-                        {money(loan.current_balance)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        <TableCell align="right">
+                          {money(
+                            loan.current_balance
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -959,16 +964,13 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* RECENT PAYMENTS */}
+      {/* RECENT REPAYMENTS */}
       <Card
         elevation={2}
-        sx={{
-          borderRadius: 3,
-          mt: 3,
-        }}
+        sx={{ borderRadius: 3 }}
       >
-        <CardContent sx={{ p: 0 }}>
-          <Box sx={{ p: 2.5 }}>
+        <CardContent>
+          <Box sx={{ mb: 2 }}>
             <Typography
               variant="h6"
               fontWeight={700}
@@ -984,14 +986,15 @@ export default function Dashboard() {
             </Typography>
           </Box>
 
-          <Divider />
+          <Divider sx={{ mb: 2 }} />
 
           {repaymentTransactions.length === 0 ? (
-            <Box sx={{ p: 4, textAlign: "center" }}>
-              <Typography color="text.secondary">
-                No repayments recorded yet.
-              </Typography>
-            </Box>
+            <Typography
+              color="text.secondary"
+              sx={{ py: 3 }}
+            >
+              No recent repayments.
+            </Typography>
           ) : (
             <TableContainer>
               <Table>
@@ -1022,11 +1025,12 @@ export default function Dashboard() {
                 <TableBody>
                   {repaymentTransactions.map(
                     (transaction) => {
-                      const loan = loans.find(
-                        (item) =>
-                          item.id ===
-                          transaction.loan_id
-                      );
+                      const loan =
+                        loans.find(
+                          (item) =>
+                            item.id ===
+                            transaction.loan_id
+                        );
 
                       return (
                         <TableRow
@@ -1052,23 +1056,25 @@ export default function Dashboard() {
                           </TableCell>
 
                           <TableCell>
-                            {loan?.loan_number || "-"}
+                            <Typography fontWeight={600}>
+                              {loan?.loan_number ||
+                                transaction.loan_id?.slice(
+                                  0,
+                                  8
+                                ) ||
+                                "-"}
+                            </Typography>
                           </TableCell>
 
                           <TableCell>
                             {transaction.description ||
-                              "Loan repayment"}
+                              "Payment"}
                           </TableCell>
 
                           <TableCell align="right">
-                            <Typography
-                              fontWeight={700}
-                              color="success.main"
-                            >
-                              {money(
-                                transaction.credit
-                              )}
-                            </Typography>
+                            {money(
+                              transaction.credit
+                            )}
                           </TableCell>
 
                           <TableCell align="right">
@@ -1087,32 +1093,18 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* FOOTER INFO */}
-      <Paper
-        variant="outlined"
+      {/* ENGINE INFORMATION */}
+      <Alert
+        severity="info"
         sx={{
           mt: 3,
-          p: 2,
           borderRadius: 2,
         }}
       >
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-        >
-          <WarningAmberIcon fontSize="small" />
-
-          <Typography
-            variant="caption"
-            color="text.secondary"
-          >
-            Loan balances and interest are calculated by
-            the Supabase loan engine. The dashboard only
-            displays the database values.
-          </Typography>
-        </Stack>
-      </Paper>
+        Loan balances and interest are calculated
+        by the Supabase loan engine. The dashboard
+        only displays the database values.
+      </Alert>
     </Box>
   );
 }

@@ -1,118 +1,283 @@
 import { useEffect, useState } from "react";
+
 import {
+  Alert,
+  Box,
+  CircularProgress,
   Paper,
-  Typography,
   Table,
+  TableBody,
+  TableCell,
   TableHead,
   TableRow,
-  TableCell,
-  TableBody,
-  CircularProgress,
+  Typography,
 } from "@mui/material";
 
 import { getLoanTransactions } from "../../services/transactionService";
 
-export default function LoanTransactions({ loanId }) {
 
+function toNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+
+function formatMoney(value) {
+  return `R${toNumber(value).toFixed(2)}`;
+}
+
+
+function getTransactionAmount(transaction) {
+  const debit = toNumber(transaction?.debit);
+  const credit = toNumber(transaction?.credit);
+
+  if (debit > 0) {
+    return debit;
+  }
+
+  if (credit > 0) {
+    return credit;
+  }
+
+  return 0;
+}
+
+
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleDateString("en-ZA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+
+export default function LoanTransactions({ loanId }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
 
   useEffect(() => {
+    let mounted = true;
+
+    async function loadTransactions() {
+      if (!loanId) {
+        if (mounted) {
+          setTransactions([]);
+          setLoading(false);
+          setError("Loan ID is missing.");
+        }
+
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError("");
+
+        const data = await getLoanTransactions(loanId);
+
+        if (mounted) {
+          setTransactions(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error(
+          "LOAD LOAN TRANSACTIONS ERROR:",
+          err
+        );
+
+        if (mounted) {
+          setError(
+            err?.message ||
+              "Unable to load loan transactions."
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
     loadTransactions();
+
+    return () => {
+      mounted = false;
+    };
   }, [loanId]);
 
-  async function loadTransactions() {
-    try {
-      const data = await getLoanTransactions(loanId);
-      setTransactions(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   if (loading) {
-    return <CircularProgress />;
+    return (
+      <Paper
+        sx={{
+          p: 3,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          minHeight: 180,
+        }}
+      >
+        <CircularProgress />
+      </Paper>
+    );
   }
 
-  return (
-    <Paper sx={{ p: 3 }}>
 
-      <Typography variant="h6" gutterBottom>
+  if (error) {
+    return (
+      <Alert severity="error">
+        {error}
+      </Alert>
+    );
+  }
+
+
+  return (
+    <Paper
+      sx={{
+        p: 3,
+        width: "100%",
+        overflowX: "auto",
+      }}
+    >
+      <Typography
+        variant="h6"
+        fontWeight={800}
+        gutterBottom
+      >
         Loan Transactions
       </Typography>
 
-      <Table>
-
-        <TableHead>
-
-          <TableRow>
-
-            <TableCell>Date</TableCell>
-
-            <TableCell>Type</TableCell>
-
-            <TableCell>Description</TableCell>
-
-            <TableCell align="right">Debit</TableCell>
-
-            <TableCell align="right">Credit</TableCell>
-
-            <TableCell align="right">Balance</TableCell>
-
-          </TableRow>
-
-        </TableHead>
-
-        <TableBody>
-
-          {transactions.length === 0 && (
-
+      {transactions.length === 0 ? (
+        <Alert severity="info">
+          No transactions have been recorded
+          for this loan yet.
+        </Alert>
+      ) : (
+        <Table
+          size="small"
+          sx={{
+            minWidth: 850,
+          }}
+        >
+          <TableHead>
             <TableRow>
-
-              <TableCell colSpan={6} align="center">
-                No transactions found.
+              <TableCell>
+                <strong>Date</strong>
               </TableCell>
-
-            </TableRow>
-
-          )}
-
-          {transactions.map((trx) => (
-
-            <TableRow key={trx.id}>
 
               <TableCell>
-                {trx.transaction_date
-                  ? new Date(trx.transaction_date).toLocaleDateString("en-ZA")
-                  : "-"}
+                <strong>Type</strong>
               </TableCell>
 
-              <TableCell>{trx.transaction_type}</TableCell>
-
-              <TableCell>{trx.description}</TableCell>
-
-              <TableCell align="right">
-                {trx.debit ? `R${Number(trx.debit).toFixed(2)}` : "-"}
+              <TableCell>
+                <strong>Description</strong>
               </TableCell>
 
               <TableCell align="right">
-                {trx.credit ? `R${Number(trx.credit).toFixed(2)}` : "-"}
+                <strong>Debit</strong>
               </TableCell>
 
               <TableCell align="right">
-                R{Number(trx.balance).toFixed(2)}
+                <strong>Credit</strong>
               </TableCell>
 
+              <TableCell align="right">
+                <strong>Amount</strong>
+              </TableCell>
+
+              <TableCell align="right">
+                <strong>Balance</strong>
+              </TableCell>
             </TableRow>
+          </TableHead>
 
-          ))}
+          <TableBody>
+            {transactions.map((trx) => {
+              const debit = toNumber(trx.debit);
+              const credit = toNumber(trx.credit);
+              const amount =
+                getTransactionAmount(trx);
 
-        </TableBody>
+              return (
+                <TableRow
+                  key={trx.id}
+                  hover
+                >
+                  <TableCell>
+                    {formatDate(
+                      trx.transaction_date ||
+                        trx.created_at
+                    )}
+                  </TableCell>
 
-      </Table>
+                  <TableCell>
+                    {trx.transaction_type || "-"}
+                  </TableCell>
 
+                  <TableCell>
+                    {trx.description || "-"}
+                  </TableCell>
+
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontWeight:
+                        debit > 0 ? 700 : 400,
+                    }}
+                  >
+                    {debit > 0
+                      ? formatMoney(debit)
+                      : "-"}
+                  </TableCell>
+
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontWeight:
+                        credit > 0 ? 700 : 400,
+                    }}
+                  >
+                    {credit > 0
+                      ? formatMoney(credit)
+                      : "-"}
+                  </TableCell>
+
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontWeight: 800,
+                    }}
+                  >
+                    {formatMoney(amount)}
+                  </TableCell>
+
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontWeight: 800,
+                    }}
+                  >
+                    {formatMoney(trx.balance)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
     </Paper>
   );
 }

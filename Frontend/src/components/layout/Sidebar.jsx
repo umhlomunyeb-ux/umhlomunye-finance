@@ -4,13 +4,12 @@ import {
   Dashboard,
   People,
   AccountBalanceWallet,
-  Payments,
-  Description,
   Assessment,
   Settings,
   Logout,
   Assignment,
   AccountBalance,
+  Description,
 } from "@mui/icons-material";
 
 const menu = [
@@ -35,14 +34,9 @@ const menu = [
     path: "/loans",
   },
   {
-    text: "Repayments",
-    icon: <Payments />,
-    path: "/repayments",
-  },
-  {
-    text: "Statements",
+    text: "Documents",
     icon: <Description />,
-    path: "/statements",
+    path: "/documents",
   },
   {
     text: "Reports",
@@ -168,7 +162,9 @@ export default function Sidebar() {
           const isActive =
             location.pathname === item.path ||
             (item.path !== "/dashboard" &&
-              location.pathname.startsWith(`${item.path}/`));
+              location.pathname.startsWith(
+                `${item.path}/`
+              ));
 
           return (
             <Link
@@ -200,7 +196,8 @@ export default function Sidebar() {
                 if (!isActive) {
                   event.currentTarget.style.background =
                     "rgba(255,255,255,0.08)";
-                  event.currentTarget.style.color = "#FFFFFF";
+                  event.currentTarget.style.color =
+                    "#FFFFFF";
                 }
               }}
               onMouseLeave={(event) => {
@@ -220,7 +217,8 @@ export default function Sidebar() {
                     top: "9px",
                     bottom: "9px",
                     width: "3px",
-                    borderRadius: "0 4px 4px 0",
+                    borderRadius:
+                      "0 4px 4px 0",
                     background: "#FFFFFF",
                   }}
                 />
@@ -257,7 +255,8 @@ export default function Sidebar() {
       {/* LOGOUT */}
       <div
         style={{
-          borderTop: "1px solid rgba(255,255,255,0.12)",
+          borderTop:
+            "1px solid rgba(255,255,255,0.12)",
           paddingTop: "14px",
           marginTop: "10px",
         }}
@@ -275,12 +274,14 @@ export default function Sidebar() {
             borderRadius: "10px",
             fontSize: "14px",
             fontWeight: 500,
-            transition: "background 0.18s ease",
+            transition:
+              "background 0.18s ease",
           }}
           onMouseEnter={(event) => {
             event.currentTarget.style.background =
               "rgba(255,255,255,0.08)";
-            event.currentTarget.style.color = "#FFFFFF";
+            event.currentTarget.style.color =
+              "#FFFFFF";
           }}
           onMouseLeave={(event) => {
             event.currentTarget.style.background =

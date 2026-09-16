@@ -1,13 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import {
+  Alert,
   Box,
   Button,
   Card,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   InputAdornment,
+  Stack,
   TextField,
   Typography,
 } from "@mui/material";
@@ -16,22 +25,435 @@ import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 
+import { getSystemSettings } from "../../services/settingsService";
+
+const INSTALLATION_ID_STORAGE_KEY =
+  "lms_companion_installation_id";
+
+const DEVICE_ID_STORAGE_KEY =
+  "lms_companion_device_id";
+
 export default function Login() {
+  const location = useLocation();
   const navigate = useNavigate();
+
+  const fromMobile =
+    Boolean(location.state?.fromMobile);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // ------------------------------------------------------------
+  // Company branding
+  // ------------------------------------------------------------
+
+  const [companyName, setCompanyName] =
+    useState("");
+
+  const [companyLogoUrl, setCompanyLogoUrl] =
+    useState("");
+
+  const [mobileBrandingLoading, setMobileBrandingLoading] =
+    useState(false);
+
+  const [mobileDeviceChecking, setMobileDeviceChecking] =
+    useState(false);
+
+  const [mobileDeviceValid, setMobileDeviceValid] =
+    useState(!fromMobile);
+
+  // ------------------------------------------------------------
+  // Forgot password
+  // ------------------------------------------------------------
+
+  const [forgotPasswordOpen, setForgotPasswordOpen] =
+    useState(false);
+
+  const [resetEmail, setResetEmail] =
+    useState("");
+
+  const [resetLoading, setResetLoading] =
+    useState(false);
+
+  const [resetMessage, setResetMessage] =
+    useState("");
+
+  const [resetError, setResetError] =
+    useState("");
+
+  // ------------------------------------------------------------
+  // Mobile pairing validation
+  // ------------------------------------------------------------
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function validateMobileDevice() {
+      if (!fromMobile) {
+        setMobileDeviceValid(true);
+        return;
+      }
+
+      setMobileDeviceChecking(true);
+      setMobileDeviceValid(false);
+
+      try {
+        let installationId = "";
+        let deviceId = "";
+
+        try {
+          installationId =
+            localStorage.getItem(
+              INSTALLATION_ID_STORAGE_KEY
+            ) || "";
+
+          deviceId =
+            localStorage.getItem(
+              DEVICE_ID_STORAGE_KEY
+            ) || "";
+        } catch (storageError) {
+          console.error(
+            "MOBILE DEVICE STORAGE ERROR:",
+            storageError
+          );
+        }
+
+        if (!installationId || !deviceId) {
+          console.warn(
+            "MOBILE DEVICE NOT PAIRED:",
+            {
+              installationIdPresent:
+                Boolean(installationId),
+              deviceIdPresent:
+                Boolean(deviceId),
+            }
+          );
+
+          if (mounted) {
+            setMobileDeviceValid(false);
+          }
+
+          navigate("/mobile", {
+            replace: true,
+          });
+
+          return;
+        }
+
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "get_mobile_device_status",
+          {
+            p_device_id: deviceId,
+          }
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        const isLinked =
+          data?.is_linked === true;
+
+        const isRevoked =
+          data?.is_revoked === true;
+
+        if (!isLinked || isRevoked) {
+          console.warn(
+            "MOBILE DEVICE NOT AUTHORIZED:",
+            {
+              isLinked,
+              isRevoked,
+            }
+          );
+
+          try {
+            localStorage.removeItem(
+              INSTALLATION_ID_STORAGE_KEY
+            );
+          } catch (storageError) {
+            console.error(
+              "FAILED TO CLEAR INSTALLATION ID:",
+              storageError
+            );
+          }
+
+          if (mounted) {
+            setMobileDeviceValid(false);
+          }
+
+          navigate("/mobile", {
+            replace: true,
+          });
+
+          return;
+        }
+
+        if (mounted) {
+          setMobileDeviceValid(true);
+        }
+      } catch (error) {
+        console.error(
+          "MOBILE DEVICE VALIDATION ERROR:",
+          error
+        );
+
+        if (mounted) {
+          setMobileDeviceValid(false);
+        }
+
+        navigate("/mobile", {
+          replace: true,
+        });
+      } finally {
+        if (mounted) {
+          setMobileDeviceChecking(false);
+        }
+      }
+    }
+
+    validateMobileDevice();
+
+    return () => {
+      mounted = false;
+    };
+  }, [fromMobile, navigate]);
+
+  // ------------------------------------------------------------
+  // Load company settings
+  // ------------------------------------------------------------
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadCompanySettings() {
+      try {
+        if (fromMobile) {
+          setMobileBrandingLoading(true);
+
+          let installationId = "";
+
+          try {
+            installationId =
+              localStorage.getItem(
+                INSTALLATION_ID_STORAGE_KEY
+              ) || "";
+          } catch (storageError) {
+            console.error(
+              "MOBILE INSTALLATION STORAGE ERROR:",
+              storageError
+            );
+          }
+
+          if (!installationId) {
+            throw new Error(
+              "This mobile device is not linked to an LMS installation."
+            );
+          }
+
+          const {
+            data,
+            error,
+          } = await supabase.rpc(
+            "get_mobile_installation_settings",
+            {
+              p_installation_id:
+                installationId,
+            }
+          );
+
+          if (error) {
+            throw error;
+          }
+
+          if (!data?.success) {
+            throw new Error(
+              data?.message ||
+                "Unable to load the LMS installation."
+            );
+          }
+
+          if (!mounted) return;
+
+          setCompanyName(
+            data.company_name || ""
+          );
+
+          setCompanyLogoUrl(
+            data.company_logo_url || ""
+          );
+
+          return;
+        }
+
+        /*
+         * Desktop login continues using the
+         * existing settings service.
+         */
+        const settings =
+          await getSystemSettings();
+
+        if (!mounted) return;
+
+        setCompanyName(
+          settings?.company_name || ""
+        );
+
+        setCompanyLogoUrl(
+          settings?.company_logo_url || ""
+        );
+      } catch (error) {
+        console.error(
+          "LOGIN COMPANY SETTINGS ERROR:",
+          error
+        );
+
+        if (!mounted) return;
+
+        setCompanyName("");
+        setCompanyLogoUrl("");
+      } finally {
+        if (mounted) {
+          setMobileBrandingLoading(false);
+        }
+      }
+    }
+
+    loadCompanySettings();
+
+    return () => {
+      mounted = false;
+    };
+  }, [fromMobile]);
+
+  // ------------------------------------------------------------
+  // Login
+  // ------------------------------------------------------------
+
   async function login() {
     if (loading) return;
 
+    if (!email.trim() || !password) {
+      alert(
+        "Please enter your email address and password."
+      );
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // MOBILE PAIRING SECURITY CHECK
+    // ----------------------------------------------------------
+
+    if (fromMobile) {
+      if (
+        mobileDeviceChecking ||
+        !mobileDeviceValid
+      ) {
+        alert(
+          "This device is not paired with an LMS installation."
+        );
+
+        navigate("/mobile", {
+          replace: true,
+        });
+
+        return;
+      }
+
+      let deviceId = "";
+
+      try {
+        deviceId =
+          localStorage.getItem(
+            DEVICE_ID_STORAGE_KEY
+          ) || "";
+      } catch (storageError) {
+        console.error(
+          "MOBILE DEVICE STORAGE ERROR:",
+          storageError
+        );
+      }
+
+      if (!deviceId) {
+        alert(
+          "This device is not paired with an LMS installation."
+        );
+
+        navigate("/mobile", {
+          replace: true,
+        });
+
+        return;
+      }
+
+      // Re-check the pairing immediately before
+      // allowing authentication.
+      const {
+        data: deviceStatus,
+        error: deviceStatusError,
+      } = await supabase.rpc(
+        "get_mobile_device_status",
+        {
+          p_device_id: deviceId,
+        }
+      );
+
+      if (deviceStatusError) {
+        console.error(
+          "MOBILE DEVICE STATUS ERROR:",
+          deviceStatusError
+        );
+
+        alert(
+          "Unable to verify this mobile device. Please pair the device again."
+        );
+
+        navigate("/mobile", {
+          replace: true,
+        });
+
+        return;
+      }
+
+      if (
+        deviceStatus?.is_linked !== true ||
+        deviceStatus?.is_revoked === true
+      ) {
+        try {
+          localStorage.removeItem(
+            INSTALLATION_ID_STORAGE_KEY
+          );
+        } catch (storageError) {
+          console.error(
+            "FAILED TO CLEAR INSTALLATION ID:",
+            storageError
+          );
+        }
+
+        alert(
+          "This device is not paired or its access has been revoked."
+        );
+
+        navigate("/mobile", {
+          replace: true,
+        });
+
+        return;
+      }
+    }
+
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const {
+      error,
+    } =
+      await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
     if (error) {
       alert(error.message);
@@ -39,7 +461,128 @@ export default function Login() {
       return;
     }
 
-    navigate("/dashboard");
+    if (fromMobile) {
+      navigate("/mobile/preview", {
+        replace: true,
+      });
+    } else {
+      navigate("/dashboard");
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Forgot password
+  // ------------------------------------------------------------
+
+  function openForgotPassword() {
+    setResetEmail(email.trim());
+    setResetMessage("");
+    setResetError("");
+    setForgotPasswordOpen(true);
+  }
+
+  function closeForgotPassword() {
+    if (resetLoading) return;
+
+    setForgotPasswordOpen(false);
+    setResetMessage("");
+    setResetError("");
+  }
+
+  async function sendPasswordReset() {
+    if (resetLoading) return;
+
+    const emailAddress =
+      resetEmail.trim();
+
+    if (!emailAddress) {
+      setResetError(
+        "Please enter your email address."
+      );
+      setResetMessage("");
+      return;
+    }
+
+    setResetLoading(true);
+    setResetMessage("");
+    setResetError("");
+
+    try {
+      const redirectUrl =
+        `${window.location.origin}/reset-password`;
+
+      const {
+        error,
+      } =
+        await supabase.auth.resetPasswordForEmail(
+          emailAddress,
+          {
+            redirectTo: redirectUrl,
+          }
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      setResetMessage(
+        "If an account exists for this email address, a password reset link has been sent. Please check your email."
+      );
+    } catch (error) {
+      console.error(
+        "PASSWORD RESET ERROR:",
+        error
+      );
+
+      setResetError(
+        error?.message ||
+          "Unable to send the password reset email. Please try again."
+      );
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Mobile validation loading screen
+  // ------------------------------------------------------------
+
+  if (
+    fromMobile &&
+    mobileDeviceChecking
+  ) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background:
+            "linear-gradient(135deg, #071A35 0%, #0B3D91 50%, #1257A6 100%)",
+          px: 2,
+        }}
+      >
+        <Stack
+          alignItems="center"
+          spacing={2}
+        >
+          <CircularProgress
+            sx={{ color: "white" }}
+          />
+
+          <Typography
+            sx={{
+              color: "white",
+              fontSize: 14,
+            }}
+          >
+            Verifying device...
+          </Typography>
+        </Stack>
+      </Box>
+    );
   }
 
   return (
@@ -58,13 +601,15 @@ export default function Login() {
       }}
     >
       {/* Decorative background elements */}
+
       <Box
         sx={{
           position: "absolute",
           width: 420,
           height: 420,
           borderRadius: "50%",
-          background: "rgba(255,255,255,0.05)",
+          background:
+            "rgba(255,255,255,0.05)",
           top: -180,
           right: -120,
         }}
@@ -76,13 +621,15 @@ export default function Login() {
           width: 320,
           height: 320,
           borderRadius: "50%",
-          background: "rgba(255,255,255,0.04)",
+          background:
+            "rgba(255,255,255,0.04)",
           bottom: -140,
           left: -100,
         }}
       />
 
       {/* Login card */}
+
       <Card
         elevation={0}
         sx={{
@@ -95,11 +642,14 @@ export default function Login() {
           },
           position: "relative",
           zIndex: 2,
-          background: "rgba(255,255,255,0.98)",
-          boxShadow: "0 25px 70px rgba(0,0,0,0.25)",
+          background:
+            "rgba(255,255,255,0.98)",
+          boxShadow:
+            "0 25px 70px rgba(0,0,0,0.25)",
         }}
       >
         {/* Logo / Brand */}
+
         <Box
           sx={{
             display: "flex",
@@ -108,23 +658,63 @@ export default function Login() {
             mb: 4,
           }}
         >
-          <Box
-            sx={{
-              width: 72,
-              height: 72,
-              borderRadius: 3,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background:
-                "linear-gradient(135deg, #0B3D91 0%, #1257A6 100%)",
-              color: "white",
-              mb: 2,
-              boxShadow: "0 10px 25px rgba(11,61,145,0.25)",
-            }}
-          >
-            <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 38 }} />
-          </Box>
+          {companyLogoUrl ? (
+            <Box
+              sx={{
+                width: 110,
+                height: 110,
+                borderRadius: 3,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#FFFFFF",
+                mb: 2,
+                overflow: "hidden",
+                boxShadow:
+                  "0 10px 25px rgba(11,61,145,0.18)",
+                border:
+                  "1px solid #E5E7EB",
+              }}
+            >
+              <Box
+                component="img"
+                src={companyLogoUrl}
+                alt={`${companyName} logo`}
+                sx={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  p: 1,
+                  display: "block",
+                }}
+                onError={(event) => {
+                  event.currentTarget.style.display =
+                    "none";
+                }}
+              />
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                width: 72,
+                height: 72,
+                borderRadius: 3,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background:
+                  "linear-gradient(135deg, #0B3D91 0%, #1257A6 100%)",
+                color: "white",
+                mb: 2,
+                boxShadow:
+                  "0 10px 25px rgba(11,61,145,0.25)",
+              }}
+            >
+              <AccountBalanceWalletOutlinedIcon
+                sx={{ fontSize: 38 }}
+              />
+            </Box>
+          )}
 
           <Typography
             variant="h4"
@@ -135,7 +725,9 @@ export default function Login() {
               letterSpacing: "-0.5px",
             }}
           >
-            Umhlomunye Finance
+            {mobileBrandingLoading
+              ? "Loading..."
+              : companyName}
           </Typography>
 
           <Typography
@@ -151,6 +743,7 @@ export default function Login() {
         </Box>
 
         {/* Welcome */}
+
         <Box sx={{ mb: 3 }}>
           <Typography
             variant="h6"
@@ -174,13 +767,16 @@ export default function Login() {
         </Box>
 
         {/* Email */}
+
         <TextField
           fullWidth
           type="email"
           label="Email address"
           placeholder="Enter your email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) =>
+            setEmail(e.target.value)
+          }
           autoComplete="email"
           sx={{
             mb: 2,
@@ -189,23 +785,32 @@ export default function Login() {
               backgroundColor: "#F8FAFC",
             },
           }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <EmailOutlinedIcon sx={{ color: "#64748B" }} />
-              </InputAdornment>
-            ),
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <EmailOutlinedIcon
+                    sx={{
+                      color: "#64748B",
+                    }}
+                  />
+                </InputAdornment>
+              ),
+            },
           }}
         />
 
         {/* Password */}
+
         <TextField
           fullWidth
           type="password"
           label="Password"
           placeholder="Enter your password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) =>
+            setPassword(e.target.value)
+          }
           autoComplete="current-password"
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -213,28 +818,72 @@ export default function Login() {
             }
           }}
           sx={{
-            mb: 3,
+            mb: 1,
             "& .MuiOutlinedInput-root": {
               borderRadius: 2,
               backgroundColor: "#F8FAFC",
             },
           }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <LockOutlinedIcon sx={{ color: "#64748B" }} />
-              </InputAdornment>
-            ),
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <LockOutlinedIcon
+                    sx={{
+                      color: "#64748B",
+                    }}
+                  />
+                </InputAdornment>
+              ),
+            },
           }}
         />
 
+        {/* Forgot password */}
+
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "flex-end",
+            mb: 2.5,
+          }}
+        >
+          <Button
+            variant="text"
+            onClick={openForgotPassword}
+            sx={{
+              minWidth: 0,
+              p: 0,
+              textTransform: "none",
+              fontSize: 14,
+              fontWeight: 600,
+              color: "#0B3D91",
+              "&:hover": {
+                backgroundColor:
+                  "transparent",
+                textDecoration:
+                  "underline",
+              },
+            }}
+          >
+            Forgot Password?
+          </Button>
+        </Box>
+
         {/* Login button */}
+
         <Button
           fullWidth
           variant="contained"
           size="large"
           onClick={login}
-          disabled={loading}
+          disabled={
+            loading ||
+            mobileBrandingLoading ||
+            mobileDeviceChecking ||
+            (fromMobile &&
+              !mobileDeviceValid)
+          }
           sx={{
             height: 52,
             borderRadius: 2,
@@ -243,11 +892,13 @@ export default function Login() {
             textTransform: "none",
             background:
               "linear-gradient(135deg, #0B3D91 0%, #1257A6 100%)",
-            boxShadow: "0 8px 20px rgba(11,61,145,0.25)",
+            boxShadow:
+              "0 8px 20px rgba(11,61,145,0.25)",
             "&:hover": {
               background:
                 "linear-gradient(135deg, #082F70 0%, #0B3D91 100%)",
-              boxShadow: "0 10px 25px rgba(11,61,145,0.32)",
+              boxShadow:
+                "0 10px 25px rgba(11,61,145,0.32)",
             },
           }}
         >
@@ -264,11 +915,13 @@ export default function Login() {
         </Button>
 
         {/* Footer */}
+
         <Box
           sx={{
             mt: 4,
             pt: 3,
-            borderTop: "1px solid #E5E7EB",
+            borderTop:
+              "1px solid #E5E7EB",
             textAlign: "center",
           }}
         >
@@ -278,7 +931,7 @@ export default function Login() {
               color: "#94A3B8",
             }}
           >
-            Umhlomunye Finance
+            {companyName}
           </Typography>
 
           <Typography
@@ -292,6 +945,154 @@ export default function Login() {
           </Typography>
         </Box>
       </Card>
+
+      {/* Forgot Password Dialog */}
+
+      <Dialog
+        open={forgotPasswordOpen}
+        onClose={closeForgotPassword}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 800,
+            color: "#172B4D",
+          }}
+        >
+          Reset Your Password
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography
+            sx={{
+              color: "#64748B",
+              fontSize: 14,
+              mb: 2.5,
+            }}
+          >
+            Enter the email address associated with
+            your account. We will send you a secure
+            link to create a new password.
+          </Typography>
+
+          {resetMessage && (
+            <Alert
+              severity="success"
+              sx={{
+                mb: 2,
+                borderRadius: 2,
+              }}
+            >
+              {resetMessage}
+            </Alert>
+          )}
+
+          {resetError && (
+            <Alert
+              severity="error"
+              sx={{
+                mb: 2,
+                borderRadius: 2,
+              }}
+            >
+              {resetError}
+            </Alert>
+          )}
+
+          <TextField
+            fullWidth
+            type="email"
+            label="Email address"
+            placeholder="Enter your email"
+            value={resetEmail}
+            onChange={(e) => {
+              setResetEmail(
+                e.target.value
+              );
+              setResetMessage("");
+              setResetError("");
+            }}
+            autoComplete="email"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                sendPasswordReset();
+              }
+            }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <EmailOutlinedIcon
+                      sx={{
+                        color: "#64748B",
+                      }}
+                    />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+                backgroundColor:
+                  "#F8FAFC",
+              },
+            }}
+          />
+        </DialogContent>
+
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 3,
+            gap: 1,
+          }}
+        >
+          <Button
+            onClick={closeForgotPassword}
+            disabled={resetLoading}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              color: "#64748B",
+            }}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={sendPasswordReset}
+            disabled={resetLoading}
+            sx={{
+              minWidth: 150,
+              height: 42,
+              borderRadius: 2,
+              textTransform: "none",
+              fontWeight: 700,
+              background:
+                "linear-gradient(135deg, #0B3D91 0%, #1257A6 100%)",
+              "&:hover": {
+                background:
+                  "linear-gradient(135deg, #082F70 0%, #0B3D91 100%)",
+              },
+            }}
+          >
+            {resetLoading ? (
+              <CircularProgress
+                size={22}
+                sx={{
+                  color: "white",
+                }}
+              />
+            ) : (
+              "Send Reset Link"
+            )}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

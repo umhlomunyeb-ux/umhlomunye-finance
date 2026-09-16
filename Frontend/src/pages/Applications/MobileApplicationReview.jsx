@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   Alert,
+  BottomNavigation,
+  BottomNavigationAction,
   Box,
   Button,
   Card,
@@ -14,10 +16,14 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Paper,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
+
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 
 import { supabase } from "../../lib/supabase";
 import { findCustomerByIdNumber } from "../../services/customerService";
@@ -35,8 +41,6 @@ export default function MobileApplicationReview() {
   const [error, setError] = useState("");
   const [customerError, setCustomerError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-
-  const [currentUserId, setCurrentUserId] = useState(null);
 
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -107,25 +111,8 @@ export default function MobileApplicationReview() {
     }
   }
 
-  async function loadCurrentUser() {
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) throw userError;
-
-      setCurrentUserId(user?.id || null);
-    } catch (err) {
-      console.error("Unable to load current user:", err);
-      setCurrentUserId(null);
-    }
-  }
-
   useEffect(() => {
     loadApplication();
-    loadCurrentUser();
   }, [id]);
 
   function formatMoney(value) {
@@ -213,15 +200,8 @@ export default function MobileApplicationReview() {
     }
   }
 
-  const isApplicationCreator = Boolean(
-    application?.created_by &&
-      currentUserId &&
-      application.created_by === currentUserId
-  );
-
   const canApprove =
     application?.status === "PENDING" &&
-    !isApplicationCreator &&
     !approving &&
     !rejecting;
 
@@ -245,15 +225,6 @@ export default function MobileApplicationReview() {
 
       if (!user) {
         throw new Error("No logged-in administrator was found.");
-      }
-
-      if (
-        application.created_by &&
-        application.created_by === user.id
-      ) {
-        throw new Error(
-          "You cannot approve an application that you created. Another authorised user must approve this application."
-        );
       }
 
       if (application.status !== "PENDING") {
@@ -367,6 +338,17 @@ export default function MobileApplicationReview() {
     }
   }
 
+  function handleNavigation(value) {
+    if (value === "home") {
+      navigate("/mobile/preview");
+      return;
+    }
+
+    if (value === "applications") {
+      navigate("/mobile/application-review");
+    }
+  }
+
   if (loading) {
     return (
       <Box
@@ -389,6 +371,7 @@ export default function MobileApplicationReview() {
         sx={{
           minHeight: "100vh",
           p: 2,
+          pb: 10,
           backgroundColor: "#f5f6f8",
         }}
       >
@@ -404,6 +387,11 @@ export default function MobileApplicationReview() {
         >
           Back to Applications
         </Button>
+
+        <MobileBottomNavigation
+          navigate={navigate}
+          current="applications"
+        />
       </Box>
     );
   }
@@ -414,6 +402,7 @@ export default function MobileApplicationReview() {
         sx={{
           minHeight: "100vh",
           p: 2,
+          pb: 10,
           backgroundColor: "#f5f6f8",
         }}
       >
@@ -431,6 +420,11 @@ export default function MobileApplicationReview() {
         >
           Back to Applications
         </Button>
+
+        <MobileBottomNavigation
+          navigate={navigate}
+          current="applications"
+        />
       </Box>
     );
   }
@@ -440,7 +434,7 @@ export default function MobileApplicationReview() {
       sx={{
         minHeight: "100vh",
         backgroundColor: "#f5f6f8",
-        pb: 12,
+        pb: 19,
       }}
     >
       {/* MOBILE HEADER */}
@@ -521,9 +515,7 @@ export default function MobileApplicationReview() {
           <Alert
             severity="success"
             sx={{ mb: 1.5 }}
-            onClose={() =>
-              setSuccessMessage("")
-            }
+            onClose={() => setSuccessMessage("")}
           >
             {successMessage}
           </Alert>
@@ -554,9 +546,7 @@ export default function MobileApplicationReview() {
               sx={{ mt: 0.5 }}
             >
               Submitted{" "}
-              {formatDateTime(
-                application.created_at
-              )}
+              {formatDateTime(application.created_at)}
             </Typography>
 
             <Divider sx={{ my: 2 }} />
@@ -564,23 +554,17 @@ export default function MobileApplicationReview() {
             <Stack spacing={1}>
               <InfoRow
                 label="Cellphone"
-                value={
-                  application.cellphone || "-"
-                }
+                value={application.cellphone || "-"}
               />
 
               <InfoRow
                 label="Email"
-                value={
-                  application.email || "-"
-                }
+                value={application.email || "-"}
               />
 
               <InfoRow
                 label="Address"
-                value={
-                  application.physical_address || "-"
-                }
+                value={application.physical_address || "-"}
               />
             </Stack>
           </CardContent>
@@ -608,10 +592,7 @@ export default function MobileApplicationReview() {
               fontWeight="bold"
               sx={{ mt: 0.5 }}
             >
-              R{" "}
-              {formatMoney(
-                application.amount_requested
-              )}
+              R {formatMoney(application.amount_requested)}
             </Typography>
 
             <Divider sx={{ my: 2 }} />
@@ -619,9 +600,7 @@ export default function MobileApplicationReview() {
             <Stack spacing={1}>
               <InfoRow
                 label="Purpose"
-                value={
-                  application.loan_purpose || "-"
-                }
+                value={application.loan_purpose || "-"}
               />
 
               <InfoRow
@@ -639,16 +618,12 @@ export default function MobileApplicationReview() {
         <Section title="Employment & Income">
           <InfoRow
             label="Employer"
-            value={
-              application.employer || "-"
-            }
+            value={application.employer || "-"}
           />
 
           <InfoRow
             label="Employment status"
-            value={
-              application.employment_status || "-"
-            }
+            value={application.employment_status || "-"}
           />
 
           <InfoRow
@@ -671,16 +646,12 @@ export default function MobileApplicationReview() {
         <Section title="Banking Information">
           <InfoRow
             label="Bank"
-            value={
-              application.bank_name || "-"
-            }
+            value={application.bank_name || "-"}
           />
 
           <InfoRow
             label="Account number"
-            value={
-              application.account_number || "-"
-            }
+            value={application.account_number || "-"}
           />
         </Section>
 
@@ -690,8 +661,7 @@ export default function MobileApplicationReview() {
           <InfoRow
             label="Preferred method"
             value={
-              application.collection_preference ||
-              "-"
+              application.collection_preference || "-"
             }
           />
         </Section>
@@ -723,9 +693,7 @@ export default function MobileApplicationReview() {
             <Stack spacing={1.5}>
               <InfoRow
                 label="Customer number"
-                value={
-                  customer.customer_number || "-"
-                }
+                value={customer.customer_number || "-"}
               />
 
               <InfoRow
@@ -737,9 +705,7 @@ export default function MobileApplicationReview() {
 
               <InfoRow
                 label="Cellphone"
-                value={
-                  customer.cellphone || "-"
-                }
+                value={customer.cellphone || "-"}
               />
             </Stack>
           )}
@@ -749,8 +715,7 @@ export default function MobileApplicationReview() {
 
         <Section title="Identification">
           <Alert severity="info">
-            ID number collection is currently
-            unavailable.
+            ID number collection is currently unavailable.
           </Alert>
         </Section>
 
@@ -763,8 +728,7 @@ export default function MobileApplicationReview() {
               lineHeight: 1.6,
             }}
           >
-            {application.notes ||
-              "No notes provided."}
+            {application.notes || "No notes provided."}
           </Typography>
         </Section>
 
@@ -772,8 +736,8 @@ export default function MobileApplicationReview() {
 
         <Section title="Supporting Documents">
           <Alert severity="info">
-            Supporting document collection is
-            currently unavailable.
+            Supporting document collection is currently
+            unavailable.
           </Alert>
         </Section>
 
@@ -805,53 +769,25 @@ export default function MobileApplicationReview() {
         <Section title="Application Information">
           <InfoRow
             label="Application number"
-            value={
-              application.application_number || "-"
-            }
+            value={application.application_number || "-"}
           />
 
           <InfoRow
             label="Submitted"
-            value={formatDateTime(
-              application.created_at
-            )}
+            value={formatDateTime(application.created_at)}
           />
 
           <InfoRow
             label="Status"
             value={
               <Chip
-                label={formatStatus(
-                  application.status
-                )}
-                color={getStatusColor(
-                  application.status
-                )}
+                label={formatStatus(application.status)}
+                color={getStatusColor(application.status)}
                 size="small"
               />
             }
           />
         </Section>
-
-        {/* MAKER CHECKER */}
-
-        {isApplicationCreator &&
-          application.status === "PENDING" && (
-            <Alert
-              severity="warning"
-              sx={{ mb: 1.5 }}
-            >
-              <strong>
-                Maker-checker control
-              </strong>
-
-              <br />
-
-              You created this application.
-              Another authorised user must
-              approve it.
-            </Alert>
-          )}
 
         {/* APPROVED */}
 
@@ -860,14 +796,12 @@ export default function MobileApplicationReview() {
             severity="success"
             sx={{ mb: 1.5 }}
           >
-            This application has already been
-            approved.
+            This application has already been approved.
 
             {application.loan_id && (
               <>
                 {" "}
-                A loan has been linked to this
-                application.
+                A loan has been linked to this application.
               </>
             )}
           </Alert>
@@ -880,27 +814,25 @@ export default function MobileApplicationReview() {
             severity="error"
             sx={{ mb: 1.5 }}
           >
-            This application has already been
-            rejected.
+            This application has already been rejected.
           </Alert>
         )}
       </Box>
 
-      {/* BOTTOM ACTION BAR */}
+      {/* APPROVE / REJECT ACTION BAR */}
 
       <Box
         sx={{
           position: "fixed",
-          bottom: 0,
+          bottom: 56,
           left: 0,
           right: 0,
-          zIndex: 30,
+          zIndex: 90,
           backgroundColor: "white",
           borderTop: "1px solid",
           borderColor: "divider",
           p: 1.5,
-          boxShadow:
-            "0 -4px 12px rgba(0,0,0,0.08)",
+          boxShadow: "0 -4px 12px rgba(0,0,0,0.08)",
         }}
       >
         <Stack
@@ -918,9 +850,7 @@ export default function MobileApplicationReview() {
               fontWeight: "bold",
             }}
           >
-            {rejecting
-              ? "Rejecting..."
-              : "Reject"}
+            {rejecting ? "Rejecting..." : "Reject"}
           </Button>
 
           <Button
@@ -934,15 +864,17 @@ export default function MobileApplicationReview() {
               fontWeight: "bold",
             }}
           >
-            {approving
-              ? "Approving..."
-              : isApplicationCreator &&
-                application.status === "PENDING"
-              ? "Approval Not Allowed"
-              : "Approve"}
+            {approving ? "Approving..." : "Approve"}
           </Button>
         </Stack>
       </Box>
+
+      {/* MOBILE NAVIGATION */}
+
+      <MobileBottomNavigation
+        navigate={navigate}
+        current="applications"
+      />
 
       {/* REJECTION DIALOG */}
 
@@ -965,8 +897,8 @@ export default function MobileApplicationReview() {
             color="text.secondary"
             sx={{ mb: 2 }}
           >
-            Please provide a reason for rejecting
-            this application.
+            Please provide a reason for rejecting this
+            application.
           </Typography>
 
           <TextField
@@ -976,9 +908,7 @@ export default function MobileApplicationReview() {
             label="Rejection Reason"
             value={rejectionReason}
             onChange={(event) =>
-              setRejectionReason(
-                event.target.value
-              )
+              setRejectionReason(event.target.value)
             }
             placeholder="Enter the reason for rejection..."
             required
@@ -1025,6 +955,55 @@ export default function MobileApplicationReview() {
         </DialogActions>
       </Dialog>
     </Box>
+  );
+}
+
+function MobileBottomNavigation({
+  navigate,
+  current,
+}) {
+  return (
+    <Paper
+      elevation={8}
+      sx={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 100,
+        borderTop: "1px solid",
+        borderColor: "divider",
+      }}
+    >
+      <BottomNavigation
+        value={current}
+        onChange={(_, value) => {
+          if (value === "home") {
+            navigate("/mobile/preview");
+          }
+
+          if (value === "applications") {
+            navigate("/mobile/application-review");
+          }
+        }}
+        showLabels
+        sx={{
+          height: 56,
+        }}
+      >
+        <BottomNavigationAction
+          label="Home"
+          value="home"
+          icon={<HomeOutlinedIcon />}
+        />
+
+        <BottomNavigationAction
+          label="Applications"
+          value="applications"
+          icon={<DescriptionOutlinedIcon />}
+        />
+      </BottomNavigation>
+    </Paper>
   );
 }
 

@@ -18,11 +18,7 @@ import {
   TextField,
   MenuItem,
   Stack,
-  IconButton,
-  Tooltip,
 } from "@mui/material";
-
-import RefreshIcon from "@mui/icons-material/Refresh";
 
 import {
   getLoanApplications,
@@ -82,9 +78,10 @@ export default function Applications() {
   }, [loadApplications]);
 
   // ===========================================================
-  // AUTOMATIC REFRESH
+  // AUTOMATIC BACKGROUND REFRESH
   //
   // Checks for new applications every 30 seconds.
+  // Does not replace the page with the loading screen.
   // ===========================================================
 
   useEffect(() => {
@@ -201,7 +198,7 @@ export default function Applications() {
   );
 
   // ===========================================================
-  // LOADING SCREEN
+  // INITIAL LOADING SCREEN
   // ===========================================================
 
   if (loading) {
@@ -259,41 +256,31 @@ export default function Applications() {
             Review applications submitted by clients.
           </Typography>
         </Box>
-
-        <Stack
-          direction="row"
-          spacing={1}
-        >
-          <Tooltip title="Refresh applications">
-            <span>
-              <IconButton
-                onClick={() =>
-                  loadApplications(true)
-                }
-                disabled={refreshing}
-                color="primary"
-              >
-                {refreshing ? (
-                  <CircularProgress
-                    size={22}
-                  />
-                ) : (
-                  <RefreshIcon />
-                )}
-              </IconButton>
-            </span>
-          </Tooltip>
-
-          <Button
-            variant="contained"
-            size="large"
-            component={Link}
-            to="/apply"
-          >
-            New Application
-          </Button>
-        </Stack>
       </Box>
+
+      {/* =====================================================
+          BACKGROUND REFRESH STATUS
+      ====================================================== */}
+
+      {refreshing && (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <CircularProgress size={16} />
+
+          <Typography
+            variant="body2"
+            color="text.secondary"
+          >
+            Checking for new applications...
+          </Typography>
+        </Box>
+      )}
 
       {/* =====================================================
           ERROR
@@ -303,17 +290,6 @@ export default function Applications() {
         <Alert
           severity="error"
           sx={{ mb: 3 }}
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={() =>
-                loadApplications(true)
-              }
-            >
-              Retry
-            </Button>
-          }
         >
           {error}
         </Alert>

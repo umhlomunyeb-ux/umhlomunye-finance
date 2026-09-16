@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { createOrUpdateLoanStatement } from "./statementService";
 
 /* =========================================================
    HELPERS
@@ -12,7 +13,6 @@ function toNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 }
-
 
 /* =========================================================
    GET ALL LOANS
@@ -36,14 +36,17 @@ export async function getLoans() {
 
   if (error) {
     console.error("GET LOANS ERROR:", error);
+
     throw new Error(
-      getErrorMessage(error, "Unable to load loans.")
+      getErrorMessage(
+        error,
+        "Unable to load loans."
+      )
     );
   }
 
   return data || [];
 }
-
 
 /* =========================================================
    GET ACTIVE LOANS
@@ -60,14 +63,18 @@ export async function getActiveLoans() {
         last_name
       )
     `)
-    .eq("is_deleted", false)
     .eq("loan_status", "Active")
+    .eq("is_deleted", false)
     .order("created_at", {
       ascending: false,
     });
 
   if (error) {
-    console.error("GET ACTIVE LOANS ERROR:", error);
+    console.error(
+      "GET ACTIVE LOANS ERROR:",
+      error
+    );
+
     throw new Error(
       getErrorMessage(
         error,
@@ -78,7 +85,6 @@ export async function getActiveLoans() {
 
   return data || [];
 }
-
 
 /* =========================================================
    GET SINGLE LOAN
@@ -93,9 +99,7 @@ export async function getLoan(id) {
     .from("loans")
     .select(`
       *,
-      customers (
-        *
-      )
+      customers (*)
     `)
     .eq("id", id)
     .single();
@@ -104,13 +108,15 @@ export async function getLoan(id) {
     console.error("GET LOAN ERROR:", error);
 
     throw new Error(
-      getErrorMessage(error, "Unable to load loan.")
+      getErrorMessage(
+        error,
+        "Unable to load loan."
+      )
     );
   }
 
   return data;
 }
-
 
 /* =========================================================
    GET LOAN TRANSACTIONS
@@ -118,7 +124,9 @@ export async function getLoan(id) {
 
 export async function getLoanTransactions(loanId) {
   if (!loanId) {
-    throw new Error("Loan ID is required.");
+    throw new Error(
+      "Loan ID is required."
+    );
   }
 
   const { data, error } = await supabase
@@ -126,6 +134,9 @@ export async function getLoanTransactions(loanId) {
     .select("*")
     .eq("loan_id", loanId)
     .order("transaction_date", {
+      ascending: false,
+    })
+    .order("created_at", {
       ascending: false,
     });
 
@@ -146,7 +157,6 @@ export async function getLoanTransactions(loanId) {
   return data || [];
 }
 
-
 /* =========================================================
    GENERATE LOAN NUMBER
 ========================================================= */
@@ -155,10 +165,12 @@ export async function generateLoanNumber() {
   const { data, error } = await supabase
     .from("loans")
     .select("loan_number")
+    .not("loan_number", "is", null)
     .order("created_at", {
       ascending: false,
     })
-    .limit(1);
+    .limit(1)
+    .maybeSingle();
 
   if (error) {
     console.error(
@@ -176,24 +188,22 @@ export async function generateLoanNumber() {
 
   let nextNumber = 1;
 
-  if (
-    data &&
-    data.length > 0 &&
-    data[0]?.loan_number
-  ) {
-    const lastNumber = parseInt(
-      String(data[0].loan_number).replace(/\D/g, ""),
-      10
-    );
+  if (data?.loan_number) {
+    const digits = String(
+      data.loan_number
+    ).replace(/\D/g, "");
 
-    if (!Number.isNaN(lastNumber)) {
-      nextNumber = lastNumber + 1;
+    if (digits) {
+      nextNumber =
+        Number(digits) + 1;
     }
   }
 
-  return `LN${String(nextNumber).padStart(6, "0")}`;
+  return `LN${String(nextNumber).padStart(
+    6,
+    "0"
+  )}`;
 }
-
 
 /* =========================================================
    ADD LOAN
@@ -201,18 +211,15 @@ export async function generateLoanNumber() {
 
 export async function addLoan(loan) {
   if (!loan) {
-    throw new Error("Loan information is required.");
+    throw new Error(
+      "Loan information is required."
+    );
   }
 
   if (!loan.customer_id) {
-    throw new Error("Customer is required.");
-  }
-
-  if (
-    loan.principal_amount === undefined ||
-    loan.principal_amount === null
-  ) {
-    throw new Error("Principal amount is required.");
+    throw new Error(
+      "Customer is required."
+    );
   }
 
   const principalAmount = toNumber(
@@ -221,14 +228,13 @@ export async function addLoan(loan) {
 
   if (principalAmount <= 0) {
     throw new Error(
-      "Principal amount must be greater than zero."
+      "Loan amount must be greater than zero."
     );
   }
 
-
-  /* ---------------------------------------------
-     Verify customer
-  --------------------------------------------- */
+  /* ---------------------------------------------------------
+     VERIFY CUSTOMER
+  --------------------------------------------------------- */
 
   const {
     data: customer,
@@ -243,7 +249,7 @@ export async function addLoan(loan) {
 
   if (customerError) {
     console.error(
-      "CUSTOMER CHECK ERROR:",
+      "VERIFY CUSTOMER ERROR:",
       customerError
     );
 
@@ -255,108 +261,91 @@ export async function addLoan(loan) {
     );
   }
 
-  if (!customer) {
-    throw new Error("Customer not found.");
-  }
-
   if (
-    customer.is_active === false ||
-    customer.is_deleted === true
+    !customer ||
+    customer.is_deleted === true ||
+    customer.is_active === false
   ) {
     throw new Error(
-      "This customer is inactive and cannot receive a new loan."
+      "The selected customer is not active."
     );
   }
 
-
-  /* ---------------------------------------------
-     Generate loan number
-  --------------------------------------------- */
+  /* ---------------------------------------------------------
+     GENERATE LOAN NUMBER
+  --------------------------------------------------------- */
 
   const loanNumber =
     await generateLoanNumber();
 
+  /* ---------------------------------------------------------
+     NORMALIZE NUMERIC VALUES
+  --------------------------------------------------------- */
 
-  /* ---------------------------------------------
-     Prepare loan data
+  const interestRate = toNumber(
+    loan.interest_rate
+  );
 
-     notes is deliberately removed because it
-     is not part of the loans table.
-  --------------------------------------------- */
+  const interestAmount = toNumber(
+    loan.interest_amount
+  );
 
-  const {
-    notes,
-    ...originalLoanData
-  } = loan;
+  const totalRepayment = toNumber(
+    loan.total_repayment
+  );
 
-  const loanData = {
-    ...originalLoanData,
+  const currentBalance =
+    toNumber(
+      loan.current_balance
+    ) || totalRepayment;
+
+  /* ---------------------------------------------------------
+     CREATE LOAN
+  --------------------------------------------------------- */
+
+  const loanToInsert = {
+    ...loan,
+
     loan_number: loanNumber,
+
+    principal_amount:
+      principalAmount,
+
+    interest_rate:
+      interestRate,
+
+    interest_amount:
+      interestAmount,
+
+    total_repayment:
+      totalRepayment,
+
+    current_balance:
+      currentBalance,
+
+    loan_status:
+      loan.loan_status || "Active",
+
+    is_deleted: false,
+
+    notes:
+      loan.notes || null,
   };
-
-
-  /* ---------------------------------------------
-     Ensure numeric values are numeric
-  --------------------------------------------- */
-
-  if (
-    loanData.principal_amount !== undefined
-  ) {
-    loanData.principal_amount =
-      toNumber(loanData.principal_amount);
-  }
-
-  if (
-    loanData.interest_rate !== undefined
-  ) {
-    loanData.interest_rate =
-      toNumber(loanData.interest_rate);
-  }
-
-  if (
-    loanData.interest_amount !== undefined
-  ) {
-    loanData.interest_amount =
-      toNumber(loanData.interest_amount);
-  }
-
-  if (
-    loanData.total_repayment !== undefined
-  ) {
-    loanData.total_repayment =
-      toNumber(loanData.total_repayment);
-  }
-
-  if (
-    loanData.current_balance !== undefined
-  ) {
-    loanData.current_balance =
-      toNumber(loanData.current_balance);
-  }
-
-  if (
-    loanData.total_paid !== undefined
-  ) {
-    loanData.total_paid =
-      toNumber(loanData.total_paid);
-  }
-
-
-  /* ---------------------------------------------
-     Insert loan
-  --------------------------------------------- */
 
   const {
     data,
     error,
   } = await supabase
     .from("loans")
-    .insert([loanData])
+    .insert(loanToInsert)
     .select()
     .single();
 
   if (error) {
-    console.error("ADD LOAN ERROR:", error);
+    console.error(
+      "ADD LOAN ERROR:",
+      error
+    );
 
     throw new Error(
       getErrorMessage(
@@ -366,73 +355,107 @@ export async function addLoan(loan) {
     );
   }
 
-
-  /* ---------------------------------------------
-     Create opening transaction
-  --------------------------------------------- */
+  /* ---------------------------------------------------------
+     CREATE OPENING LOAN TRANSACTION
+  --------------------------------------------------------- */
 
   const {
     error: transactionError,
   } = await supabase
     .from("loan_transactions")
-    .insert([
-      {
-        loan_id: data.id,
-        transaction_date:
-          new Date().toISOString(),
-        transaction_type: "LOAN",
-        description: "Loan Issued",
-        debit: toNumber(
-          data.principal_amount
-        ),
-        credit: 0,
-        balance: toNumber(
-          data.current_balance
-        ),
-        created_by: null,
-      },
-    ]);
+    .insert({
+      loan_id: data.id,
+      transaction_date:
+        new Date().toISOString(),
+      transaction_type:
+        "LOAN",
+      description:
+        "Loan Issued",
+      debit:
+        principalAmount,
+      credit: 0,
+      balance:
+        currentBalance,
+      created_by: null,
+    });
 
   if (transactionError) {
     console.error(
-      "CREATE LOAN TRANSACTION ERROR:",
+      "OPENING LOAN TRANSACTION ERROR:",
       transactionError
     );
 
     throw new Error(
       getErrorMessage(
         transactionError,
-        "Loan was created but the opening transaction could not be created."
+        "Loan was created but the opening transaction could not be recorded."
       )
+    );
+  }
+
+  /* ---------------------------------------------------------
+     CREATE / UPDATE AUTOMATIC STATEMENT
+  --------------------------------------------------------- */
+
+  try {
+    await createOrUpdateLoanStatement(
+      data.id
+    );
+  } catch (statementError) {
+    /*
+     * Statement generation must not undo a
+     * successfully created loan.
+     */
+    console.error(
+      "CREATE LOAN STATEMENT ERROR:",
+      statementError
     );
   }
 
   return data;
 }
 
-
 /* =========================================================
    UPDATE LOAN
 ========================================================= */
 
-export async function updateLoan(id, loan) {
+export async function updateLoan(
+  id,
+  loan
+) {
   if (!id) {
-    throw new Error("Loan ID is required.");
+    throw new Error(
+      "Loan ID is required."
+    );
   }
 
   if (!loan) {
-    throw new Error("Loan information is required.");
+    throw new Error(
+      "Loan information is required."
+    );
   }
 
-  const { data, error } = await supabase
+  const updateData = {
+    ...loan,
+    updated_at:
+      new Date().toISOString(),
+  };
+
+  const {
+    data,
+    error,
+  } = await supabase
     .from("loans")
-    .update(loan)
+    .update(updateData)
     .eq("id", id)
     .select()
     .single();
 
   if (error) {
-    console.error("UPDATE LOAN ERROR:", error);
+    console.error(
+      "UPDATE LOAN ERROR:",
+      error
+    );
 
     throw new Error(
       getErrorMessage(
@@ -445,29 +468,37 @@ export async function updateLoan(id, loan) {
   return data;
 }
 
-
 /* =========================================================
-   DELETE / VOID LOAN
+   VOID LOAN
 ========================================================= */
 
 export async function voidLoan(id) {
   if (!id) {
-    throw new Error("Loan ID is required.");
+    throw new Error(
+      "Loan ID is required."
+    );
   }
 
-  const { data, error } = await supabase
+  const {
+    data,
+    error,
+  } = await supabase
     .from("loans")
     .update({
       loan_status: "Void",
       is_deleted: true,
-      updated_at: new Date().toISOString(),
+      updated_at:
+        new Date().toISOString(),
     })
     .eq("id", id)
     .select()
     .single();
 
   if (error) {
-    console.error("VOID LOAN ERROR:", error);
+    console.error(
+      "VOID LOAN ERROR:",
+      error
+    );
 
     throw new Error(
       getErrorMessage(
@@ -480,7 +511,6 @@ export async function voidLoan(id) {
   return data;
 }
 
-
 /* =========================================================
    RECORD REPAYMENT
 ========================================================= */
@@ -492,17 +522,17 @@ export async function addRepayment({
   notes = "",
 }) {
   if (!loanId) {
-    throw new Error("Loan ID is required.");
+    throw new Error(
+      "Loan ID is required."
+    );
   }
 
-  const paymentAmount = Number(amount);
+  const paymentAmount =
+    toNumber(amount);
 
-  if (
-    !Number.isFinite(paymentAmount) ||
-    paymentAmount <= 0
-  ) {
+  if (paymentAmount <= 0) {
     throw new Error(
-      "Payment amount must be greater than zero."
+      "Repayment amount must be greater than zero."
     );
   }
 
@@ -512,35 +542,55 @@ export async function addRepayment({
     );
   }
 
-
-  const { data, error } =
-    await supabase.rpc(
-      "record_loan_payment",
-      {
-        p_loan_id: loanId,
-        p_amount: paymentAmount,
-        p_payment_date: paymentDate,
-        p_notes: notes || "",
-      }
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "record_loan_payment",
+    {
+      p_loan_id: loanId,
+      p_amount: paymentAmount,
+      p_payment_date:
+        paymentDate,
+      p_notes: notes || "",
+    }
+  );
 
   if (error) {
     console.error(
-      "RECORD PAYMENT ERROR:",
+      "RECORD REPAYMENT ERROR:",
       error
     );
 
     throw new Error(
       getErrorMessage(
         error,
-        "Unable to record the repayment."
+        "Unable to record repayment."
       )
+    );
+  }
+
+  /* ---------------------------------------------------------
+     UPDATE AUTOMATIC STATEMENT
+  --------------------------------------------------------- */
+
+  try {
+    await createOrUpdateLoanStatement(
+      loanId
+    );
+  } catch (statementError) {
+    /*
+     * Statement generation must not cause a
+     * successful repayment to fail.
+     */
+    console.error(
+      "UPDATE REPAYMENT STATEMENT ERROR:",
+      statementError
     );
   }
 
   return data;
 }
-
 
 /* =========================================================
    RUN DAILY LOAN PROCESSING
@@ -555,29 +605,70 @@ export async function runDailyLoanProcessing(
     rpcArguments.p_as_of = asOf;
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      "run_daily_loan_processing",
-      rpcArguments
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "run_daily_loan_processing",
+    rpcArguments
+  );
 
   if (error) {
     console.error(
-      "DAILY LOAN PROCESSING ERROR:",
+      "RUN DAILY LOAN PROCESSING ERROR:",
       error
     );
 
     throw new Error(
       getErrorMessage(
         error,
-        "Unable to process daily loan interest."
+        "Failed to run daily loan processing."
       )
     );
   }
 
+  /* ---------------------------------------------------------
+     AUTOMATIC STATEMENT UPDATES
+     
+     The database function now returns the IDs of loans
+     that received new INTEREST transactions during this
+     processing run.
+  --------------------------------------------------------- */
+
+  const statementLoanIds =
+    Array.isArray(
+      data?.statement_loan_ids
+    )
+      ? data.statement_loan_ids
+      : [];
+
+  if (
+    statementLoanIds.length > 0
+  ) {
+    for (const loanId of statementLoanIds) {
+      if (!loanId) {
+        continue;
+      }
+
+      try {
+        await createOrUpdateLoanStatement(
+          loanId
+        );
+      } catch (statementError) {
+        /*
+         * Statement generation must not cause the
+         * successful interest-processing run to fail.
+         */
+        console.error(
+          `UPDATE DAILY INTEREST STATEMENT ERROR FOR LOAN ${loanId}:`,
+          statementError
+        );
+      }
+    }
+  }
+
   return data;
 }
-
 
 /* =========================================================
    GET DASHBOARD LOAN SUMMARY
@@ -587,21 +678,7 @@ export async function getLoanSummary() {
   const { data, error } = await supabase
     .from("loans")
     .select(`
-      id,
-      loan_number,
-      principal_amount,
-      interest_rate,
-      interest_amount,
-      total_repayment,
-      current_balance,
-      total_paid,
-      loan_status,
-      first_payment_date,
-      next_payment_date,
-      next_interest_date,
-      last_interest_date,
-      last_payment_date,
-      created_at,
+      *,
       customers (
         customer_number,
         first_name,
@@ -627,75 +704,73 @@ export async function getLoanSummary() {
     );
   }
 
-  const loans = data || [];
+  const loans = Array.isArray(data)
+    ? data
+    : [];
 
   const activeLoans = loans.filter(
     (loan) =>
-      String(loan.loan_status).toLowerCase() ===
-      "active"
-  );
-
-  const completedLoans = loans.filter(
-    (loan) =>
-      String(loan.loan_status).toLowerCase() ===
-      "completed"
-  );
-
-  const totalPrincipal = loans.reduce(
-    (sum, loan) =>
-      sum + toNumber(
-        loan.principal_amount
-      ),
-    0
-  );
-
-  const totalBalance = activeLoans.reduce(
-    (sum, loan) =>
-      sum + toNumber(
-        loan.current_balance
-      ),
-    0
-  );
-
-  const totalPaid = loans.reduce(
-    (sum, loan) =>
-      sum + toNumber(
-        loan.total_paid
-      ),
-    0
-  );
-
-  const totalInterest = loans.reduce(
-    (sum, loan) =>
-      sum + toNumber(
-        loan.interest_amount
-      ),
-    0
+      String(
+        loan?.loan_status || ""
+      ).toLowerCase() === "active" &&
+      !loan?.is_deleted
   );
 
   return {
+    /*
+     * The complete loan collection is returned
+     * because Reports.jsx uses it to build the
+     * financial report and portfolio calculations.
+     */
     loans,
-    activeLoans,
-    completedLoans,
 
-    totalLoans: loans.length,
+    totalLoans:
+      loans.length,
 
-    activeLoanCount:
+    activeLoans:
       activeLoans.length,
 
-    completedLoanCount:
-      completedLoans.length,
+    totalPrincipal:
+      loans.reduce(
+        (total, loan) =>
+          total +
+          toNumber(
+            loan?.principal_amount
+          ),
+        0
+      ),
 
-    totalPrincipal,
+    totalOutstanding:
+      activeLoans.reduce(
+        (total, loan) =>
+          total +
+          toNumber(
+            loan?.current_balance
+          ),
+        0
+      ),
 
-    totalBalance,
+    totalPaid:
+      loans.reduce(
+        (total, loan) =>
+          total +
+          toNumber(
+            loan?.total_paid
+          ),
+        0
+      ),
 
-    totalPaid,
-
-    totalInterest,
+    totalInterest:
+      loans.reduce(
+        (total, loan) =>
+          total +
+          toNumber(
+            loan?.interest_amount
+          ),
+        0
+      ),
   };
 }
-
 
 /* =========================================================
    GET RECENT TRANSACTIONS
@@ -704,18 +779,17 @@ export async function getLoanSummary() {
 export async function getRecentTransactions(
   limit = 20
 ) {
-  const safeLimit = Math.max(
-    Number(limit) || 20,
-    1
-  );
-
-  const { data, error } = await supabase
-    .from("loan_transactions")
-    .select("*")
-    .order("transaction_date", {
-      ascending: false,
-    })
-    .limit(safeLimit);
+  const { data, error } =
+    await supabase
+      .from("loan_transactions")
+      .select("*")
+      .order("transaction_date", {
+        ascending: false,
+      })
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(limit);
 
   if (error) {
     console.error(
@@ -734,38 +808,35 @@ export async function getRecentTransactions(
   return data || [];
 }
 
-
 /* =========================================================
-   GET LOAN TRANSACTIONS WITH LOAN NUMBER
+   GET RECENT LOAN TRANSACTIONS WITH LOAN NUMBER
 ========================================================= */
 
 export async function getRecentLoanTransactions(
   limit = 20
 ) {
-  const safeLimit = Math.max(
-    Number(limit) || 20,
-    1
-  );
-
-  const { data, error } = await supabase
-    .from("loan_transactions")
-    .select(`
-      *,
-      loans (
-        id,
-        loan_number,
-        customer_id,
-        customers (
-          customer_number,
-          first_name,
-          last_name
+  const { data, error } =
+    await supabase
+      .from("loan_transactions")
+      .select(`
+        *,
+        loans (
+          loan_number,
+          customer_id,
+          customers (
+            customer_number,
+            first_name,
+            last_name
+          )
         )
-      )
-    `)
-    .order("transaction_date", {
-      ascending: false,
-    })
-    .limit(safeLimit);
+      `)
+      .order("transaction_date", {
+        ascending: false,
+      })
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(limit);
 
   if (error) {
     console.error(
@@ -784,37 +855,33 @@ export async function getRecentLoanTransactions(
   return data || [];
 }
 
-
 /* =========================================================
    GET LOANS DUE FOR INTEREST
 ========================================================= */
 
 export async function getLoansDueForInterest() {
-  const now =
-    new Date().toISOString();
-
-  const { data, error } = await supabase
-    .from("loans")
-    .select(`
-      *,
-      customers (
-        customer_number,
-        first_name,
-        last_name
-      )
-    `)
-    .eq("loan_status", "Active")
-    .eq("is_deleted", false)
-    .gt("current_balance", 0)
-    .not("next_interest_date", "is", null)
-    .lte("next_interest_date", now)
-    .order("next_interest_date", {
-      ascending: true,
-    });
+  const { data, error } =
+    await supabase
+      .from("loans")
+      .select(`
+        *,
+        customers (
+          customer_number,
+          first_name,
+          last_name
+        )
+      `)
+      .eq("loan_status", "Active")
+      .eq("is_deleted", false)
+      .gt("current_balance", 0)
+      .not("next_interest_date", "is", null)
+      .order("next_interest_date", {
+        ascending: true,
+      });
 
   if (error) {
     console.error(
-      "GET DUE LOANS ERROR:",
+      "GET LOANS DUE FOR INTEREST ERROR:",
       error
     );
 
@@ -829,7 +896,6 @@ export async function getLoansDueForInterest() {
   return data || [];
 }
 
-
 /* =========================================================
    GET UPCOMING INTEREST
 ========================================================= */
@@ -837,47 +903,42 @@ export async function getLoansDueForInterest() {
 export async function getUpcomingInterestLoans(
   limit = 20
 ) {
-  const safeLimit = Math.max(
-    Number(limit) || 20,
-    1
-  );
-
-  const { data, error } = await supabase
-    .from("loans")
-    .select(`
-      *,
-      customers (
-        customer_number,
-        first_name,
-        last_name
-      )
-    `)
-    .eq("loan_status", "Active")
-    .eq("is_deleted", false)
-    .gt("current_balance", 0)
-    .not("next_interest_date", "is", null)
-    .order("next_interest_date", {
-      ascending: true,
-    })
-    .limit(safeLimit);
+  const { data, error } =
+    await supabase
+      .from("loans")
+      .select(`
+        *,
+        customers (
+          customer_number,
+          first_name,
+          last_name
+        )
+      `)
+      .eq("loan_status", "Active")
+      .eq("is_deleted", false)
+      .gt("current_balance", 0)
+      .not("next_interest_date", "is", null)
+      .order("next_interest_date", {
+        ascending: true,
+      })
+      .limit(limit);
 
   if (error) {
     console.error(
-      "GET UPCOMING INTEREST ERROR:",
+      "GET UPCOMING INTEREST LOANS ERROR:",
       error
     );
 
     throw new Error(
       getErrorMessage(
         error,
-        "Unable to load upcoming interest dates."
+        "Unable to load upcoming interest loans."
       )
     );
   }
 
   return data || [];
 }
-
 
 /* =========================================================
    GET LOANS BY CUSTOMER
@@ -892,14 +953,22 @@ export async function getCustomerLoans(
     );
   }
 
-  const { data, error } = await supabase
-    .from("loans")
-    .select("*")
-    .eq("customer_id", customerId)
-    .eq("is_deleted", false)
-    .order("created_at", {
-      ascending: false,
-    });
+  const { data, error } =
+    await supabase
+      .from("loans")
+      .select(`
+        *,
+        customers (
+          customer_number,
+          first_name,
+          last_name
+        )
+      `)
+      .eq("customer_id", customerId)
+      .eq("is_deleted", false)
+      .order("created_at", {
+        ascending: false,
+      });
 
   if (error) {
     console.error(
@@ -918,7 +987,6 @@ export async function getCustomerLoans(
   return data || [];
 }
 
-
 /* =========================================================
    GET LOAN FINANCIAL TOTALS
 ========================================================= */
@@ -932,35 +1000,96 @@ export async function getLoanFinancialTotals(
     );
   }
 
-  const transactions =
-    await getLoanTransactions(
-      loanId
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("loan_transactions")
+    .select(
+      "transaction_type, debit, credit"
+    )
+    .eq("loan_id", loanId);
+
+  if (error) {
+    console.error(
+      "GET LOAN FINANCIAL TOTALS ERROR:",
+      error
     );
+
+    throw new Error(
+      getErrorMessage(
+        error,
+        "Unable to calculate loan financial totals."
+      )
+    );
+  }
+
+  const transactions =
+    data || [];
 
   const totalDebit =
     transactions.reduce(
-      (sum, transaction) =>
-        sum +
-        toNumber(transaction.debit),
+      (total, transaction) =>
+        total +
+        toNumber(
+          transaction.debit
+        ),
       0
     );
 
   const totalCredit =
     transactions.reduce(
-      (sum, transaction) =>
-        sum +
-        toNumber(transaction.credit),
+      (total, transaction) =>
+        total +
+        toNumber(
+          transaction.credit
+        ),
       0
     );
+
+  const totalInterest =
+    transactions
+      .filter(
+        (transaction) =>
+          transaction.transaction_type ===
+          "INTEREST"
+      )
+      .reduce(
+        (total, transaction) =>
+          total +
+          toNumber(
+            transaction.debit
+          ),
+        0
+      );
+
+  const totalRepayments =
+    transactions
+      .filter(
+        (transaction) =>
+          transaction.transaction_type ===
+            "PAYMENT" ||
+          transaction.transaction_type ===
+            "REPAYMENT"
+      )
+      .reduce(
+        (total, transaction) =>
+          total +
+          toNumber(
+            transaction.credit
+          ),
+        0
+      );
 
   return {
     totalDebit,
     totalCredit,
+    totalInterest,
+    totalRepayments,
     transactionCount:
       transactions.length,
   };
 }
-
 
 /* =========================================================
    REALTIME LOAN SUBSCRIPTION
@@ -969,26 +1098,28 @@ export async function getLoanFinancialTotals(
 export function subscribeToLoans(
   callback
 ) {
-  const channel = supabase
-    .channel("loan-service-loans")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "loans",
-      },
-      (payload) => {
-        if (typeof callback === "function") {
-          callback(payload);
+  const channel =
+    supabase
+      .channel(
+        "loans-realtime"
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "loans",
+        },
+        (payload) => {
+          if (callback) {
+            callback(payload);
+          }
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
 
   return channel;
 }
-
 
 /* =========================================================
    REALTIME TRANSACTION SUBSCRIPTION
@@ -997,26 +1128,28 @@ export function subscribeToLoans(
 export function subscribeToLoanTransactions(
   callback
 ) {
-  const channel = supabase
-    .channel("loan-service-transactions")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "loan_transactions",
-      },
-      (payload) => {
-        if (typeof callback === "function") {
-          callback(payload);
+  const channel =
+    supabase
+      .channel(
+        "loan-transactions-realtime"
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "loan_transactions",
+        },
+        (payload) => {
+          if (callback) {
+            callback(payload);
+          }
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
 
   return channel;
 }
-
 
 /* =========================================================
    REALTIME SINGLE LOAN SUBSCRIPTION
@@ -1027,54 +1160,46 @@ export function subscribeToLoan(
   callback
 ) {
   if (!loanId) {
-    throw new Error(
-      "Loan ID is required."
-    );
+    return null;
   }
 
-  const loanChannel = supabase
-    .channel(
-      `loan-service-loan-${loanId}`
-    )
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "loans",
-        filter: `id=eq.${loanId}`,
-      },
-      (payload) => {
-        if (typeof callback === "function") {
-          callback({
-            type: "loan",
-            payload,
-          });
+  const channel =
+    supabase
+      .channel(
+        `loan-${loanId}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "loans",
+          filter: `id=eq.${loanId}`,
+        },
+        (payload) => {
+          if (callback) {
+            callback(payload);
+          }
         }
-      }
-    )
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "loan_transactions",
-        filter: `loan_id=eq.${loanId}`,
-      },
-      (payload) => {
-        if (typeof callback === "function") {
-          callback({
-            type: "transaction",
-            payload,
-          });
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "loan_transactions",
+          filter: `loan_id=eq.${loanId}`,
+        },
+        (payload) => {
+          if (callback) {
+            callback(payload);
+          }
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
 
-  return loanChannel;
+  return channel;
 }
-
 
 /* =========================================================
    REMOVE REALTIME CHANNEL
@@ -1083,13 +1208,21 @@ export function subscribeToLoan(
 export async function removeLoanSubscription(
   channel
 ) {
-  if (!channel) return;
+  if (!channel) {
+    return;
+  }
 
-  await supabase.removeChannel(
-    channel
-  );
+  try {
+    await supabase.removeChannel(
+      channel
+    );
+  } catch (error) {
+    console.error(
+      "REMOVE LOAN SUBSCRIPTION ERROR:",
+      error
+    );
+  }
 }
-
 
 /* =========================================================
    DEFAULT EXPORT

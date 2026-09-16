@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 
 import {
   Alert,
+  BottomNavigation,
+  BottomNavigationAction,
   Box,
   Button,
   Card,
@@ -10,9 +12,13 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Paper,
   Stack,
   Typography,
 } from "@mui/material";
+
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 
 import { supabase } from "../../lib/supabase";
 
@@ -42,10 +48,7 @@ export default function MobileApplicationReviews() {
 
       setApplications(data || []);
     } catch (err) {
-      console.error(
-        "Unable to load applications:",
-        err
-      );
+      console.error("Unable to load applications:", err);
 
       setError(
         err?.message ||
@@ -121,16 +124,26 @@ export default function MobileApplicationReviews() {
     }
   }
 
+  function handleNavigation(value) {
+    if (value === "home") {
+      navigate("/mobile/preview");
+      return;
+    }
+
+    if (value === "applications") {
+      navigate("/mobile/application-review");
+    }
+  }
+
   return (
     <Box
       sx={{
         minHeight: "100vh",
         backgroundColor: "#f5f6f8",
-        pb: 3,
+        pb: 10,
       }}
     >
       {/* HEADER */}
-
       <Box
         sx={{
           position: "sticky",
@@ -175,6 +188,7 @@ export default function MobileApplicationReviews() {
         </Stack>
       </Box>
 
+      {/* CONTENT */}
       <Box sx={{ p: 1.5 }}>
         {error && (
           <Alert
@@ -308,9 +322,7 @@ export default function MobileApplicationReviews() {
                           SUBMITTED
                         </Typography>
 
-                        <Typography
-                          fontWeight={500}
-                        >
+                        <Typography fontWeight={500}>
                           {formatDate(
                             application.created_at
                           )}
@@ -371,6 +383,40 @@ export default function MobileApplicationReviews() {
           </Stack>
         )}
       </Box>
+
+      {/* MOBILE BOTTOM NAVIGATION */}
+      <Paper
+        elevation={8}
+        sx={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          borderTop: "1px solid",
+          borderColor: "divider",
+        }}
+      >
+        <BottomNavigation
+          value="applications"
+          onChange={(_, value) =>
+            handleNavigation(value)
+          }
+          showLabels
+        >
+          <BottomNavigationAction
+            label="Home"
+            value="home"
+            icon={<HomeOutlinedIcon />}
+          />
+
+          <BottomNavigationAction
+            label="Applications"
+            value="applications"
+            icon={<DescriptionOutlinedIcon />}
+          />
+        </BottomNavigation>
+      </Paper>
     </Box>
   );
 }

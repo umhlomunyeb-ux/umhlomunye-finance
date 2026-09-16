@@ -17,6 +17,7 @@ import {
 
 import QRCode from "qrcode";
 
+import { supabase } from "../../lib/supabase";
 import { getLoans } from "../../services/loanService";
 import { getLoanStatement } from "../../services/statementService";
 
@@ -25,9 +26,12 @@ export default function Statements() {
   const [selectedLoanId, setSelectedLoanId] = useState("");
   const [statement, setStatement] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [companyLogo, setCompanyLogo] = useState("");
+  const [companyName, setCompanyName] = useState("UMHLOMUNYE FINANCE");
 
   useEffect(() => {
     loadLoans();
+    loadCompanySettings();
   }, []);
 
   async function loadLoans() {
@@ -36,6 +40,31 @@ export default function Statements() {
       setLoans(data || []);
     } catch (err) {
       console.error("LOAD LOANS ERROR:", err);
+    }
+  }
+
+  async function loadCompanySettings() {
+    try {
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("company_name, company_logo_url")
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error("LOAD COMPANY SETTINGS ERROR:", error);
+        return;
+      }
+
+      if (data?.company_name) {
+        setCompanyName(data.company_name);
+      }
+
+      if (data?.company_logo_url) {
+        setCompanyLogo(data.company_logo_url);
+      }
+    } catch (error) {
+      console.error("COMPANY SETTINGS ERROR:", error);
     }
   }
 
@@ -60,6 +89,15 @@ export default function Statements() {
 
   function money(value) {
     return `R${Number(value || 0).toFixed(2)}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   async function printStatement() {
@@ -104,8 +142,19 @@ export default function Statements() {
                           : "-"
                       }
                     </td>
-                    <td>${trx.transaction_type || "-"}</td>
-                    <td>${trx.description || "-"}</td>
+
+                    <td>
+                      ${escapeHtml(
+                        trx.transaction_type || "-"
+                      )}
+                    </td>
+
+                    <td>
+                      ${escapeHtml(
+                        trx.description || "-"
+                      )}
+                    </td>
+
                     <td class="right">
                       ${
                         Number(trx.debit || 0) > 0
@@ -113,6 +162,7 @@ export default function Statements() {
                           : "-"
                       }
                     </td>
+
                     <td class="right">
                       ${
                         Number(trx.credit || 0) > 0
@@ -120,6 +170,7 @@ export default function Statements() {
                           : "-"
                       }
                     </td>
+
                     <td class="right">
                       ${money(trx.balance)}
                     </td>
@@ -142,19 +193,31 @@ export default function Statements() {
                 (overdue) => `
                   <tr>
                     <td>
-                      ${overdue.cycle_payment_date}
+                      ${escapeHtml(
+                        overdue.cycle_payment_date
+                      )}
                     </td>
+
                     <td>
-                      ${overdue.overdue_start_date}
+                      ${escapeHtml(
+                        overdue.overdue_start_date
+                      )}
                     </td>
+
                     <td class="right">
                       ${money(overdue.overdue_amount)}
                     </td>
+
                     <td>
-                      ${overdue.status || "-"}
+                      ${escapeHtml(
+                        overdue.status || "-"
+                      )}
                     </td>
+
                     <td>
-                      ${overdue.resolved_date || "-"}
+                      ${escapeHtml(
+                        overdue.resolved_date || "-"
+                      )}
                     </td>
                   </tr>
                 `
@@ -181,6 +244,37 @@ export default function Statements() {
         return;
       }
 
+      const logoHtml = companyLogo
+        ? `
+            <div class="logo-container">
+              <img
+                src="${escapeHtml(companyLogo)}"
+                class="company-logo"
+                alt="${escapeHtml(companyName)} Logo"
+              />
+            </div>
+          `
+        : `
+            <div class="logo-placeholder">
+              UBS
+            </div>
+          `;
+
+      const qrHtml = qrCode
+        ? `
+            <div class="qr">
+              <img
+                src="${qrCode}"
+                alt="Verification QR Code"
+              />
+
+              <div class="qr-text">
+                Scan to verify
+              </div>
+            </div>
+          `
+        : "";
+
       printWindow.document.write(`
         <!DOCTYPE html>
 
@@ -191,7 +285,9 @@ export default function Statements() {
           <meta charset="UTF-8">
 
           <title>
-            Loan Statement - ${selectedLoan.loan_number}
+            Loan Statement - ${escapeHtml(
+              selectedLoan.loan_number
+            )}
           </title>
 
           <style>
@@ -219,6 +315,14 @@ export default function Statements() {
               margin: auto;
             }
 
+            /*
+             * =====================================================
+             * DOCUMENT HEADER
+             * Logo is positioned TOP LEFT.
+             * QR code remains TOP RIGHT.
+             * =====================================================
+             */
+
             .header {
               display: flex;
               justify-content: space-between;
@@ -226,6 +330,49 @@ export default function Statements() {
               border-bottom: 3px solid #17365d;
               padding-bottom: 12px;
               margin-bottom: 18px;
+              min-height: 105px;
+            }
+
+            .header-left {
+              display: flex;
+              align-items: flex-start;
+              gap: 14px;
+              min-width: 0;
+            }
+
+            .logo-container {
+              width: 95px;
+              height: 85px;
+              display: flex;
+              align-items: flex-start;
+              justify-content: flex-start;
+              flex-shrink: 0;
+            }
+
+            .company-logo {
+              max-width: 95px;
+              max-height: 80px;
+              width: auto;
+              height: auto;
+              object-fit: contain;
+              display: block;
+            }
+
+            .logo-placeholder {
+              width: 75px;
+              height: 75px;
+              border: 2px solid #17365d;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #17365d;
+              font-size: 20px;
+              font-weight: bold;
+              flex-shrink: 0;
+            }
+
+            .company-information {
+              padding-top: 2px;
             }
 
             .company-name {
@@ -251,11 +398,14 @@ export default function Statements() {
             .qr {
               text-align: center;
               width: 100px;
+              flex-shrink: 0;
             }
 
             .qr img {
               width: 90px;
               height: 90px;
+              display: block;
+              margin: 0 auto;
             }
 
             .qr-text {
@@ -400,10 +550,29 @@ export default function Statements() {
             }
 
             @media print {
+
               body {
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
               }
+
+              .header {
+                break-inside: avoid;
+              }
+
+              .section {
+                break-inside: auto;
+              }
+
+              table {
+                page-break-inside: auto;
+              }
+
+              tr {
+                page-break-inside: avoid;
+                page-break-after: auto;
+              }
+
             }
 
           </style>
@@ -416,51 +585,40 @@ export default function Statements() {
 
             <div class="header">
 
-              <div>
+              <div class="header-left">
 
-                <div class="company-name">
-                  UMHLOMUNYE FINANCE
-                </div>
+                ${logoHtml}
 
-                <div class="slogan">
-                  "Our dreams, Our hope"
-                </div>
+                <div class="company-information">
 
-                <div class="company-details">
+                  <div class="company-name">
+                    ${escapeHtml(companyName).toUpperCase()}
+                  </div>
 
-                  Reg. No: 2020/191721/07<br>
+                  <div class="slogan">
+                    "Our dreams, Our hope"
+                  </div>
 
-                  20 Jacaranda Street,
-                  Kinross, 2270<br>
+                  <div class="company-details">
 
-                  Tel: 078 078 3879<br>
+                    Reg. No: 2020/191721/07<br>
 
-                  WhatsApp: 060 508 6672<br>
+                    20 Jacaranda Street,
+                    Kinross, 2270<br>
 
-                  Email: umhlomunyeb@gmail.com
+                    Tel: 078 078 3879<br>
+
+                    WhatsApp: 060 508 6672<br>
+
+                    Email: umhlomunyeb@gmail.com
+
+                  </div>
 
                 </div>
 
               </div>
 
-              ${
-                qrCode
-                  ? `
-                    <div class="qr">
-
-                      <img
-                        src="${qrCode}"
-                        alt="Verification QR Code"
-                      >
-
-                      <div class="qr-text">
-                        Scan to verify
-                      </div>
-
-                    </div>
-                  `
-                  : ""
-              }
+              ${qrHtml}
 
             </div>
 
@@ -473,7 +631,7 @@ export default function Statements() {
 
               <p>
                 Official statement issued by
-                Umhlomunye Finance
+                ${escapeHtml(companyName)}
               </p>
 
             </div>
@@ -494,7 +652,7 @@ export default function Statements() {
                   </span>
 
                   <span class="value">
-                    ${customerName || "-"}
+                    ${escapeHtml(customerName || "-")}
                   </span>
 
                 </div>
@@ -506,7 +664,9 @@ export default function Statements() {
                   </span>
 
                   <span class="value">
-                    ${selectedLoan.loan_number}
+                    ${escapeHtml(
+                      selectedLoan.loan_number || "-"
+                    )}
                   </span>
 
                 </div>
@@ -518,7 +678,9 @@ export default function Statements() {
                   </span>
 
                   <span class="value">
-                    ${new Date().toLocaleDateString("en-ZA")}
+                    ${new Date().toLocaleDateString(
+                      "en-ZA"
+                    )}
                   </span>
 
                 </div>
@@ -530,7 +692,9 @@ export default function Statements() {
                   </span>
 
                   <span class="value">
-                    ${selectedLoan.loan_status || "-"}
+                    ${escapeHtml(
+                      selectedLoan.loan_status || "-"
+                    )}
                   </span>
 
                 </div>
@@ -598,8 +762,10 @@ export default function Statements() {
 
                   <span class="value">
                     ${
-                      selectedLoan.next_payment_date ||
-                      "-"
+                      escapeHtml(
+                        selectedLoan.next_payment_date ||
+                          "-"
+                      )
                     }
                   </span>
 
@@ -659,7 +825,9 @@ export default function Statements() {
                   </div>
 
                   <div class="summary-value">
-                    ${selectedLoan.loan_status || "-"}
+                    ${escapeHtml(
+                      selectedLoan.loan_status || "-"
+                    )}
                   </div>
 
                 </div>
@@ -778,7 +946,8 @@ export default function Statements() {
               This statement contains a secure
               verification reference. Scan the QR code
               above to verify the statement against the
-              Umhlomunye Finance loan management system.
+              ${escapeHtml(companyName)} loan management
+              system.
 
             </div>
 
@@ -786,7 +955,7 @@ export default function Statements() {
             <div class="footer">
 
               <strong>
-                UMHLOMUNYE FINANCE
+                ${escapeHtml(companyName).toUpperCase()}
               </strong>
 
               <br>
@@ -820,7 +989,7 @@ export default function Statements() {
       setTimeout(() => {
         printWindow.focus();
         printWindow.print();
-      }, 500);
+      }, 700);
 
     } catch (error) {
       console.error(
@@ -958,8 +1127,7 @@ export default function Statements() {
             <Box
               sx={{
                 display: "flex",
-                justifyContent:
-                  "space-between",
+                justifyContent: "space-between",
                 alignItems: "center",
                 flexWrap: "wrap",
                 gap: 2,

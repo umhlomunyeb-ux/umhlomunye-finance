@@ -5,12 +5,22 @@ import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 
 /* =========================================================
+   CONSTANTS
+========================================================= */
+
+const DOCUMENT_BUCKET = "documents";
+const STATEMENT_DOCUMENT_TYPE = "Statement";
+
+/* =========================================================
    HELPERS
 ========================================================= */
 
 function toNumber(value) {
   const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
 }
 
 function money(value) {
@@ -31,23 +41,15 @@ function getCustomerName(loan) {
   );
 }
 
+function getErrorMessage(error, fallback) {
+  return error?.message || fallback;
+}
+
 /* =========================================================
    GET PUBLIC APPLICATION URL
 ========================================================= */
 
 function getPublicAppUrl() {
-  /*
-   * IMPORTANT:
-   * Set VITE_PUBLIC_APP_URL in your production environment.
-   *
-   * Example:
-   *
-   * VITE_PUBLIC_APP_URL=https://your-domain.com
-   *
-   * During local development, window.location.origin is used
-   * as a fallback.
-   */
-
   const configuredUrl =
     import.meta.env.VITE_PUBLIC_APP_URL;
 
@@ -59,25 +61,80 @@ function getPublicAppUrl() {
 }
 
 /* =========================================================
+   RECORD DOCUMENT HISTORY
+========================================================= */
+
+async function recordDocumentHistory({
+  documentId,
+  action,
+  previousDocumentId = null,
+  newDocumentId = null,
+  documentSnapshot = null,
+  previousSnapshot = null,
+  notes = null,
+}) {
+  const { error } = await supabase.rpc(
+    "record_document_history",
+    {
+      p_document_id:
+        documentId || null,
+
+      p_action:
+        action,
+
+      p_previous_document_id:
+        previousDocumentId || null,
+
+      p_new_document_id:
+        newDocumentId || null,
+
+      p_document_snapshot:
+        documentSnapshot || null,
+
+      p_previous_snapshot:
+        previousSnapshot || null,
+
+      p_notes:
+        notes || null,
+    }
+  );
+
+  if (error) {
+    console.error(
+      "RECORD DOCUMENT HISTORY ERROR:",
+      error
+    );
+
+    throw error;
+  }
+}
+
+/* =========================================================
    GET LOAN STATEMENT DATA
 ========================================================= */
 
-export async function getLoanStatement(loanId) {
+export async function getLoanStatement(
+  loanId
+) {
   if (!loanId) {
-    throw new Error("Loan ID is required.");
+    throw new Error(
+      "Loan ID is required."
+    );
   }
 
-  const { data: transactions, error: transactionError } =
-    await supabase
-      .from("loan_transactions")
-      .select("*")
-      .eq("loan_id", loanId)
-      .order("transaction_date", {
-        ascending: true,
-      })
-      .order("created_at", {
-        ascending: true,
-      });
+  const {
+    data: transactions,
+    error: transactionError,
+  } = await supabase
+    .from("loan_transactions")
+    .select("*")
+    .eq("loan_id", loanId)
+    .order("transaction_date", {
+      ascending: true,
+    })
+    .order("created_at", {
+      ascending: true,
+    });
 
   if (transactionError) {
     console.error(
@@ -88,14 +145,16 @@ export async function getLoanStatement(loanId) {
     throw transactionError;
   }
 
-  const { data: overdues, error: overdueError } =
-    await supabase
-      .from("loan_overdues")
-      .select("*")
-      .eq("loan_id", loanId)
-      .order("cycle_payment_date", {
-        ascending: true,
-      });
+  const {
+    data: overdues,
+    error: overdueError,
+  } = await supabase
+    .from("loan_overdues")
+    .select("*")
+    .eq("loan_id", loanId)
+    .order("cycle_payment_date", {
+      ascending: true,
+    });
 
   if (overdueError) {
     console.error(
@@ -107,8 +166,11 @@ export async function getLoanStatement(loanId) {
   }
 
   return {
-    transactions: transactions || [],
-    overdues: overdues || [],
+    transactions:
+      transactions || [],
+
+    overdues:
+      overdues || [],
   };
 }
 
@@ -116,17 +178,22 @@ export async function getLoanStatement(loanId) {
    GET EXISTING STATEMENT DOCUMENT
 
    IMPORTANT:
-   THIS DOES NOT CREATE ANYTHING.
+   ONE STATEMENT PER LOAN.
 ========================================================= */
 
 export async function getExistingLoanStatementDocument(
   loanId
 ) {
   if (!loanId) {
-    throw new Error("Loan ID is required.");
+    throw new Error(
+      "Loan ID is required."
+    );
   }
 
-  const { data, error } = await supabase
+  const {
+    data,
+    error,
+  } = await supabase
     .from("documents")
     .select(`
       id,
@@ -137,11 +204,46 @@ export async function getExistingLoanStatementDocument(
       document_name,
       document_path,
       created_by,
-      created_at
+      created_at,
+      document_category,
+      customer_id_number_snapshot,
+      loan_number_snapshot,
+      mime_type,
+      file_size_bytes,
+      file_hash_sha256,
+      source_type,
+      retention_policy,
+      retention_until,
+      retention_status,
+      financial_period_type,
+      financial_period_start,
+      financial_period_end,
+      verification_status,
+      is_archived,
+      archived_at,
+      archived_by,
+      document_group_id,
+      version_number,
+      replacement_of_document_id,
+      replaced_by_document_id,
+      deleted_at
     `)
-    .eq("loan_id", loanId)
-    .eq("document_type", "Statement")
-    .not("document_path", "is", null)
+    .eq(
+      "loan_id",
+      loanId
+    )
+    .eq(
+      "document_type",
+      STATEMENT_DOCUMENT_TYPE
+    )
+    .eq(
+      "is_archived",
+      false
+    )
+    .is(
+      "deleted_at",
+      null
+    )
     .order("created_at", {
       ascending: false,
     })
@@ -171,16 +273,20 @@ async function buildStatementPdf(
 ) {
   const doc = new jsPDF();
 
-  const customerName = getCustomerName(loan);
+  const customerName =
+    getCustomerName(loan);
 
   const loanNumber =
     loan.loan_number || "N/A";
 
   const customerNumber =
-    loan.customers?.customer_number || "N/A";
+    loan.customers?.customer_number ||
+    "N/A";
 
   const generatedDate =
-    new Date().toLocaleDateString("en-ZA");
+    new Date().toLocaleDateString(
+      "en-ZA"
+    );
 
   /* -------------------------------------------------------
      STATEMENT VERIFICATION QR
@@ -188,7 +294,9 @@ async function buildStatementPdf(
 
   let qrCode = null;
 
-  if (loan.statement_verification_token) {
+  if (
+    loan.statement_verification_token
+  ) {
     const publicAppUrl =
       getPublicAppUrl();
 
@@ -196,26 +304,26 @@ async function buildStatementPdf(
       `${publicAppUrl}/verify-statement/` +
       loan.statement_verification_token;
 
-    qrCode = await QRCode.toDataURL(
-      verificationUrl,
-      {
-        width: 300,
-        margin: 1,
-        errorCorrectionLevel: "H",
-      }
-    );
+    qrCode =
+      await QRCode.toDataURL(
+        verificationUrl,
+        {
+          width: 300,
+          margin: 1,
+          errorCorrectionLevel: "H",
+        }
+      );
   }
 
   /* -------------------------------------------------------
      HEADER
   ------------------------------------------------------- */
 
-  /*
-   * Keep the company heading away from the QR code.
-   */
-
   doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
 
   doc.text(
     "UMHLOMUNYE FINANCE",
@@ -227,7 +335,10 @@ async function buildStatementPdf(
   );
 
   doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
 
   doc.text(
     "Our dreams, Our hope",
@@ -262,7 +373,10 @@ async function buildStatementPdf(
     );
 
     doc.setFontSize(6.5);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
 
     doc.text(
       "Scan to verify",
@@ -274,27 +388,35 @@ async function buildStatementPdf(
     );
   }
 
-  doc.setDrawColor(120);
-
-  /*
- * Separator line stops before the QR code
- * so it cannot cross through the QR area.
- */
+  /* -------------------------------------------------------
+     HEADER LINES
+  ------------------------------------------------------- */
 
   doc.setDrawColor(120);
 
-  /* Left section of header */
-  doc.line(15, 41, 158, 41);
+  doc.line(
+    15,
+    41,
+    158,
+    41
+  );
 
-  /* Right section underneath QR */
-  doc.line(164, 41, 195, 41);
+  doc.line(
+    164,
+    41,
+    195,
+    41
+  );
 
   /* -------------------------------------------------------
      CUSTOMER INFORMATION
   ------------------------------------------------------- */
 
   doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
 
   doc.text(
     "CUSTOMER INFORMATION",
@@ -302,7 +424,11 @@ async function buildStatementPdf(
     52
   );
 
-  doc.setFont("helvetica", "normal");
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
   doc.setFontSize(10);
 
   doc.text(
@@ -330,7 +456,9 @@ async function buildStatementPdf(
   );
 
   doc.text(
-    `Loan Status: ${loan.loan_status || "N/A"}`,
+    `Loan Status: ${
+      loan.loan_status || "N/A"
+    }`,
     120,
     67
   );
@@ -339,7 +467,10 @@ async function buildStatementPdf(
      LOAN SUMMARY
   ------------------------------------------------------- */
 
-  doc.setFont("helvetica", "bold");
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
 
   doc.text(
     "LOAN SUMMARY",
@@ -347,12 +478,17 @@ async function buildStatementPdf(
     88
   );
 
-  doc.setFont("helvetica", "normal");
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
 
   const summaryRows = [
     [
       "Principal Amount",
-      money(loan.principal_amount),
+      money(
+        loan.principal_amount
+      ),
     ],
     [
       "Interest Rate",
@@ -362,35 +498,48 @@ async function buildStatementPdf(
     ],
     [
       "Interest Amount",
-      money(loan.interest_amount),
+      money(
+        loan.interest_amount
+      ),
     ],
     [
       "Total Repayment",
-      money(loan.total_repayment),
+      money(
+        loan.total_repayment
+      ),
     ],
     [
       "Total Paid",
-      money(loan.total_paid),
+      money(
+        loan.total_paid
+      ),
     ],
     [
       "Current Balance",
-      money(loan.current_balance),
+      money(
+        loan.current_balance
+      ),
     ],
   ];
 
   autoTable(doc, {
     startY: 93,
+
     head: [
       [
         "Description",
         "Amount",
       ],
     ],
+
     body: summaryRows,
+
     theme: "grid",
+
     styles: {
       fontSize: 9,
     },
+
     headStyles: {
       fontStyle: "bold",
     },
@@ -400,10 +549,14 @@ async function buildStatementPdf(
      TRANSACTIONS
   ------------------------------------------------------- */
 
-  let transactionStart =
-    doc.lastAutoTable.finalY + 12;
+  const transactionStart =
+    doc.lastAutoTable.finalY +
+    12;
 
-  doc.setFont("helvetica", "bold");
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
 
   doc.text(
     "TRANSACTION HISTORY",
@@ -418,16 +571,26 @@ async function buildStatementPdf(
           transaction.transaction_date
             ? new Date(
                 transaction.transaction_date
-              ).toLocaleDateString("en-ZA")
+              ).toLocaleDateString(
+                "en-ZA"
+              )
             : "";
 
         return [
           date,
-          transaction.transaction_type || "",
-          transaction.description || "",
-          money(transaction.debit),
-          money(transaction.credit),
-          money(transaction.balance),
+          transaction.transaction_type ||
+            "",
+          transaction.description ||
+            "",
+          money(
+            transaction.debit
+          ),
+          money(
+            transaction.credit
+          ),
+          money(
+            transaction.balance
+          ),
         ];
       }
     );
@@ -481,9 +644,13 @@ async function buildStatementPdf(
     overdues.length > 0
   ) {
     const overdueStart =
-      doc.lastAutoTable.finalY + 12;
+      doc.lastAutoTable.finalY +
+      12;
 
-    doc.setFont("helvetica", "bold");
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
 
     doc.text(
       "OVERDUE INFORMATION",
@@ -497,7 +664,9 @@ async function buildStatementPdf(
           overdue.cycle_payment_date
             ? new Date(
                 overdue.cycle_payment_date
-              ).toLocaleDateString("en-ZA")
+              ).toLocaleDateString(
+                "en-ZA"
+              )
             : "",
 
           money(
@@ -562,6 +731,7 @@ async function buildStatementPdf(
       doc.internal.pageSize.height;
 
     doc.setFontSize(8);
+
     doc.setFont(
       "helvetica",
       "normal"
@@ -600,7 +770,7 @@ export async function createOrUpdateLoanStatement(
   }
 
   /* -------------------------------------------------------
-     Get loan
+     GET LOAN
   ------------------------------------------------------- */
 
   const {
@@ -629,7 +799,7 @@ export async function createOrUpdateLoanStatement(
   }
 
   /* -------------------------------------------------------
-     Make sure the loan has a verification token
+     VERIFY STATEMENT TOKEN
   ------------------------------------------------------- */
 
   if (
@@ -641,7 +811,7 @@ export async function createOrUpdateLoanStatement(
   }
 
   /* -------------------------------------------------------
-     Get latest transaction data
+     GET CURRENT TRANSACTION DATA
   ------------------------------------------------------- */
 
   const {
@@ -653,7 +823,7 @@ export async function createOrUpdateLoanStatement(
     );
 
   /* -------------------------------------------------------
-     Build PDF
+     BUILD PDF
   ------------------------------------------------------- */
 
   const doc =
@@ -667,7 +837,7 @@ export async function createOrUpdateLoanStatement(
     doc.output("blob");
 
   /* -------------------------------------------------------
-     Get logged-in user
+     GET CURRENT USER
   ------------------------------------------------------- */
 
   const {
@@ -678,10 +848,9 @@ export async function createOrUpdateLoanStatement(
     await supabase.auth.getUser();
 
   /* -------------------------------------------------------
-     ONE PERMANENT PATH
-
-     IMPORTANT:
-     We deliberately DO NOT add timestamps.
+     PERMANENT STATEMENT PATH
+     
+     ONE FILE PER LOAN.
   ------------------------------------------------------- */
 
   const safeLoanNumber =
@@ -696,21 +865,34 @@ export async function createOrUpdateLoanStatement(
   const documentPath =
     `statements/${loan.customer_id}/${loan.id}/${safeLoanNumber}-statement.pdf`;
 
+  const documentName =
+    `Loan Statement - ${safeLoanNumber}`;
+
   /* -------------------------------------------------------
-     Upload / replace PDF
+     GET EXISTING DOCUMENT FIRST
+  ------------------------------------------------------- */
+
+  const existing =
+    await getExistingLoanStatementDocument(
+      loanId
+    );
+
+  /* -------------------------------------------------------
+     UPLOAD / OVERWRITE PDF
   ------------------------------------------------------- */
 
   const {
     error: uploadError,
   } =
     await supabase.storage
-      .from("loan-documents")
+      .from(DOCUMENT_BUCKET)
       .upload(
         documentPath,
         pdfBlob,
         {
           contentType:
             "application/pdf",
+
           upsert: true,
         }
       );
@@ -725,48 +907,99 @@ export async function createOrUpdateLoanStatement(
   }
 
   /* -------------------------------------------------------
-     Find existing Statement document
-
-     We NEVER insert another statement
-     if one exists.
+     DOCUMENT METADATA
   ------------------------------------------------------- */
 
-  const existing =
-    await getExistingLoanStatementDocument(
-      loanId
-    );
+  const documentMetadata = {
+    customer_id:
+      loan.customer_id,
 
-  const documentName =
-    `Loan Statement - ${safeLoanNumber}`;
+    loan_id:
+      loan.id,
+
+    document_type:
+      STATEMENT_DOCUMENT_TYPE,
+
+    document_name:
+      documentName,
+
+    document_path:
+      documentPath,
+
+    created_by:
+      user?.id ||
+      existing?.created_by ||
+      null,
+
+    mime_type:
+      "application/pdf",
+
+    source_type:
+      "SYSTEM",
+
+    document_category:
+      "LOAN",
+
+    loan_number_snapshot:
+      loan.loan_number ||
+      null,
+
+    verification_status:
+      "VERIFIED",
+
+    is_archived:
+      false,
+
+    deleted_at:
+      null,
+  };
+
+  /* =======================================================
+     EXISTING STATEMENT
+  ======================================================= */
 
   if (existing) {
+    const previousSnapshot = {
+      id:
+        existing.id,
+
+      customer_id:
+        existing.customer_id,
+
+      loan_id:
+        existing.loan_id,
+
+      document_type:
+        existing.document_type,
+
+      document_name:
+        existing.document_name,
+
+      document_path:
+        existing.document_path,
+
+      created_by:
+        existing.created_by,
+
+      created_at:
+        existing.created_at,
+
+      version_number:
+        existing.version_number,
+
+      document_group_id:
+        existing.document_group_id,
+    };
+
     const {
       data,
       error,
     } =
       await supabase
         .from("documents")
-        .update({
-          customer_id:
-            loan.customer_id,
-
-          loan_id:
-            loan.id,
-
-          document_type:
-            "Statement",
-
-          document_name:
-            documentName,
-
-          document_path:
-            documentPath,
-
-          created_by:
-            user?.id ||
-            existing.created_by ||
-            null,
-        })
+        .update(
+          documentMetadata
+        )
         .eq(
           "id",
           existing.id
@@ -783,14 +1016,53 @@ export async function createOrUpdateLoanStatement(
       throw error;
     }
 
+    try {
+      await recordDocumentHistory({
+        documentId:
+          existing.id,
+
+        action:
+          "UPDATED",
+
+        documentSnapshot:
+          data,
+
+        previousSnapshot,
+
+        notes:
+          "Loan statement automatically regenerated after a loan transaction.",
+      });
+    } catch (historyError) {
+      /*
+       * The statement itself has already been
+       * updated successfully. Do not undo the
+       * statement because the audit operation failed.
+       */
+      console.error(
+        "STATEMENT UPDATE HISTORY ERROR:",
+        historyError
+      );
+    }
+
     return data;
   }
 
-  /* -------------------------------------------------------
-     No statement exists yet.
+  /* =======================================================
+     FIRST STATEMENT
+  ======================================================= */
 
-     Create the FIRST and ONLY one.
-  ------------------------------------------------------- */
+  const documentGroupId =
+    crypto.randomUUID();
+
+  const insertData = {
+    ...documentMetadata,
+
+    document_group_id:
+      documentGroupId,
+
+    version_number:
+      1,
+  };
 
   const {
     data,
@@ -799,25 +1071,7 @@ export async function createOrUpdateLoanStatement(
     await supabase
       .from("documents")
       .insert([
-        {
-          customer_id:
-            loan.customer_id,
-
-          loan_id:
-            loan.id,
-
-          document_type:
-            "Statement",
-
-          document_name:
-            documentName,
-
-          document_path:
-            documentPath,
-
-          created_by:
-            user?.id || null,
-        },
+        insertData,
       ])
       .select()
       .single();
@@ -828,14 +1082,53 @@ export async function createOrUpdateLoanStatement(
       error
     );
 
+    /*
+     * The PDF has already been uploaded.
+     * Remove it if the metadata insert fails.
+     */
+    await supabase.storage
+      .from(DOCUMENT_BUCKET)
+      .remove([
+        documentPath,
+      ])
+      .catch(() => {});
+
     throw error;
+  }
+
+  try {
+    await recordDocumentHistory({
+      documentId:
+        data.id,
+
+      action:
+        "CREATED",
+
+      newDocumentId:
+        data.id,
+
+      documentSnapshot:
+        data,
+
+      notes:
+        "Loan statement automatically created from the first loan transaction.",
+    });
+  } catch (historyError) {
+    /*
+     * Do not delete the working statement because
+     * history recording failed.
+     */
+    console.error(
+      "STATEMENT CREATION HISTORY ERROR:",
+      historyError
+    );
   }
 
   return data;
 }
 
 /* =========================================================
-   EXPORT
+   DEFAULT EXPORT
 ========================================================= */
 
 const statementService = {
