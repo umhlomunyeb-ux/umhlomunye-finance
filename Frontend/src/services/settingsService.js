@@ -10,6 +10,9 @@ const DEFAULT_SETTINGS = {
   financial_year_end: null,
   company_address: "",
   company_logo_url: "",
+  company_phone: "",
+  company_whatsapp: "",
+  company_email: "",
 
   // Derived system identity
   system_name: "",
@@ -160,8 +163,11 @@ export async function getSystemSettings() {
     ...DEFAULT_SETTINGS,
     ...data,
 
-    company_name: companyName,
-    short_name: shortName,
+    company_name:
+      companyName,
+
+    short_name:
+      shortName,
 
     financial_year_end:
       normalizeFinancialYearEnd(
@@ -173,6 +179,15 @@ export async function getSystemSettings() {
 
     company_logo_url:
       data.company_logo_url || "",
+
+    company_phone:
+      data.company_phone || "",
+
+    company_whatsapp:
+      data.company_whatsapp || "",
+
+    company_email:
+      data.company_email || "",
 
     system_name:
       identity.system_name,
@@ -251,6 +266,15 @@ export async function updateSystemSettings(settings) {
 
     company_logo_url:
       settings.company_logo_url || null,
+
+    company_phone:
+      settings.company_phone?.trim() || null,
+
+    company_whatsapp:
+      settings.company_whatsapp?.trim() || null,
+
+    company_email:
+      settings.company_email?.trim() || null,
 
     // ----------------------------------------------------------
     // Loan amount settings
@@ -391,6 +415,15 @@ export async function updateSystemSettings(settings) {
 
     company_logo_url:
       data.company_logo_url || "",
+
+    company_phone:
+      data.company_phone || "",
+
+    company_whatsapp:
+      data.company_whatsapp || "",
+
+    company_email:
+      data.company_email || "",
 
     system_name:
       identity.system_name,

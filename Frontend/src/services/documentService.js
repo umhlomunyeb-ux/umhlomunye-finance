@@ -1523,29 +1523,56 @@ export async function getDocumentDownloadUrl(
     );
   }
 
-  const {
-    data,
-    error,
-  } =
-    await supabase.storage
-      .from(DOCUMENT_BUCKET)
-      .createSignedUrl(
-        document.document_path,
-        expiresIn
-      );
+  const documentPath =
+    document.document_path;
 
-  if (error) {
-    console.error(
-      "getDocumentDownloadUrl:",
-      error
-    );
+  const preferredBucket =
+    documentPath.startsWith(
+      "paid-up-letters/"
+    )
+      ? "loan-documents"
+      : DOCUMENT_BUCKET;
 
-    throw error;
+  const buckets = [
+    preferredBucket,
+    ...(preferredBucket !== DOCUMENT_BUCKET
+      ? [DOCUMENT_BUCKET]
+      : ["loan-documents"]),
+  ];
+
+  let lastError = null;
+
+  for (const bucket of [
+    ...new Set(buckets),
+  ]) {
+    const {
+      data,
+      error,
+    } =
+      await supabase.storage
+        .from(bucket)
+        .createSignedUrl(
+          documentPath,
+          expiresIn
+        );
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+
+    lastError = error;
   }
 
-  return (
-    data?.signedUrl ||
-    null
+  console.error(
+    "getDocumentDownloadUrl:",
+    lastError
+  );
+
+  throw (
+    lastError ||
+    new Error(
+      "Unable to create document download URL."
+    )
   );
 }
 

@@ -1,11 +1,5 @@
 import { supabase } from "../lib/supabase";
 
-/**
- * Submit a public loan application.
- *
- * The actual database insert is handled by the
- * Supabase submit_loan_application RPC.
- */
 export async function addLoanApplication(applicationData) {
   const {
     first_name,
@@ -13,6 +7,7 @@ export async function addLoanApplication(applicationData) {
     cellphone,
     email,
     physical_address,
+    id_number,
     employer,
     employment_status,
     monthly_income,
@@ -26,162 +21,128 @@ export async function addLoanApplication(applicationData) {
     notes,
   } = applicationData;
 
-  const { data, error } = await supabase.rpc(
-    "submit_loan_application",
+  const { data, error } = await supabase.rpc("submit_loan_application", {
+    p_first_name: first_name,
+    p_last_name: last_name,
+    p_cellphone: cellphone,
+    p_email: email,
+    p_physical_address: physical_address,
+    p_employer: employer,
+    p_employment_status: employment_status,
+    p_monthly_income: monthly_income,
+    p_other_income: other_income,
+    p_bank_name: bank_name,
+    p_account_number: account_number,
+    p_amount_requested: amount_requested,
+    p_loan_purpose: loan_purpose,
+    p_preferred_payment_date: preferred_payment_date,
+    p_collection_preference: collection_preference,
+    p_notes: notes,
+    p_id_number: id_number ?? null,
+  });
+
+  if (error) throw error;
+
+  return Array.isArray(data) ? data[0] : data;
+}
+
+export async function uploadPublicApplicationDocument({
+  applicationId,
+  uploadToken,
+  documentType,
+  file,
+}) {
+  if (!applicationId) {
+    throw new Error("Application ID is required.");
+  }
+
+  if (!uploadToken) {
+    throw new Error("Application upload token is required.");
+  }
+
+  if (!documentType) {
+    throw new Error("Document type is required.");
+  }
+
+  if (!file) {
+    throw new Error("A document file is required.");
+  }
+
+  const formData = new FormData();
+
+  formData.append("application_id", applicationId);
+  formData.append("upload_token", uploadToken);
+  formData.append("document_type", documentType);
+  formData.append("file", file);
+
+  const { data, error } = await supabase.functions.invoke(
+    "public-application-upload",
     {
-      p_first_name: first_name,
-      p_last_name: last_name,
-      p_cellphone: cellphone,
-      p_email: email || null,
-      p_physical_address: physical_address || null,
-      p_employer: employer || null,
-      p_employment_status: employment_status || null,
-      p_monthly_income:
-        monthly_income !== "" &&
-        monthly_income !== null &&
-        monthly_income !== undefined
-          ? Number(monthly_income)
-          : null,
-      p_other_income:
-        other_income !== "" &&
-        other_income !== null &&
-        other_income !== undefined
-          ? Number(other_income)
-          : null,
-      p_bank_name: bank_name,
-      p_account_number: account_number,
-      p_amount_requested: Number(amount_requested),
-      p_loan_purpose: loan_purpose || null,
-      p_preferred_payment_date:
-        preferred_payment_date || null,
-      p_collection_preference:
-        collection_preference || null,
-      p_notes: notes || null,
+      body: formData,
     }
   );
 
   if (error) {
-    console.error(
-      "Error submitting loan application:",
-      error
-    );
-
     throw error;
+  }
+
+  if (!data?.success) {
+    throw new Error(
+      data?.error || "The supporting document could not be uploaded."
+    );
   }
 
   return data;
 }
 
-/**
- * Get all loan applications.
- *
- * This is used by the administrator Applications page.
- */
 export async function getLoanApplications() {
   const { data, error } = await supabase
     .from("loan_applications")
     .select("*")
-    .order("created_at", {
-      ascending: false,
-    });
+    .order("created_at", { ascending: false });
 
-  if (error) {
-    console.error(
-      "Error loading loan applications:",
-      error
-    );
-
-    throw error;
-  }
+  if (error) throw error;
 
   return data || [];
 }
 
-/**
- * Get one loan application.
- */
 export async function getLoanApplication(id) {
-  if (!id) {
-    throw new Error("Application ID is required.");
-  }
-
   const { data, error } = await supabase
     .from("loan_applications")
     .select("*")
     .eq("id", id)
     .single();
 
-  if (error) {
-    console.error(
-      "Error loading loan application:",
-      error
-    );
-
-    throw error;
-  }
+  if (error) throw error;
 
   return data;
 }
 
-/**
- * Update application status.
- */
 export async function updateLoanApplicationStatus(
   id,
-  status
+  status,
+  rejectionReason = null
 ) {
-  if (!id) {
-    throw new Error("Application ID is required.");
-  }
-
-  if (!status) {
-    throw new Error("Application status is required.");
-  }
-
   const { data, error } = await supabase
     .from("loan_applications")
     .update({
       status,
+      rejection_reason: rejectionReason,
     })
     .eq("id", id)
     .select()
     .single();
 
-  if (error) {
-    console.error(
-      "Error updating application status:",
-      error
-    );
-
-    throw error;
-  }
+  if (error) throw error;
 
   return data;
 }
 
-/**
- * Delete an application.
- *
- * Intended for administrator use.
- */
 export async function deleteLoanApplication(id) {
-  if (!id) {
-    throw new Error("Application ID is required.");
-  }
-
   const { error } = await supabase
     .from("loan_applications")
     .delete()
     .eq("id", id);
 
-  if (error) {
-    console.error(
-      "Error deleting loan application:",
-      error
-    );
-
-    throw error;
-  }
-
-  return true;
+  if (error) throw error;
 }

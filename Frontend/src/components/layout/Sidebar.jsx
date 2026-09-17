@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
   Dashboard,
@@ -11,6 +11,8 @@ import {
   AccountBalance,
   Description,
 } from "@mui/icons-material";
+
+import { supabase } from "../../lib/supabase";
 
 const menu = [
   {
@@ -57,6 +59,24 @@ const menu = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        console.error("LOGOUT ERROR:", error);
+        return;
+      }
+
+      // Replace the protected page in browser history so
+      // the user cannot return to it with the Back button.
+      navigate("/", { replace: true });
+    } catch (error) {
+      console.error("LOGOUT ERROR:", error);
+    }
+  };
 
   return (
     <aside
@@ -261,21 +281,28 @@ export default function Sidebar() {
           marginTop: "10px",
         }}
       >
-        <Link
-          to="/"
+        <button
+          type="button"
+          onClick={handleLogout}
           style={{
+            width: "100%",
             display: "flex",
             alignItems: "center",
             gap: "13px",
             minHeight: "46px",
             padding: "0 13px",
             color: "rgba(255,255,255,0.75)",
-            textDecoration: "none",
+            background: "transparent",
+            border: "none",
             borderRadius: "10px",
             fontSize: "14px",
             fontWeight: 500,
             transition:
-              "background 0.18s ease",
+              "background 0.18s ease, color 0.18s ease",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            textAlign: "left",
+            boxSizing: "border-box",
           }}
           onMouseEnter={(event) => {
             event.currentTarget.style.background =
@@ -303,7 +330,7 @@ export default function Sidebar() {
           </span>
 
           <span>Logout</span>
-        </Link>
+        </button>
       </div>
     </aside>
   );

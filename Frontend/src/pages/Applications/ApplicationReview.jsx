@@ -21,6 +21,7 @@ import {
 
 import { supabase } from "../../lib/supabase";
 import { findCustomerByIdNumber } from "../../services/customerService";
+import { sendLoanEmail } from "../../services/emailService";
 
 export default function ApplicationReview() {
   const { id } = useParams();
@@ -34,31 +35,26 @@ export default function ApplicationReview() {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
-  const [successMessage, setSuccessMessage] =
-    useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  const [rejectDialogOpen, setRejectDialogOpen] =
-    useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
 
-  const [rejectionReason, setRejectionReason] =
-    useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
 
   const [customer, setCustomer] = useState(null);
-  const [customerLoading, setCustomerLoading] =
-    useState(false);
-  const [customerError, setCustomerError] =
-    useState("");
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [customerError, setCustomerError] = useState("");
 
-  const [currentUserId, setCurrentUserId] =
-    useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState("");
+  const [openingDocument, setOpeningDocument] = useState(null);
 
   // --------------------------------------------------
   // FIND EXISTING CUSTOMER
   // --------------------------------------------------
 
-  async function findApplicationCustomer(
-    applicationData
-  ) {
+  async function findApplicationCustomer(applicationData) {
     try {
       setCustomerLoading(true);
       setCustomerError("");
@@ -72,10 +68,9 @@ export default function ApplicationReview() {
         return null;
       }
 
-      const existingCustomer =
-        await findCustomerByIdNumber(
-          applicationData.id_number
-        );
+      const existingCustomer = await findCustomerByIdNumber(
+        applicationData.id_number
+      );
 
       if (!existingCustomer) {
         setCustomerError(
@@ -89,19 +84,107 @@ export default function ApplicationReview() {
 
       return existingCustomer;
     } catch (err) {
-      console.error(
-        "Unable to identify customer:",
-        err
-      );
+      console.error("Unable to identify customer:", err);
 
       setCustomerError(
-        err?.message ||
-          "Unable to identify the customer."
+        err?.message || "Unable to identify the customer."
       );
 
       return null;
     } finally {
       setCustomerLoading(false);
+    }
+  }
+
+  // --------------------------------------------------
+  // LOAD SUPPORTING DOCUMENTS
+  // --------------------------------------------------
+
+  async function loadDocuments(applicationId) {
+    try {
+      setDocumentsLoading(true);
+      setDocumentsError("");
+
+      const { data, error: documentsQueryError } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("application_id", applicationId)
+        .is("deleted_at", null)
+        .order("created_at", {
+          ascending: false,
+        });
+
+      if (documentsQueryError) {
+        throw documentsQueryError;
+      }
+
+      setDocuments(data || []);
+    } catch (err) {
+      console.error(
+        "Unable to load application documents:",
+        err
+      );
+
+      setDocuments([]);
+      setDocumentsError(
+        err?.message ||
+          "Unable to load supporting documents."
+      );
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }
+
+  // --------------------------------------------------
+  // OPEN SUPPORTING DOCUMENT
+  // --------------------------------------------------
+
+  async function openDocument(document) {
+    try {
+      setOpeningDocument(document.id);
+      setDocumentsError("");
+
+      if (!document.document_path) {
+        throw new Error(
+          "This document does not have a storage path."
+        );
+      }
+
+      const { data, error: signedUrlError } =
+        await supabase.storage
+          .from("documents")
+          .createSignedUrl(
+            document.document_path,
+            60 * 10
+          );
+
+      if (signedUrlError) {
+        throw signedUrlError;
+      }
+
+      if (!data?.signedUrl) {
+        throw new Error(
+          "A secure document link could not be created."
+        );
+      }
+
+      window.open(
+        data.signedUrl,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    } catch (err) {
+      console.error(
+        "Unable to open document:",
+        err
+      );
+
+      setDocumentsError(
+        err?.message ||
+          "Unable to open the document."
+      );
+    } finally {
+      setOpeningDocument(null);
     }
   }
 
@@ -120,14 +203,14 @@ export default function ApplicationReview() {
         throw userError;
       }
 
-      setCurrentUserId(user?.id || null);
+      return user || null;
     } catch (err) {
       console.error(
         "Unable to load current user:",
         err
       );
 
-      setCurrentUserId(null);
+      return null;
     }
   }
 
@@ -146,9 +229,6 @@ export default function ApplicationReview() {
         .eq("id", id)
         .single();
 
-      // IMPORTANT:
-      // This is an application-loading error.
-      // Do not run approval logic here.
       if (error) {
         throw error;
       }
@@ -161,6 +241,8 @@ export default function ApplicationReview() {
         setCustomer(null);
         setCustomerError("");
       }
+
+      await loadDocuments(data.id);
     } catch (err) {
       console.error(
         "Unable to load application:",
@@ -280,16 +362,53 @@ export default function ApplicationReview() {
     }
   }
 
-  // --------------------------------------------------
-  // MAKER-CHECKER
-  // --------------------------------------------------
+  function formatFileSize(bytes) {
+    if (
+      bytes === null ||
+      bytes === undefined ||
+      bytes === ""
+    ) {
+      return "-";
+    }
 
-  const isApplicationCreator =
-    Boolean(
-      application?.created_by &&
-        currentUserId &&
-        application.created_by === currentUserId
+    const size = Number(bytes);
+
+    if (!Number.isFinite(size)) {
+      return "-";
+    }
+
+    if (size < 1024) {
+      return `${size} B`;
+    }
+
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
+
+    if (size < 1024 * 1024 * 1024) {
+      return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    return `${(
+      size /
+      (1024 * 1024 * 1024)
+    ).toFixed(1)} GB`;
+  }
+
+  function getDocumentDisplayName(document) {
+    return (
+      document.document_name ||
+      document.document_type ||
+      "Supporting Document"
     );
+  }
+
+  function getDocumentType(document) {
+    return (
+      document.document_type ||
+      "Other"
+    );
+  }
 
   // --------------------------------------------------
   // APPROVE APPLICATION
@@ -301,28 +420,11 @@ export default function ApplicationReview() {
       setError("");
       setSuccessMessage("");
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
+      const user = await loadCurrentUser();
 
       if (!user) {
         throw new Error(
-          "No logged-in administrator was found."
-        );
-      }
-
-      // Maker-checker protection
-      if (
-        application.created_by &&
-        application.created_by === user.id
-      ) {
-        throw new Error(
-          "You cannot approve an application that you created. Another authorised user must approve this application."
+          "No logged-in user was found."
         );
       }
 
@@ -333,6 +435,10 @@ export default function ApplicationReview() {
           )}.`
         );
       }
+
+      // -----------------------------------------------
+      // APPROVE APPLICATION + CREATE LOAN + AGREEMENT
+      // -----------------------------------------------
 
       const { data, error } =
         await supabase.rpc(
@@ -377,15 +483,179 @@ export default function ApplicationReview() {
         data?.loanNumber ||
         data?.loan?.loan_number;
 
-      if (loanNumber) {
-        setSuccessMessage(
-          `Application approved successfully. Loan ${loanNumber} has been created.`
-        );
-      } else {
-        setSuccessMessage(
-          "Application approved successfully."
+      const agreementId =
+        data?.agreement_id ||
+        data?.agreementId;
+
+      if (!agreementId) {
+        throw new Error(
+          "The loan was approved, but no loan agreement was created."
         );
       }
+
+      // -----------------------------------------------
+      // LOAD SIGNING TOKEN
+      // -----------------------------------------------
+
+      const {
+        data: agreement,
+        error: agreementError,
+      } = await supabase
+        .from("loan_agreements")
+        .select(
+          `
+            id,
+            signing_token,
+            agreement_number,
+            status
+          `
+        )
+        .eq("id", agreementId)
+        .single();
+
+      if (agreementError) {
+        console.error(
+          "AGREEMENT LOOKUP ERROR:",
+          agreementError
+        );
+
+        throw new Error(
+          `Loan approved, but the agreement could not be loaded: ${
+            agreementError.message
+          }`
+        );
+      }
+
+      if (!agreement?.signing_token) {
+        throw new Error(
+          "Loan approved, but the agreement does not have a signing token."
+        );
+      }
+
+      // -----------------------------------------------
+      // BUILD PUBLIC SIGNING URL
+      // -----------------------------------------------
+
+      const agreementUrl =
+        `${window.location.origin}/sign-agreement/${agreement.signing_token}`;
+
+      console.log(
+        "Agreement signing URL:",
+        agreementUrl
+      );
+
+      // -----------------------------------------------
+      // SEND AGREEMENT EMAIL
+      // -----------------------------------------------
+
+      const recipientEmail =
+        application.email?.trim();
+
+      const recipientName =
+        [
+          application.first_name,
+          application.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
+        "Customer";
+
+      if (!recipientEmail) {
+        console.warn(
+          "Loan approved but no customer email address was available."
+        );
+
+        if (loanNumber) {
+          setSuccessMessage(
+            `Application approved successfully. Loan ${loanNumber} has been created, but the agreement could not be emailed because no customer email address was provided.`
+          );
+        } else {
+          setSuccessMessage(
+            "Application approved successfully, but the agreement could not be emailed because no customer email address was provided."
+          );
+        }
+
+        await loadApplication();
+        return;
+      }
+
+      try {
+        await sendLoanEmail({
+          notificationType: "AGREEMENT",
+
+          applicationId:
+            application.id,
+
+          loanId:
+            data?.loan_id ||
+            data?.loanId ||
+            null,
+
+          recipientEmail,
+
+          recipientName,
+
+          applicationNumber:
+            application.application_number ||
+            null,
+
+          loanNumber:
+            loanNumber ||
+            null,
+
+          clientName:
+            recipientName,
+
+          amountRequested:
+            application.amount_requested ||
+            null,
+
+          approvedAmount:
+            data?.principal_amount ||
+            null,
+
+          agreementUrl,
+        });
+
+        console.log(
+          "Agreement email sent successfully."
+        );
+
+        if (loanNumber) {
+          setSuccessMessage(
+            `Application approved successfully. Loan ${loanNumber} has been created and the agreement was emailed to ${recipientEmail}.`
+          );
+        } else {
+          setSuccessMessage(
+            `Application approved successfully and the agreement was emailed to ${recipientEmail}.`
+          );
+        }
+      } catch (emailError) {
+        console.error(
+          "AGREEMENT EMAIL ERROR:",
+          emailError
+        );
+
+        if (loanNumber) {
+          setSuccessMessage(
+            `Application approved successfully. Loan ${loanNumber} has been created, but the agreement email could not be sent.`
+          );
+        } else {
+          setSuccessMessage(
+            "Application approved successfully, but the agreement email could not be sent."
+          );
+        }
+
+        setError(
+          emailError?.message ||
+            "The agreement was created, but the email could not be sent."
+        );
+      }
+
+      // -----------------------------------------------
+      // REFRESH APPLICATION
+      // -----------------------------------------------
 
       await loadApplication();
     } catch (err) {
@@ -431,18 +701,11 @@ export default function ApplicationReview() {
       setError("");
       setSuccessMessage("");
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
+      const user = await loadCurrentUser();
 
       if (!user) {
         throw new Error(
-          "No logged-in administrator was found."
+          "No logged-in user was found."
         );
       }
 
@@ -765,14 +1028,7 @@ export default function ApplicationReview() {
 
       {/* ID NUMBER */}
 
-      <Paper
-        sx={{
-          p: 3,
-          mb: 3,
-          opacity: 0.55,
-          backgroundColor: "#f5f5f5",
-        }}
-      >
+      <Paper sx={{ p: 3, mb: 3 }}>
         <Typography
           variant="h6"
           fontWeight="bold"
@@ -783,12 +1039,18 @@ export default function ApplicationReview() {
         <Divider sx={{ my: 2 }} />
 
         <Typography color="text.secondary">
-          ID number collection is currently
-          unavailable.
+          South African ID Number
         </Typography>
 
-        <Typography sx={{ mt: 1 }}>
-          Not captured
+        <Typography
+          sx={{
+            mt: 1,
+            fontWeight: 600,
+            fontSize: "1.1rem",
+            letterSpacing: "0.05em",
+          }}
+        >
+          {application.id_number || "Not captured"}
         </Typography>
       </Paper>
 
@@ -1088,14 +1350,7 @@ export default function ApplicationReview() {
 
       {/* SUPPORTING DOCUMENTS */}
 
-      <Paper
-        sx={{
-          p: 3,
-          mb: 3,
-          opacity: 0.55,
-          backgroundColor: "#f5f5f5",
-        }}
-      >
+      <Paper sx={{ p: 3, mb: 3 }}>
         <Typography
           variant="h6"
           fontWeight="bold"
@@ -1105,10 +1360,133 @@ export default function ApplicationReview() {
 
         <Divider sx={{ my: 2 }} />
 
-        <Typography color="text.secondary">
-          Supporting document collection is
-          currently unavailable.
-        </Typography>
+        {documentsLoading && (
+          <Box
+            sx={{
+              py: 3,
+              display: "flex",
+              justifyContent: "center",
+            }}
+          >
+            <CircularProgress size={28} />
+          </Box>
+        )}
+
+        {documentsError && (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            onClose={() =>
+              setDocumentsError("")
+            }
+          >
+            {documentsError}
+          </Alert>
+        )}
+
+        {!documentsLoading &&
+          !documentsError &&
+          documents.length === 0 && (
+            <Typography color="text.secondary">
+              No supporting documents were uploaded
+              with this application.
+            </Typography>
+          )}
+
+        {!documentsLoading &&
+          documents.length > 0 && (
+            <Stack spacing={2}>
+              {documents.map((document) => (
+                <Paper
+                  key={document.id}
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                  }}
+                >
+                  <Stack
+                    direction={{
+                      xs: "column",
+                      md: "row",
+                    }}
+                    justifyContent="space-between"
+                    alignItems={{
+                      xs: "flex-start",
+                      md: "center",
+                    }}
+                    spacing={2}
+                  >
+                    <Box
+                      sx={{
+                        minWidth: 0,
+                        flex: 1,
+                      }}
+                    >
+                      <Typography
+                        fontWeight="bold"
+                        sx={{
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {getDocumentDisplayName(
+                          document
+                        )}
+                      </Typography>
+
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: 0.5 }}
+                      >
+                        Type:{" "}
+                        {getDocumentType(
+                          document
+                        )}
+                      </Typography>
+
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                      >
+                        Uploaded:{" "}
+                        {formatDateTime(
+                          document.created_at
+                        )}
+                      </Typography>
+
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                      >
+                        Size:{" "}
+                        {formatFileSize(
+                          document.file_size_bytes ??
+                            document.file_size
+                        )}
+                      </Typography>
+                    </Box>
+
+                    <Button
+                      variant="outlined"
+                      onClick={() =>
+                        openDocument(document)
+                      }
+                      disabled={
+                        openingDocument ===
+                        document.id
+                      }
+                    >
+                      {openingDocument ===
+                      document.id
+                        ? "Opening..."
+                        : "Open Document"}
+                    </Button>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          )}
       </Paper>
 
       {/* LINKED RECORDS */}
@@ -1235,23 +1613,6 @@ export default function ApplicationReview() {
           making a decision.
         </Typography>
 
-        {/* MAKER CHECKER WARNING */}
-
-        {isApplicationCreator &&
-          application.status === "PENDING" && (
-            <Alert
-              severity="warning"
-              sx={{ mb: 3 }}
-            >
-              <strong>
-                Maker-checker control:
-              </strong>{" "}
-              You created this application. You
-              cannot approve it. Another authorised
-              user must approve this application.
-            </Alert>
-          )}
-
         {/* ALREADY APPROVED */}
 
         {application.status === "APPROVED" && (
@@ -1297,14 +1658,11 @@ export default function ApplicationReview() {
             disabled={
               approving ||
               rejecting ||
-              application.status !== "PENDING" ||
-              isApplicationCreator
+              application.status !== "PENDING"
             }
           >
             {approving
               ? "Approving..."
-              : isApplicationCreator
-              ? "Approval Not Allowed"
               : "Approve Application"}
           </Button>
 

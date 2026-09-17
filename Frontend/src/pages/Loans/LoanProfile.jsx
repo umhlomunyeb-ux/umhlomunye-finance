@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import QRCode from "qrcode";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import QRCode from "qrcode";
 
 import { supabase } from "../../lib/supabase";
 
@@ -44,6 +44,7 @@ import {
 import { getLoan } from "../../services/LoanService";
 import { getLoanStatement } from "../../services/statementService";
 import { getLoanTransactions } from "../../services/transactionService";
+import { getSystemSettings } from "../../services/settingsService";
 import RecordPayment from "../Repayments/RecordPayment";
 
 const actionButtonSx = {
@@ -143,6 +144,438 @@ function sortTransactionsChronologically(transactionList) {
   });
 }
 
+/*
+ * ============================================================
+ * PDF LOGO HELPERS
+ * ============================================================
+ */
+
+async function imageUrlToDataUrl(url) {
+  if (!url) return null;
+
+  if (String(url).startsWith("data:image/")) {
+    return url;
+  }
+
+  try {
+    const response = await fetch(url, {
+      mode: "cors",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const blob = await response.blob();
+
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+
+      reader.onloadend = () => {
+        resolve(reader.result || null);
+      };
+
+      reader.onerror = () => {
+        resolve(null);
+      };
+
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn(
+      "PDF LOGO LOAD ERROR:",
+      error
+    );
+
+    return null;
+  }
+}
+
+/*
+ * Detect a usable accent colour from the uploaded company logo.
+ *
+ * White / transparent pixels are ignored so that a white logo
+ * does not become the statement theme.
+ *
+ * Falls back to the existing company navy colour.
+ */
+async function getLogoAccentColor(logoDataUrl) {
+  const fallback = [23, 37, 84];
+
+  if (!logoDataUrl) {
+    return fallback;
+  }
+
+  try {
+    const image = await new Promise(
+      (resolve, reject) => {
+        const img = new Image();
+
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = logoDataUrl;
+      }
+    );
+
+    const canvas = document.createElement("canvas");
+    const size = 64;
+
+    canvas.width = size;
+    canvas.height = size;
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return fallback;
+    }
+
+    context.drawImage(
+      image,
+      0,
+      0,
+      size,
+      size
+    );
+
+    const imageData = context
+      .getImageData(
+        0,
+        0,
+        size,
+        size
+      )
+      .data;
+
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    let count = 0;
+
+    for (
+      let index = 0;
+      index < imageData.length;
+      index += 4
+    ) {
+      const alpha = imageData[index + 3];
+
+      if (alpha < 80) {
+        continue;
+      }
+
+      const r = imageData[index];
+      const g = imageData[index + 1];
+      const b = imageData[index + 2];
+
+      if (
+        r > 245 &&
+        g > 245 &&
+        b > 245
+      ) {
+        continue;
+      }
+
+      red += r;
+      green += g;
+      blue += b;
+      count += 1;
+    }
+
+    if (!count) {
+      return fallback;
+    }
+
+    red = Math.round(red / count);
+    green = Math.round(green / count);
+    blue = Math.round(blue / count);
+
+    const maximum = Math.max(
+      red,
+      green,
+      blue
+    );
+
+    const minimum = Math.min(
+      red,
+      green,
+      blue
+    );
+
+    if (
+      maximum - minimum < 18
+    ) {
+      return fallback;
+    }
+
+    const factor =
+      maximum > 210
+        ? 0.65
+        : 1;
+
+    return [
+      Math.max(
+        20,
+        Math.min(
+          180,
+          Math.round(red * factor)
+        )
+      ),
+      Math.max(
+        20,
+        Math.min(
+          180,
+          Math.round(green * factor)
+        )
+      ),
+      Math.max(
+        20,
+        Math.min(
+          180,
+          Math.round(blue * factor)
+        )
+      ),
+    ];
+  } catch {
+    return fallback;
+  }
+}
+
+/*
+ * ============================================================
+ * LOAN STATEMENT MASTER PDF HEADER
+ * ============================================================
+ *
+ * Layout:
+ *
+ * LEFT:
+ *   Company logo
+ *   Company name + information/contact information
+ *   displayed BESIDE the logo
+ *
+ * RIGHT:
+ *   QR code
+ *
+ * IMPORTANT:
+ * The company name is part of the company information block.
+ * It is NOT rendered as a separate document heading.
+ *
+ * The statement itself remains the master template.
+ * The accent colour is derived from the company logo.
+ * ============================================================
+ */
+async function drawLoanStatementPdfHeader(
+  pdf,
+  verificationUrl
+) {
+  const settings = await getSystemSettings();
+
+  /*
+   * These are the exact company settings fields used by
+   * settingsService.js.
+   */
+  const logoUrl =
+    settings?.company_logo_url || "";
+
+  const companyName =
+    settings?.company_name || "";
+
+  const companyAddress =
+    settings?.company_address || "";
+
+  const companyPhone =
+    settings?.company_phone || "";
+
+  const companyWhatsApp =
+    settings?.company_whatsapp || "";
+
+  const companyEmail =
+    settings?.company_email || "";
+
+  const logoDataUrl =
+    await imageUrlToDataUrl(
+      logoUrl
+    );
+
+  const accent =
+    await getLogoAccentColor(
+      logoDataUrl
+    );
+
+  /*
+   * ============================================================
+   * COMPANY LOGO — TOP LEFT
+   * ============================================================
+   */
+  if (logoDataUrl) {
+    try {
+      pdf.addImage(
+        logoDataUrl,
+        "AUTO",
+        14,
+        10,
+        34,
+        34
+      );
+    } catch (error) {
+      console.warn(
+        "PDF LOGO DRAW ERROR:",
+        error
+      );
+    }
+  }
+
+  /*
+   * ============================================================
+   * COMPANY INFORMATION — BESIDE LOGO
+   * ============================================================
+   *
+   * The company information begins beside the logo rather than
+   * underneath it.
+   *
+   * The available width intentionally stops before the QR code.
+   */
+  const companyInfoLines = [
+    companyName,
+    companyAddress,
+    companyPhone
+      ? `Tel: ${companyPhone}`
+      : "",
+    companyWhatsApp
+      ? `WhatsApp: ${companyWhatsApp}`
+      : "",
+    companyEmail
+      ? `Email: ${companyEmail}`
+      : "",
+  ].filter(Boolean);
+
+  const companyInfoX = 54;
+  const companyInfoWidth = 100;
+
+  let textY = 15;
+
+  companyInfoLines.forEach(
+    (line, index) => {
+      pdf.setFont(
+        "helvetica",
+        index === 0
+          ? "bold"
+          : "normal"
+      );
+
+      pdf.setFontSize(
+        index === 0
+          ? 9
+          : 7.8
+      );
+
+      const wrapped =
+        pdf.splitTextToSize(
+          String(line),
+          companyInfoWidth
+        );
+
+      pdf.text(
+        wrapped,
+        companyInfoX,
+        textY
+      );
+
+      textY +=
+        wrapped.length * 3.8 + 0.8;
+    }
+  );
+
+  /*
+   * ============================================================
+   * QR CODE — TOP RIGHT
+   * ============================================================
+   */
+  const qrTarget =
+    verificationUrl ||
+    (
+      typeof window !== "undefined"
+        ? window.location.href
+        : ""
+    );
+
+  if (qrTarget) {
+    try {
+      const qrDataUrl =
+        await QRCode.toDataURL(
+          qrTarget,
+          {
+            errorCorrectionLevel: "M",
+            margin: 1,
+            width: 300,
+          }
+        );
+
+      pdf.addImage(
+        qrDataUrl,
+        "PNG",
+        165,
+        10,
+        31,
+        31
+      );
+
+      pdf.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      pdf.setFontSize(7);
+
+      pdf.text(
+        verificationUrl
+          ? "Scan to verify"
+          : "Scan to open",
+        180.5,
+        45,
+        {
+          align: "center",
+        }
+      );
+    } catch (error) {
+      console.warn(
+        "PDF QR ERROR:",
+        error
+      );
+    }
+  }
+
+  /*
+   * ============================================================
+   * ACCENT DIVIDER
+   * ============================================================
+   *
+   * The header has a fixed minimum height so the logo, company
+   * information and QR code have enough breathing room.
+   */
+  const dividerY = Math.max(
+    51,
+    textY + 3
+  );
+
+  pdf.setDrawColor(
+    ...accent
+  );
+
+  pdf.setLineWidth(0.8);
+
+  pdf.line(
+    14,
+    dividerY,
+    196,
+    dividerY
+  );
+
+  return {
+    contentStartY:
+      dividerY + 10,
+    accent,
+  };
+}
+
 export default function LoanProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -159,10 +592,13 @@ export default function LoanProfile() {
   });
 
   const [loading, setLoading] = useState(true);
+
   const [loadingTransactions, setLoadingTransactions] =
     useState(false);
+
   const [generatingStatement, setGeneratingStatement] =
     useState(false);
+
   const [generatingPaidUpLetter, setGeneratingPaidUpLetter] =
     useState(false);
 
@@ -200,12 +636,14 @@ export default function LoanProfile() {
   );
 
   const isAgreementPending = useMemo(
-    () => agreementStatus === "pending",
+    () =>
+      agreementStatus === "pending",
     [agreementStatus]
   );
 
   const isAgreementSigned = useMemo(
-    () => agreementStatus === "signed",
+    () =>
+      agreementStatus === "signed",
     [agreementStatus]
   );
 
@@ -229,9 +667,13 @@ export default function LoanProfile() {
 
       try {
         const data =
-          await getLoanTransactions(loanId);
+          await getLoanTransactions(
+            loanId
+          );
 
-        const normalized = (data || []).map(
+        const normalized = (
+          data || []
+        ).map(
           (transaction) => ({
             ...transaction,
             debit: toNumber(
@@ -251,7 +693,9 @@ export default function LoanProfile() {
             normalized
           );
 
-        setTransactions(chronological);
+        setTransactions(
+          chronological
+        );
 
         return chronological;
       } catch (err) {
@@ -259,9 +703,12 @@ export default function LoanProfile() {
           "LOAD TRANSACTIONS ERROR:",
           err
         );
+
         throw err;
       } finally {
-        setLoadingTransactions(false);
+        setLoadingTransactions(
+          false
+        );
       }
     },
     []
@@ -285,6 +732,7 @@ export default function LoanProfile() {
           "LOAD AGREEMENT ERROR:",
           agreementError
         );
+
         throw agreementError;
       }
 
@@ -323,6 +771,7 @@ export default function LoanProfile() {
           "LOAD DOCUMENTS ERROR:",
           documentsError
         );
+
         throw documentsError;
       }
 
@@ -333,15 +782,20 @@ export default function LoanProfile() {
         const key =
           document.id ||
           document.path ||
+          document.document_path ||
           `${document.document_type}-${document.document_name}`;
 
         if (!seen.has(key)) {
           seen.add(key);
-          uniqueDocuments.push(document);
+          uniqueDocuments.push(
+            document
+          );
         }
       }
 
-      setDocuments(uniqueDocuments);
+      setDocuments(
+        uniqueDocuments
+      );
 
       return uniqueDocuments;
     },
@@ -372,12 +826,6 @@ export default function LoanProfile() {
         /*
          * =====================================================
          * LOAD CUSTOMER INFORMATION
-         *
-         * LoanService returns the Supabase relationship as
-         * "customers", not "customer".
-         *
-         * We normalize it to "customer" so the rest of this
-         * LoanProfile can continue using loan.customer.
          * =====================================================
          */
         let customerData =
@@ -385,10 +833,6 @@ export default function LoanProfile() {
           loanData.customers ||
           null;
 
-        /*
-         * If the relationship was not returned for any reason,
-         * explicitly load the customer using customer_id.
-         */
         if (
           !customerData &&
           loanData.customer_id
@@ -412,15 +856,11 @@ export default function LoanProfile() {
             );
           } else {
             customerData =
-              fetchedCustomer || null;
+              fetchedCustomer ||
+              null;
           }
         }
 
-        /*
-         * Normalize the customer name so the UI can display
-         * it even when the customers table stores first_name
-         * and last_name separately.
-         */
         if (customerData) {
           customerData = {
             ...customerData,
@@ -437,16 +877,14 @@ export default function LoanProfile() {
           };
         }
 
-        setCustomer(customerData);
+        setCustomer(
+          customerData
+        );
 
-        /*
-         * Attach the customer as "customer" to the loan object.
-         * This keeps all existing loan.customer references
-         * working throughout LoanProfile.
-         */
         setLoan({
           ...loanData,
-          customer: customerData,
+          customer:
+            customerData,
         });
 
         const transactionData =
@@ -473,7 +911,9 @@ export default function LoanProfile() {
 
         try {
           const statementData =
-            await getLoanStatement(id);
+            await getLoanStatement(
+              id
+            );
 
           setStatement({
             transactions:
@@ -499,6 +939,7 @@ export default function LoanProfile() {
           "LOAD LOAN ERROR:",
           err
         );
+
         setError(
           err?.message ||
             "Unable to load loan."
@@ -533,34 +974,70 @@ export default function LoanProfile() {
   const getDocumentUrl =
     useCallback(
       async (document) => {
-        if (!document?.path) {
+        const documentPath =
+          document?.document_path ||
+          document?.path;
+
+        if (!documentPath) {
           throw new Error(
             "Document path is missing."
           );
         }
 
-        const {
-          data,
-          error: urlError,
-        } =
-          await supabase.storage
-            .from("loan-documents")
-            .createSignedUrl(
-              document.path,
-              60 * 60
-            );
+        const preferredBucket =
+          documentPath.startsWith(
+            "paid-up-letters/"
+          ) ||
+          documentPath.startsWith(
+            "settlements/"
+          ) ||
+          documentPath.startsWith(
+            "agreements/"
+          ) ||
+          documentPath.startsWith(
+            "statements/"
+          )
+            ? "loan-documents"
+            : "documents";
 
-        if (urlError) {
-          throw urlError;
+        const buckets = [
+          preferredBucket,
+          preferredBucket ===
+          "loan-documents"
+            ? "documents"
+            : "loan-documents",
+        ];
+
+        let lastError = null;
+
+        for (const bucket of buckets) {
+          const {
+            data,
+            error: urlError,
+          } =
+            await supabase.storage
+              .from(bucket)
+              .createSignedUrl(
+                documentPath,
+                60 * 60
+              );
+
+          if (
+            !urlError &&
+            data?.signedUrl
+          ) {
+            return data.signedUrl;
+          }
+
+          lastError = urlError;
         }
 
-        if (!data?.signedUrl) {
-          throw new Error(
+        throw (
+          lastError ||
+          new Error(
             "Unable to create document URL."
-          );
-        }
-
-        return data.signedUrl;
+          )
+        );
       },
       []
     );
@@ -594,6 +1071,27 @@ export default function LoanProfile() {
       [getDocumentUrl]
     );
 
+  /*
+   * ============================================================
+   * GENERATE LOAN STATEMENT PDF
+   * ============================================================
+   *
+   * The statement PDF uses the statement template as the master
+   * document format.
+   *
+   * Branding:
+   * - Company logo = top-left
+   * - Company information/contact information = beside logo
+   * - QR code = top-right
+   * - Accent colour = derived from company logo
+   *
+   * The company name is not rendered as a separate document
+   * heading.
+   *
+   * This generator is used for every loan, including previous
+   * loans, whenever their statement is generated.
+   * ============================================================
+   */
   const generateStatementPdf =
     useCallback(
       async (
@@ -612,86 +1110,88 @@ export default function LoanProfile() {
 
         const pdf = new jsPDF();
 
-        const pageWidth =
-          pdf.internal.pageSize.getWidth();
+        /*
+         * Statement verification URL.
+         */
+        const verificationToken =
+          loan.statement_verification_token ||
+          loan.verification_token ||
+          null;
 
-        pdf.setFontSize(18);
-        pdf.setFont(
-          "helvetica",
-          "bold"
-        );
-        pdf.text(
-          "UMHLOMUNYE FINANCE",
-          14,
-          18
-        );
+        const verificationUrl =
+          verificationToken
+            ? `${window.location.origin}/verify-statement/${verificationToken}`
+            : null;
 
-        pdf.setFontSize(9);
-        pdf.setFont(
-          "helvetica",
-          "normal"
-        );
-        pdf.text(
-          "Our dreams, Our hope",
-          14,
-          24
-        );
+        /*
+         * STATEMENT MASTER HEADER
+         */
+        const {
+          contentStartY,
+          accent,
+        } =
+          await drawLoanStatementPdfHeader(
+            pdf,
+            verificationUrl
+          );
 
-        pdf.setFontSize(10);
-        pdf.text(
-          "20 Jacaranda Street, Kinross, 2270",
-          14,
-          31
-        );
-        pdf.text(
-          "Tel: 078 078 3879",
-          14,
-          36
-        );
-        pdf.text(
-          "WhatsApp: 060 508 6672",
-          14,
-          41
-        );
-        pdf.text(
-          "Email: umhlomunyeb@gmail.com",
-          14,
-          46
-        );
-
+        /*
+         * Statement title.
+         */
         pdf.setFontSize(15);
+
         pdf.setFont(
           "helvetica",
           "bold"
         );
+
+        pdf.setTextColor(
+          ...accent
+        );
+
         pdf.text(
           "LOAN STATEMENT",
           14,
-          58
+          contentStartY
+        );
+
+        pdf.setTextColor(
+          0,
+          0,
+          0
         );
 
         pdf.setFontSize(10);
+
         pdf.setFont(
           "helvetica",
           "normal"
         );
+
+        /*
+         * Keep the statement details directly below the
+         * dynamically sized company-information header.
+         */
+        const detailsStartY =
+          contentStartY + 8;
 
         pdf.text(
           `Loan Number: ${safeLoanNumber}`,
           14,
-          66
+          detailsStartY
         );
 
+        const customerName =
+          loan.customer
+            ?.full_name ||
+          customer?.full_name ||
+          customer?.name ||
+          "Customer";
+
         pdf.text(
-          `Customer: ${
-            loan.customer
-              ?.full_name ||
-            customer?.full_name ||
-            customer?.name ||
-            "Customer"
-          }`,
+          `Customer: ${customerName}`,
           14,
-          72
+          detailsStartY + 6
         );
 
         pdf.text(
@@ -699,7 +1199,7 @@ export default function LoanProfile() {
             loan.principal_amount
           )}`,
           14,
-          78
+          detailsStartY + 12
         );
 
         pdf.text(
@@ -707,7 +1207,7 @@ export default function LoanProfile() {
             currentLoanBalance
           )}`,
           14,
-          84
+          detailsStartY + 18
         );
 
         pdf.text(
@@ -715,8 +1215,11 @@ export default function LoanProfile() {
             new Date()
           )}`,
           14,
-          90
+          detailsStartY + 24
         );
+
+        const tableStartY =
+          detailsStartY + 32;
 
         const tableRows =
           chronologicalTransactions.map(
@@ -747,7 +1250,8 @@ export default function LoanProfile() {
           );
 
         autoTable(pdf, {
-          startY: 98,
+          startY: tableStartY,
+
           head: [
             [
               "Date",
@@ -758,6 +1262,7 @@ export default function LoanProfile() {
               "Balance",
             ],
           ],
+
           body:
             tableRows.length > 0
               ? tableRows
@@ -771,32 +1276,49 @@ export default function LoanProfile() {
                     "-",
                   ],
                 ],
+
           theme: "grid",
+
           styles: {
             fontSize: 8,
             cellPadding: 3,
+            lineColor: accent,
+            lineWidth: 0.2,
           },
+
           headStyles: {
+            fillColor: accent,
+            textColor: [
+              255,
+              255,
+              255,
+            ],
             fontStyle: "bold",
           },
+
           columnStyles: {
             0: {
               cellWidth: 24,
             },
+
             1: {
               cellWidth: 24,
             },
+
             2: {
               cellWidth: 55,
             },
+
             3: {
               halign: "right",
               cellWidth: 25,
             },
+
             4: {
               halign: "right",
               cellWidth: 25,
             },
+
             5: {
               halign: "right",
               cellWidth: 25,
@@ -806,7 +1328,7 @@ export default function LoanProfile() {
 
         let finalY =
           pdf.lastAutoTable?.finalY ||
-          110;
+          tableStartY + 12;
 
         if (
           statement.overdues?.length >
@@ -815,14 +1337,26 @@ export default function LoanProfile() {
           finalY += 12;
 
           pdf.setFontSize(12);
+
           pdf.setFont(
             "helvetica",
             "bold"
           );
+
+          pdf.setTextColor(
+            ...accent
+          );
+
           pdf.text(
             "Overdue Items",
             14,
             finalY
+          );
+
+          pdf.setTextColor(
+            0,
+            0,
+            0
           );
 
           const overdueRows =
@@ -832,24 +1366,30 @@ export default function LoanProfile() {
                   overdue.due_date ||
                     overdue.expected_date
                 ),
+
                 formatCurrency(
                   overdue.amount_due ||
                     overdue.expected_amount
                 ),
+
                 formatCurrency(
                   overdue.amount_paid ||
                     overdue.paid_amount
                 ),
+
                 formatCurrency(
                   overdue.amount_outstanding ||
                     overdue.outstanding_amount
                 ),
-                overdue.status || "-",
+
+                overdue.status ||
+                  "-",
               ]
             );
 
           autoTable(pdf, {
             startY: finalY + 5,
+
             head: [
               [
                 "Due Date",
@@ -859,11 +1399,26 @@ export default function LoanProfile() {
                 "Status",
               ],
             ],
+
             body: overdueRows,
+
             theme: "grid",
+
             styles: {
               fontSize: 8,
               cellPadding: 3,
+              lineColor: accent,
+              lineWidth: 0.2,
+            },
+
+            headStyles: {
+              fillColor: accent,
+              textColor: [
+                255,
+                255,
+                255,
+              ],
+              fontStyle: "bold",
             },
           });
 
@@ -875,57 +1430,17 @@ export default function LoanProfile() {
         finalY += 15;
 
         pdf.setFontSize(9);
+
         pdf.setFont(
           "helvetica",
           "normal"
         );
-        pdf.text(
-          "This statement is generated from the Umhlomunye Finance loan records.",
-          14,
-          finalY
+
+        pdf.setTextColor(
+          0,
+          0,
+          0
         );
-
-        const verificationToken =
-          loan.statement_verification_token ||
-          loan.verification_token ||
-          null;
-
-        if (verificationToken) {
-          const verificationUrl =
-            `${window.location.origin}/verify-statement/${verificationToken}`;
-
-          try {
-            const qrDataUrl =
-              await QRCode.toDataURL(
-                verificationUrl,
-                {
-                  width: 110,
-                  margin: 1,
-                }
-              );
-
-            pdf.addImage(
-              qrDataUrl,
-              "PNG",
-              pageWidth - 45,
-              14,
-              30,
-              30
-            );
-
-            pdf.setFontSize(7);
-            pdf.text(
-              "Scan to verify",
-              pageWidth - 43,
-              48
-            );
-          } catch (qrError) {
-            console.error(
-              "QR CODE ERROR:",
-              qrError
-            );
-          }
-        }
 
         return pdf;
       },
@@ -940,69 +1455,380 @@ export default function LoanProfile() {
     );
 
   const handlePrintStatement =
-    useCallback(async () => {
-      if (!loan) return;
+    useCallback(
+      async () => {
+        if (!loan) return;
 
-      setGeneratingStatement(true);
+        setGeneratingStatement(
+          true
+        );
 
-      try {
-        const freshTransactions =
-          await loadTransactions(id);
+        try {
+          const freshTransactions =
+            await loadTransactions(id);
 
-        const chronologicalTransactions =
-          sortTransactionsChronologically(
-            freshTransactions
-          );
-
-        setStatement((current) => ({
-          ...current,
-          transactions:
-            chronologicalTransactions,
-        }));
-
-        const pdf =
-          await generateStatementPdf(
-            chronologicalTransactions
-          );
-
-        const timestamp =
-          new Date()
-            .toISOString()
-            .replace(
-              /[:.]/g,
-              "-"
+          const chronologicalTransactions =
+            sortTransactionsChronologically(
+              freshTransactions
             );
 
-        const fileName =
-          `${safeLoanNumber}-statement-${timestamp}.pdf`;
+          setStatement(
+            (current) => ({
+              ...current,
+              transactions:
+                chronologicalTransactions,
+            })
+          );
 
-        const blob =
-          pdf.output("blob");
-
-        const path =
-          `statements/${loan.customer_id}/${loan.id}/${fileName}`;
-
-        const {
-          error: uploadError,
-        } =
-          await supabase.storage
-            .from("loan-documents")
-            .upload(
-              path,
-              blob,
-              {
-                contentType:
-                  "application/pdf",
-                upsert: false,
-              }
+          const pdf =
+            await generateStatementPdf(
+              chronologicalTransactions
             );
 
-        if (uploadError) {
+          const timestamp =
+            new Date()
+              .toISOString()
+              .replace(
+                /[:.]/g,
+                "-"
+              );
+
+          const fileName =
+            `${safeLoanNumber}-statement-${timestamp}.pdf`;
+
+          const blob =
+            pdf.output("blob");
+
+          const path =
+            `statements/${loan.customer_id}/${loan.id}/${fileName}`;
+
+          const {
+            error: uploadError,
+          } =
+            await supabase.storage
+              .from("loan-documents")
+              .upload(
+                path,
+                blob,
+                {
+                  contentType:
+                    "application/pdf",
+                  upsert: false,
+                }
+              );
+
+          if (uploadError) {
+            console.error(
+              "STATEMENT UPLOAD ERROR:",
+              uploadError
+            );
+          } else {
+            const {
+              data: userData,
+            } =
+              await supabase.auth.getUser();
+
+            const {
+              error: documentError,
+            } =
+              await supabase
+                .from("documents")
+                .insert({
+                  customer_id:
+                    loan.customer_id,
+
+                  loan_id:
+                    loan.id,
+
+                  agreement_id:
+                    agreement?.id ||
+                    null,
+
+                  document_type:
+                    "Loan Statement",
+
+                  document_name:
+                    fileName,
+
+                  path,
+
+                  created_by:
+                    userData?.user?.id ||
+                    null,
+                });
+
+            if (documentError) {
+              console.error(
+                "STATEMENT DOCUMENT RECORD ERROR:",
+                documentError
+              );
+            } else {
+              await loadDocuments(
+                id,
+                loan.customer_id
+              );
+            }
+          }
+
+          pdf.save(fileName);
+        } catch (err) {
           console.error(
-            "STATEMENT UPLOAD ERROR:",
-            uploadError
+            "GENERATE STATEMENT ERROR:",
+            err
           );
-        } else {
+
+          window.alert(
+            err?.message ||
+              "Unable to generate statement."
+          );
+        } finally {
+          setGeneratingStatement(
+            false
+          );
+        }
+      },
+      [
+        agreement,
+        generateStatementPdf,
+        id,
+        loadDocuments,
+        loadTransactions,
+        loan,
+        safeLoanNumber,
+      ]
+    );
+
+  const handleOpenStatement =
+    useCallback(
+      async () => {
+        if (!loan) return;
+
+        setGeneratingStatement(
+          true
+        );
+
+        try {
+          const freshTransactions =
+            await loadTransactions(id);
+
+          const chronologicalTransactions =
+            sortTransactionsChronologically(
+              freshTransactions
+            );
+
+          setStatement(
+            (current) => ({
+              ...current,
+              transactions:
+                chronologicalTransactions,
+            })
+          );
+
+          const pdf =
+            await generateStatementPdf(
+              chronologicalTransactions
+            );
+
+          const blobUrl =
+            pdf.output("bloburl");
+
+          window.open(
+            blobUrl,
+            "_blank",
+            "noopener,noreferrer"
+          );
+        } catch (err) {
+          console.error(
+            "OPEN STATEMENT ERROR:",
+            err
+          );
+
+          window.alert(
+            err?.message ||
+              "Unable to open statement."
+          );
+        } finally {
+          setGeneratingStatement(
+            false
+          );
+        }
+      },
+      [
+        generateStatementPdf,
+        id,
+        loadTransactions,
+        loan,
+      ]
+    );
+
+  const handlePaidUpLetter =
+    useCallback(
+      async () => {
+        if (!loan || !isPaidUp) return;
+
+        setGeneratingPaidUpLetter(
+          true
+        );
+
+        try {
+          const pdf = new jsPDF();
+
+          const pageWidth =
+            pdf.internal.pageSize.getWidth();
+
+          /*
+           * =====================================================
+           * MASTER PAID-UP DOCUMENT HEADER
+           *
+           * Logo + company/contact information = top-left
+           * QR code = top-right
+           *
+           * No standalone company name is rendered.
+           * =====================================================
+           */
+          const verificationUrl =
+            loan.statement_verification_token
+              ? `${window.location.origin}/verify-statement/${loan.statement_verification_token}`
+              : null;
+
+          /*
+           * IMPORTANT:
+           * Paid-up letter remains on the existing master branding
+           * service exactly as before.
+           */
+          const {
+            contentStartY,
+          } =
+            await import(
+              "../../services/pdfBrandingService"
+            ).then(
+              (module) =>
+                module.drawPdfCompanyHeader(
+                  pdf,
+                  verificationUrl
+                )
+            );
+
+          pdf.setFontSize(17);
+
+          pdf.setFont(
+            "helvetica",
+            "bold"
+          );
+
+          pdf.text(
+            "PAID-UP LETTER",
+            14,
+            contentStartY
+          );
+
+          pdf.setFontSize(11);
+
+          pdf.setFont(
+            "helvetica",
+            "normal"
+          );
+
+          const customerName =
+            loan.customer
+              ?.full_name ||
+            customer?.full_name ||
+            customer?.name ||
+            "Customer";
+
+          pdf.text(
+            `Date: ${formatDate(
+              new Date()
+            )}`,
+            14,
+            76
+          );
+
+          pdf.text(
+            `Loan Number: ${safeLoanNumber}`,
+            14,
+            84
+          );
+
+          pdf.text(
+            `Customer: ${customerName}`,
+            14,
+            92
+          );
+
+          const body =
+            "This letter confirms that the above-mentioned loan account has been paid in full and that the current outstanding balance recorded on the account is R0.00.";
+
+          const wrappedBody =
+            pdf.splitTextToSize(
+              body,
+              pageWidth - 28
+            );
+
+          pdf.text(
+            wrappedBody,
+            14,
+            108
+          );
+
+          const nextY =
+            108 +
+            wrappedBody.length * 7 +
+            15;
+
+          pdf.text(
+            "The loan account is therefore recorded as paid up as at the date of this letter.",
+            14,
+            nextY
+          );
+
+          pdf.setFont(
+            "helvetica",
+            "normal"
+          );
+
+          pdf.text(
+            "Authorised Representative",
+            14,
+            nextY + 37
+          );
+
+          const timestamp =
+            new Date()
+              .toISOString()
+              .replace(
+                /[:.]/g,
+                "-"
+              );
+
+          const fileName =
+            `${safeLoanNumber}-paid-up-letter-${timestamp}.pdf`;
+
+          const blob =
+            pdf.output("blob");
+
+          const path =
+            `paid-up-letters/${loan.customer_id}/${loan.id}/${fileName}`;
+
+          const {
+            error: uploadError,
+          } =
+            await supabase.storage
+              .from("loan-documents")
+              .upload(
+                path,
+                blob,
+                {
+                  contentType:
+                    "application/pdf",
+                  upsert: false,
+                }
+              );
+
+          if (uploadError) {
+            throw uploadError;
+          }
+
           const {
             data: userData,
           } =
@@ -1016,401 +1842,91 @@ export default function LoanProfile() {
               .insert({
                 customer_id:
                   loan.customer_id,
-                loan_id: loan.id,
+
+                loan_id:
+                  loan.id,
+
                 agreement_id:
                   agreement?.id ||
                   null,
+
                 document_type:
-                  "Loan Statement",
+                  "Paid-Up Letter",
+
+                document_category:
+                  "LOAN",
+
                 document_name:
                   fileName,
-                path,
+
+                document_path:
+                  path,
+
                 created_by:
                   userData?.user?.id ||
                   null,
+
+                mime_type:
+                  "application/pdf",
+
+                file_size_bytes:
+                  blob.size,
+
+                source_type:
+                  "SYSTEM_GENERATED",
+
+                retention_policy:
+                  "LOAN_DOCUMENT",
+
+                retention_status:
+                  "ACTIVE",
+
+                verification_status:
+                  "VERIFIED",
+
+                is_archived:
+                  false,
+
+                version_number:
+                  1,
               });
 
           if (documentError) {
-            console.error(
-              "STATEMENT DOCUMENT RECORD ERROR:",
-              documentError
-            );
-          } else {
-            await loadDocuments(
-              id,
-              loan.customer_id
-            );
+            throw documentError;
           }
-        }
 
-        pdf.save(fileName);
-      } catch (err) {
-        console.error(
-          "GENERATE STATEMENT ERROR:",
-          err
-        );
-
-        window.alert(
-          err?.message ||
-            "Unable to generate statement."
-        );
-      } finally {
-        setGeneratingStatement(
-          false
-        );
-      }
-    }, [
-      agreement,
-      generateStatementPdf,
-      id,
-      loadDocuments,
-      loadTransactions,
-      loan,
-      safeLoanNumber,
-    ]);
-
-  const handleOpenStatement =
-    useCallback(async () => {
-      if (!loan) return;
-
-      setGeneratingStatement(true);
-
-      try {
-        const freshTransactions =
-          await loadTransactions(id);
-
-        const chronologicalTransactions =
-          sortTransactionsChronologically(
-            freshTransactions
+          await loadDocuments(
+            id,
+            loan.customer_id
           );
 
-        setStatement((current) => ({
-          ...current,
-          transactions:
-            chronologicalTransactions,
-        }));
-
-        const pdf =
-          await generateStatementPdf(
-            chronologicalTransactions
+          pdf.save(fileName);
+        } catch (err) {
+          console.error(
+            "PAID-UP LETTER ERROR:",
+            err
           );
 
-        const blobUrl =
-          pdf.output("bloburl");
-
-        window.open(
-          blobUrl,
-          "_blank",
-          "noopener,noreferrer"
-        );
-      } catch (err) {
-        console.error(
-          "OPEN STATEMENT ERROR:",
-          err
-        );
-
-        window.alert(
-          err?.message ||
-            "Unable to open statement."
-        );
-      } finally {
-        setGeneratingStatement(
-          false
-        );
-      }
-    }, [
-      generateStatementPdf,
-      id,
-      loadTransactions,
-      loan,
-    ]);
-
-  const handlePaidUpLetter =
-    useCallback(async () => {
-      if (!loan || !isPaidUp) return;
-
-      setGeneratingPaidUpLetter(
-        true
-      );
-
-      try {
-        const pdf = new jsPDF();
-
-        const pageWidth =
-          pdf.internal.pageSize.getWidth();
-
-        pdf.setFontSize(18);
-        pdf.setFont(
-          "helvetica",
-          "bold"
-        );
-        pdf.text(
-          "UMHLOMUNYE FINANCE",
-          14,
-          18
-        );
-
-        pdf.setFontSize(9);
-        pdf.setFont(
-          "helvetica",
-          "normal"
-        );
-        pdf.text(
-          "Our dreams, Our hope",
-          14,
-          24
-        );
-
-        pdf.setFontSize(10);
-        pdf.text(
-          "20 Jacaranda Street, Kinross, 2270",
-          14,
-          31
-        );
-        pdf.text(
-          "Tel: 078 078 3879",
-          14,
-          36
-        );
-        pdf.text(
-          "WhatsApp: 060 508 6672",
-          14,
-          41
-        );
-        pdf.text(
-          "Email: umhlomunyeb@gmail.com",
-          14,
-          46
-        );
-
-        pdf.setFontSize(17);
-        pdf.setFont(
-          "helvetica",
-          "bold"
-        );
-        pdf.text(
-          "PAID-UP LETTER",
-          14,
-          63
-        );
-
-        pdf.setFontSize(11);
-        pdf.setFont(
-          "helvetica",
-          "normal"
-        );
-
-        const customerName =
-          loan.customer
-            ?.full_name ||
-          customer?.full_name ||
-          customer?.name ||
-          "Customer";
-
-        pdf.text(
-          `Date: ${formatDate(
-            new Date()
-          )}`,
-          14,
-          76
-        );
-
-        pdf.text(
-          `Loan Number: ${safeLoanNumber}`,
-          14,
-          84
-        );
-
-        pdf.text(
-          `Customer: ${customerName}`,
-          14,
-          92
-        );
-
-        const body =
-          "This letter confirms that the above-mentioned loan account has been paid in full and that the current outstanding balance recorded on the account is R0.00.";
-
-        const wrappedBody =
-          pdf.splitTextToSize(
-            body,
-            pageWidth - 28
+          window.alert(
+            err?.message ||
+              "Unable to generate paid-up letter."
           );
-
-        pdf.text(
-          wrappedBody,
-          14,
-          108
-        );
-
-        const nextY =
-          108 +
-          wrappedBody.length * 7 +
-          15;
-
-        pdf.text(
-          "The loan account is therefore recorded as paid up as at the date of this letter.",
-          14,
-          nextY
-        );
-
-        pdf.setFont(
-          "helvetica",
-          "bold"
-        );
-
-        pdf.text(
-          "UMHLOMUNYE FINANCE",
-          14,
-          nextY + 30
-        );
-
-        pdf.setFont(
-          "helvetica",
-          "normal"
-        );
-
-        pdf.text(
-          "Authorised Representative",
-          14,
-          nextY + 37
-        );
-
-        if (
-          loan.statement_verification_token
-        ) {
-          const verificationUrl =
-            `${window.location.origin}/verify-statement/${loan.statement_verification_token}`;
-
-          try {
-            const qrDataUrl =
-              await QRCode.toDataURL(
-                verificationUrl,
-                {
-                  width: 120,
-                  margin: 1,
-                }
-              );
-
-            pdf.addImage(
-              qrDataUrl,
-              "PNG",
-              pageWidth - 48,
-              14,
-              32,
-              32
-            );
-
-            pdf.setFontSize(7);
-            pdf.text(
-              "Verify",
-              pageWidth - 39,
-              50
-            );
-          } catch (qrError) {
-            console.error(
-              "PAID-UP QR ERROR:",
-              qrError
-            );
-          }
+        } finally {
+          setGeneratingPaidUpLetter(
+            false
+          );
         }
-
-        const timestamp =
-          new Date()
-            .toISOString()
-            .replace(
-              /[:.]/g,
-              "-"
-            );
-
-        const fileName =
-          `${safeLoanNumber}-paid-up-letter-${timestamp}.pdf`;
-
-        const blob =
-          pdf.output("blob");
-
-        const path =
-          `paid-up-letters/${loan.customer_id}/${loan.id}/${fileName}`;
-
-        const {
-          error: uploadError,
-        } =
-          await supabase.storage
-            .from("loan-documents")
-            .upload(
-              path,
-              blob,
-              {
-                contentType:
-                  "application/pdf",
-                upsert: false,
-              }
-            );
-
-        if (uploadError) {
-          throw uploadError;
-        }
-
-        const {
-          data: userData,
-        } =
-          await supabase.auth.getUser();
-
-        const {
-          error: documentError,
-        } =
-          await supabase
-            .from("documents")
-            .insert({
-              customer_id:
-                loan.customer_id,
-              loan_id: loan.id,
-              agreement_id:
-                agreement?.id ||
-                null,
-              document_type:
-                "Paid-Up Letter",
-              document_name:
-                fileName,
-              path,
-              created_by:
-                userData?.user?.id ||
-                null,
-            });
-
-        if (documentError) {
-          throw documentError;
-        }
-
-        await loadDocuments(
-          id,
-          loan.customer_id
-        );
-
-        pdf.save(fileName);
-      } catch (err) {
-        console.error(
-          "PAID-UP LETTER ERROR:",
-          err
-        );
-
-        window.alert(
-          err?.message ||
-            "Unable to generate paid-up letter."
-        );
-      } finally {
-        setGeneratingPaidUpLetter(
-          false
-        );
-      }
-    }, [
-      agreement,
-      customer,
-      id,
-      isPaidUp,
-      loadDocuments,
-      loan,
-      safeLoanNumber,
-    ]);
+      },
+      [
+        agreement,
+        customer,
+        id,
+        isPaidUp,
+        loadDocuments,
+        loan,
+        safeLoanNumber,
+      ]
+    );
 
   const handleDownloadDocument =
     useCallback(
@@ -1434,7 +1950,9 @@ export default function LoanProfile() {
             await response.blob();
 
           const blobUrl =
-            URL.createObjectURL(blob);
+            URL.createObjectURL(
+              blob
+            );
 
           const link =
             window.document.createElement(
@@ -1488,32 +2006,37 @@ export default function LoanProfile() {
                 ""
             )
               .toLowerCase()
-              .includes("agreement")
+              .includes(
+                "agreement"
+              )
         );
 
       if (agreementDocument) {
         handleOpenDocument(
           agreementDocument
         );
+
         return;
       }
 
       const fallbackDocument =
-        documents.find((document) =>
-          String(
-            document.document_type ||
-              ""
-          )
-            .toLowerCase()
-            .includes(
-              "signed loan agreement"
+        documents.find(
+          (document) =>
+            String(
+              document.document_type ||
+                ""
             )
+              .toLowerCase()
+              .includes(
+                "signed loan agreement"
+              )
         );
 
       if (fallbackDocument) {
         handleOpenDocument(
           fallbackDocument
         );
+
         return;
       }
 
@@ -1663,7 +2186,7 @@ export default function LoanProfile() {
         <Grid
           item
           xs={12}
-          md={6}
+          md={12}
           sx={{
             minWidth: 0,
             display: "flex",
@@ -1706,7 +2229,6 @@ export default function LoanProfile() {
                   flex: 1,
                 }}
               >
-                {/* ROW 1 - FULL NAME */}
                 <Grid
                   item
                   xs={12}
@@ -1744,7 +2266,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 1 - ID NUMBER */}
                 <Grid
                   item
                   xs={12}
@@ -1776,7 +2297,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 2 - PHONE */}
                 <Grid
                   item
                   xs={12}
@@ -1810,7 +2330,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 2 - EMAIL */}
                 <Grid
                   item
                   xs={12}
@@ -1849,7 +2368,7 @@ export default function LoanProfile() {
         <Grid
           item
           xs={12}
-          md={6}
+          md={12}
           sx={{
             minWidth: 0,
             display: "flex",
@@ -1892,7 +2411,6 @@ export default function LoanProfile() {
                   flex: 1,
                 }}
               >
-                {/* ROW 1 - LOAN NUMBER */}
                 <Grid
                   item
                   xs={12}
@@ -1921,7 +2439,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 1 - LOAN STATUS */}
                 <Grid
                   item
                   xs={12}
@@ -1958,7 +2475,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 1 - PRINCIPAL AMOUNT */}
                 <Grid
                   item
                   xs={12}
@@ -1986,7 +2502,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 2 - CURRENT BALANCE */}
                 <Grid
                   item
                   xs={12}
@@ -2015,7 +2530,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 2 - INTEREST RATE */}
                 <Grid
                   item
                   xs={12}
@@ -2047,7 +2561,6 @@ export default function LoanProfile() {
                   </Box>
                 </Grid>
 
-                {/* ROW 2 - AGREEMENT */}
                 <Grid
                   item
                   xs={12}
@@ -3437,6 +3950,7 @@ export default function LoanProfile() {
                           key={
                             document.id ||
                             document.path ||
+                            document.document_path ||
                             document.document_name
                           }
                           variant="outlined"
