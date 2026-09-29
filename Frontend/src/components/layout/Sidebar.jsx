@@ -1,4 +1,12 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  useEffect,
+  useState,
+} from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import {
   Dashboard,
@@ -12,7 +20,8 @@ import {
   Description,
 } from "@mui/icons-material";
 
-import { supabase } from "../../lib/supabase";
+import { signOut } from "../../services/authService";
+import { getSystemSettings } from "../../services/settingsService";
 
 const menu = [
   {
@@ -61,12 +70,56 @@ export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const [companyName, setCompanyName] =
+    useState("");
+
+  const [companyShortName, setCompanyShortName] =
+    useState("");
+
+  useEffect(() => {
+    loadCompanySettings();
+  }, []);
+
+  async function loadCompanySettings() {
+    try {
+      const data =
+        await getSystemSettings();
+
+      const configuredCompanyName =
+        String(
+          data?.company_name || ""
+        ).trim();
+
+      const configuredShortName =
+        String(
+          data?.short_name || ""
+        ).trim();
+
+      setCompanyName(
+        configuredCompanyName
+      );
+
+      setCompanyShortName(
+        configuredShortName
+      );
+    } catch (error) {
+      console.error(
+        "Sidebar company settings error:",
+        error
+      );
+    }
+  }
+
   const handleLogout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } =
+        await signOut();
 
       if (error) {
-        console.error("LOGOUT ERROR:", error);
+        console.error(
+          "LOGOUT ERROR:",
+          error
+        );
         return;
       }
 
@@ -74,7 +127,10 @@ export default function Sidebar() {
       // the user cannot return to it with the Back button.
       navigate("/", { replace: true });
     } catch (error) {
-      console.error("LOGOUT ERROR:", error);
+      console.error(
+        "LOGOUT ERROR:",
+        error
+      );
     }
   };
 
@@ -94,14 +150,16 @@ export default function Sidebar() {
         overflowY: "auto",
         position: "relative",
         zIndex: 1000,
-        boxShadow: "4px 0 18px rgba(16, 24, 40, 0.10)",
+        boxShadow:
+          "4px 0 18px rgba(16, 24, 40, 0.10)",
       }}
     >
       {/* BRAND */}
       <div
         style={{
           padding: "6px 10px 24px",
-          borderBottom: "1px solid rgba(255,255,255,0.12)",
+          borderBottom:
+            "1px solid rgba(255,255,255,0.12)",
           marginBottom: "18px",
         }}
       >
@@ -117,8 +175,10 @@ export default function Sidebar() {
               width: 42,
               height: 42,
               borderRadius: 12,
-              background: "rgba(255,255,255,0.14)",
-              border: "1px solid rgba(255,255,255,0.16)",
+              background:
+                "rgba(255,255,255,0.14)",
+              border:
+                "1px solid rgba(255,255,255,0.16)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -142,18 +202,19 @@ export default function Sidebar() {
                 whiteSpace: "nowrap",
               }}
             >
-              Umhlomunye
+              {companyName}
             </div>
 
             <div
               style={{
                 fontSize: 12,
-                color: "rgba(255,255,255,0.70)",
+                color:
+                  "rgba(255,255,255,0.70)",
                 marginTop: 3,
                 whiteSpace: "nowrap",
               }}
             >
-              Finance
+              {companyShortName}
             </div>
           </div>
         </div>
@@ -169,7 +230,8 @@ export default function Sidebar() {
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "rgba(255,255,255,0.45)",
+            color:
+              "rgba(255,255,255,0.45)",
             textTransform: "uppercase",
             letterSpacing: "0.12em",
             padding: "0 12px 9px",
@@ -180,7 +242,8 @@ export default function Sidebar() {
 
         {menu.map((item) => {
           const isActive =
-            location.pathname === item.path ||
+            location.pathname ===
+              item.path ||
             (item.path !== "/dashboard" &&
               location.pathname.startsWith(
                 `${item.path}/`
@@ -205,7 +268,8 @@ export default function Sidebar() {
                 background: isActive
                   ? "rgba(255,255,255,0.16)"
                   : "transparent",
-                fontWeight: isActive ? 700 : 500,
+                fontWeight:
+                  isActive ? 700 : 500,
                 fontSize: "14px",
                 position: "relative",
                 transition:
@@ -250,9 +314,11 @@ export default function Sidebar() {
                   height: 22,
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
+                  justifyContent:
+                    "center",
                   flexShrink: 0,
-                  opacity: isActive ? 1 : 0.82,
+                  opacity:
+                    isActive ? 1 : 0.82,
                 }}
               >
                 {item.icon}
@@ -262,7 +328,8 @@ export default function Sidebar() {
                 style={{
                   whiteSpace: "nowrap",
                   overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  textOverflow:
+                    "ellipsis",
                 }}
               >
                 {item.text}
@@ -291,7 +358,8 @@ export default function Sidebar() {
             gap: "13px",
             minHeight: "46px",
             padding: "0 13px",
-            color: "rgba(255,255,255,0.75)",
+            color:
+              "rgba(255,255,255,0.75)",
             background: "transparent",
             border: "none",
             borderRadius: "10px",

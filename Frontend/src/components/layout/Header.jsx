@@ -1,11 +1,21 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase";
+
+import {
+  getCurrentUser,
+  onAuthStateChange,
+} from "../../services/authService";
+
+import {
+  getCurrentUserProfile,
+} from "../../services/userService";
+
+import {
+  getSystemSettings,
+} from "../../services/settingsService";
 
 export default function Header() {
   const [userName, setUserName] = useState("User");
-  const [companyName, setCompanyName] = useState(
-    "Umhlomunye Finance"
-  );
+  const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState(null);
 
   useEffect(() => {
@@ -13,12 +23,12 @@ export default function Header() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
+    } = onAuthStateChange(() => {
       loadHeaderData();
     });
 
     return () => {
-      subscription.unsubscribe();
+      subscription?.unsubscribe?.();
     };
   }, []);
 
@@ -38,44 +48,22 @@ export default function Header() {
 
   async function loadUser() {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user =
+        await getCurrentUser();
 
       if (!user) {
         setUserName("User");
         return;
       }
 
-      const {
-        data: profile,
-        error,
-      } = await supabase
-        .from("users")
-        .select("username, full_name")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error(
-          "Unable to load header user:",
-          error
-        );
-
-        setUserName(
-          user.user_metadata?.full_name ||
-            user.user_metadata?.username ||
-            user.email ||
-            "User"
-        );
-
-        return;
-      }
+      const profile =
+        await getCurrentUserProfile();
 
       setUserName(
         profile?.full_name ||
           profile?.username ||
           user.user_metadata?.full_name ||
+          user.user_metadata?.username ||
           user.email ||
           "User"
       );
@@ -91,29 +79,11 @@ export default function Header() {
 
   async function loadCompanySettings() {
     try {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("system_settings")
-        .select(
-          "company_name, company_logo_url"
-        )
-        .limit(1)
-        .maybeSingle();
-
-      if (error) {
-        console.error(
-          "Unable to load company settings:",
-          error
-        );
-
-        return;
-      }
+      const data =
+        await getSystemSettings();
 
       setCompanyName(
-        data?.company_name ||
-          "Umhlomunye Finance"
+        data?.company_name || ""
       );
 
       setCompanyLogo(
@@ -158,7 +128,7 @@ export default function Header() {
         {companyLogo ? (
           <img
             src={companyLogo}
-            alt={`${companyName} logo`}
+            alt={`${companyName || "Company"} logo`}
             style={{
               height: 48,
               width: 48,
@@ -183,7 +153,7 @@ export default function Header() {
               flexShrink: 0,
             }}
           >
-            UBS
+            LMS
           </div>
         )}
 
@@ -206,10 +176,8 @@ export default function Header() {
           >
             {companyName}
           </div>
-          
         </div>
       </div>
-
 
       {/* ==================================================
           RIGHT SIDE - USER

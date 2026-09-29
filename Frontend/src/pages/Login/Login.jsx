@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase";
+
 import {
   useLocation,
   useNavigate,
@@ -26,6 +26,11 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 
 import { getSystemSettings } from "../../services/settingsService";
+
+import {
+  signIn,
+  resetPasswordForEmail,
+} from "../../services/authService";
 
 const INSTALLATION_ID_STORAGE_KEY =
   "lms_companion_installation_id";
@@ -449,11 +454,10 @@ export default function Login() {
 
     const {
       error,
-    } =
-      await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+    } = await signIn(
+      email.trim(),
+      password
+    );
 
     if (error) {
       alert(error.message);
@@ -514,7 +518,7 @@ export default function Login() {
       const {
         error,
       } =
-        await supabase.auth.resetPasswordForEmail(
+        await resetPasswordForEmail(
           emailAddress,
           {
             redirectTo: redirectUrl,

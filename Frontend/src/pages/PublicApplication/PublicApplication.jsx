@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import {
   addLoanApplication,
+  saveApplicationDocumentOffline,
   uploadPublicApplicationDocument,
 } from "../../services/applicationService";
 
@@ -18,11 +19,11 @@ import {
   Divider,
   Alert,
   IconButton,
+  CircularProgress,
+  Chip,
   Select,
   FormControl,
   InputLabel,
-  CircularProgress,
-  Chip,
 } from "@mui/material";
 
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -87,8 +88,13 @@ export default function PublicApplication() {
   const [applicationId, setApplicationId] =
     useState("");
 
+  const [applicationLocalId, setApplicationLocalId] =
+    useState("");
+
   const [uploadToken, setUploadToken] =
     useState("");
+
+  const [pendingSync, setPendingSync] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
@@ -149,6 +155,31 @@ export default function PublicApplication() {
       return;
     }
 
+    /*
+     * OFFLINE
+     *
+     * Do not attempt the customer lookup when there
+     * is no connection. The application can still be
+     * captured and queued. The server-side customer/ID
+     * check will occur during synchronization.
+     */
+    if (!navigator.onLine) {
+      setIdChecked(true);
+      setExistingCustomer(false);
+      setCustomerNumber("");
+
+      setForm((previous) => ({
+        ...previous,
+        id_number: normalizedId,
+      }));
+
+      setIdMessage(
+        "You are currently offline. The ID number will be checked when the application synchronizes."
+      );
+
+      return;
+    }
+
     try {
       setCheckingId(true);
 
@@ -183,8 +214,7 @@ export default function PublicApplication() {
         setForm({
           ...EMPTY_FORM,
 
-          id_number:
-            normalizedId,
+          id_number: normalizedId,
 
           first_name:
             customer.first_name || "",
@@ -208,12 +238,10 @@ export default function PublicApplication() {
             customer.employment_status || "",
 
           monthly_income:
-            customer.monthly_income ??
-            "",
+            customer.monthly_income ?? "",
 
           other_income:
-            customer.other_income ??
-            "",
+            customer.other_income ?? "",
 
           bank_name:
             customer.bank_name || "",
@@ -256,6 +284,29 @@ export default function PublicApplication() {
         "PUBLIC CUSTOMER ID LOOKUP ERROR:",
         err
       );
+
+      /*
+       * The connection can disappear after navigator.onLine
+       * reported that the device was online. In that case,
+       * allow offline application capture instead of losing
+       * the application.
+       */
+      if (!navigator.onLine) {
+        setIdChecked(true);
+        setExistingCustomer(false);
+        setCustomerNumber("");
+
+        setForm((previous) => ({
+          ...previous,
+          id_number: normalizedId,
+        }));
+
+        setIdMessage(
+          "The internet connection was lost. The application can be saved offline and the ID will be checked when synchronization occurs."
+        );
+
+        return;
+      }
 
       setIdChecked(false);
       setExistingCustomer(false);
@@ -391,11 +442,64 @@ export default function PublicApplication() {
     );
   }
 
+  /*
+   * Persist all selected documents into IndexedDB
+   * before relying on an online upload.
+   *
+   * This prevents files from being lost if the network
+   * disappears while the application is being submitted
+   * or while documents are being uploaded.
+   */
+  async function saveDocumentsOffline(
+    localApplicationId,
+    serverApplicationId = null
+  ) {
+    if (!localApplicationId) {
+      throw new Error(
+        "The local application reference is missing. The supporting documents could not be stored."
+      );
+    }
+
+    if (!documents.length) {
+      return;
+    }
+
+    for (const document of documents) {
+      await saveApplicationDocumentOffline({
+        applicationLocalId:
+          localApplicationId,
+
+        applicationServerId:
+          serverApplicationId,
+
+        documentType:
+          document.documentType,
+
+        file:
+          document.file,
+      });
+    }
+  }
+
+  /*
+   * Online document upload.
+   *
+   * A failed document is deliberately NOT removed from
+   * IndexedDB. The offline document queue therefore remains
+   * the recovery mechanism for that document.
+   */
   async function uploadDocuments(
     id,
     token
   ) {
     if (!documents.length) {
+      return {
+        uploaded: 0,
+        failed: [],
+      };
+    }
+
+    if (!id || !token) {
       return {
         uploaded: 0,
         failed: [],
@@ -415,6 +519,19 @@ export default function PublicApplication() {
 
     for (const document of documents) {
       try {
+        /*
+         * If the connection disappears before this document,
+         * stop attempting network uploads. The document has
+         * already been stored in IndexedDB.
+         */
+        if (!navigator.onLine) {
+          failed.push(
+            `${document.file.name}: waiting for internet connection.`
+          );
+
+          break;
+        }
+
         await uploadPublicApplicationDocument({
           applicationId: id,
           uploadToken: token,
@@ -436,10 +553,17 @@ export default function PublicApplication() {
 
         failed.push(
           `${document.file.name}: ${
-            err?.message ||
-            "Upload failed."
+            !navigator.onLine
+              ? "waiting for internet connection."
+              : err?.message ||
+                "Upload failed."
           }`
         );
+
+        /*
+         * Do not delete the local copy. It remains available
+         * to the synchronization process.
+         */
       }
     }
 
@@ -453,7 +577,7 @@ export default function PublicApplication() {
       );
     } else {
       setUploadMessage(
-        `${uploaded} of ${documents.length} documents uploaded.`
+        `${uploaded} of ${documents.length} documents uploaded. The remaining documents are retained for synchronization.`
       );
 
       setUploadErrors(failed);
@@ -477,7 +601,10 @@ export default function PublicApplication() {
       return;
     }
 
-    if (!form.id_number) {
+    const normalizedFormId =
+      normalizeId(form.id_number);
+
+    if (!normalizedFormId) {
       setError(
         "ID number is required."
       );
@@ -485,8 +612,7 @@ export default function PublicApplication() {
     }
 
     if (
-      normalizeId(form.id_number).length !==
-      13
+      normalizedFormId.length !== 13
     ) {
       setError(
         "Please enter a valid 13-digit South African ID number."
@@ -564,6 +690,18 @@ export default function PublicApplication() {
     setLoading(true);
 
     try {
+      /*
+       * applicationService owns the online/offline decision.
+       *
+       * Online:
+       *   - submit to server
+       *   - receive real application ID/number/token
+       *
+       * Offline:
+       *   - create local application record
+       *   - queue synchronization
+       *   - return local application reference
+       */
       const data =
         await addLoanApplication({
           first_name:
@@ -628,9 +766,7 @@ export default function PublicApplication() {
             null,
 
           id_number:
-            normalizeId(
-              form.id_number
-            ),
+            normalizedFormId,
         });
 
       const result =
@@ -638,31 +774,153 @@ export default function PublicApplication() {
           ? data[0]
           : data;
 
+      /*
+       * Local application reference returned by
+       * applicationService when the application is queued.
+       */
+      const localId =
+        result?.application_local_id ||
+        result?.local_application_id ||
+        result?.local_id ||
+        null;
+
+      /*
+       * Real server application number.
+       *
+       * There is deliberately no generated/fake number when
+       * the application is offline.
+       */
       const number =
         result?.application_number;
 
+      /*
+       * Real server application ID.
+       */
       const id =
-        result?.application_id;
+        result?.application_id ||
+        result?.id ||
+        null;
 
+      /*
+       * Secure server document-upload token.
+       *
+       * This must never be fabricated locally.
+       */
       const token =
-        result?.upload_token;
+        result?.upload_token ||
+        null;
 
-      if (!id || !token) {
-        throw new Error(
-          "The application was submitted, but the secure document upload session could not be created."
+      const isPending =
+        Boolean(
+          result?.pending_sync ||
+          result?.offline ||
+          result?.queued ||
+          result?.sync_state === "PENDING"
+        );
+
+      /*
+       * ALWAYS save selected documents locally before
+       * attempting online document uploads.
+       *
+       * For an offline application, localId is the queue
+       * reference.
+       *
+       * For an online application, id is also accepted as
+       * the local reference when the service does not return
+       * a separate local ID.
+       */
+      if (documents.length > 0) {
+        await saveDocumentsOffline(
+          localId || id,
+          id
         );
       }
+
+      /*
+       * OFFLINE / QUEUED APPLICATION
+       *
+       * No fake application number.
+       * No fake application ID.
+       * No fake upload token.
+       *
+       * The applicationService synchronization process owns
+       * the transition from local application -> server
+       * application.
+       */
+      if (isPending || !navigator.onLine) {
+        setPendingSync(true);
+
+        setApplicationNumber(
+          number ||
+            "WAITING FOR INTERNET"
+        );
+
+        setApplicationId(id || "");
+
+        setApplicationLocalId(
+          localId || ""
+        );
+
+        setUploadToken("");
+
+        if (documents.length > 0) {
+          setUploadMessage(
+            `${documents.length} supporting document${
+              documents.length === 1
+                ? ""
+                : "s"
+            } saved securely on this device and waiting for synchronization.`
+          );
+        } else {
+          setUploadMessage("");
+        }
+
+        setSubmitted(true);
+
+        return;
+      }
+
+      /*
+       * ONLINE APPLICATION
+       *
+       * The server has accepted the application and supplied
+       * the real application details.
+       */
+      setPendingSync(false);
 
       setApplicationNumber(
         number || "SUBMITTED"
       );
 
-      setApplicationId(id);
-      setUploadToken(token);
+      setApplicationId(id || "");
+
+      setApplicationLocalId(
+        localId || ""
+      );
+
+      setUploadToken(token || "");
 
       setSubmitted(true);
 
+      /*
+       * If supporting documents were selected but the server
+       * did not supply a secure upload session, leave the
+       * documents in IndexedDB instead of pretending that
+       * they were uploaded.
+       */
       if (documents.length > 0) {
+        if (!id || !token) {
+          setUploadMessage(
+            `${documents.length} supporting document${
+              documents.length === 1
+                ? ""
+                : "s"
+            } saved securely and waiting for document synchronization.`
+          );
+
+          return;
+        }
+
         await uploadDocuments(
           id,
           token
@@ -673,6 +931,34 @@ export default function PublicApplication() {
         "APPLICATION SUBMISSION ERROR:",
         err
       );
+
+      /*
+       * If the network disappeared during submission,
+       * applicationService should have queued the application.
+       *
+       * Do not clear the form or discard selected documents.
+       */
+      if (!navigator.onLine) {
+        setPendingSync(true);
+
+        setApplicationNumber(
+          "WAITING FOR INTERNET"
+        );
+
+        setUploadMessage(
+          documents.length > 0
+            ? `${documents.length} supporting document${
+                documents.length === 1
+                  ? ""
+                  : "s"
+              } remain selected and will be retained for synchronization.`
+            : ""
+        );
+
+        setSubmitted(true);
+
+        return;
+      }
 
       setError(
         err?.message ||
@@ -724,7 +1010,9 @@ export default function PublicApplication() {
               gutterBottom
               fontWeight="bold"
             >
-              Application Submitted
+              {pendingSync
+                ? "Application Saved"
+                : "Application Submitted"}
             </Typography>
 
             <Typography
@@ -743,14 +1031,62 @@ export default function PublicApplication() {
               {applicationNumber}
             </Typography>
 
-            <Typography
-              color="text.secondary"
-            >
-              Thank you for submitting your
-              loan application. Your
-              application will be reviewed
-              by Umhlomunye Finance.
-            </Typography>
+            {pendingSync ? (
+              <>
+                <Alert
+                  severity="warning"
+                  sx={{
+                    mt: 2,
+                    textAlign: "left",
+                  }}
+                >
+                  <strong>
+                    Waiting for Internet
+                  </strong>
+                  <br />
+                  Your application has been
+                  saved on this device. It
+                  will be synchronized with
+                  the server when an internet
+                  connection becomes available.
+                </Alert>
+
+                {documents.length >
+                  0 && (
+                  <Alert
+                    severity="info"
+                    sx={{
+                      mt: 2,
+                      textAlign: "left",
+                    }}
+                  >
+                    {documents.length} supporting
+                    document
+                    {documents.length ===
+                    1
+                      ? ""
+                      : "s"}{" "}
+                    {documents.length ===
+                    1
+                      ? "has"
+                      : "have"}{" "}
+                    also been saved on this
+                    device and will be
+                    synchronized with the
+                    application.
+                  </Alert>
+                )}
+              </>
+            ) : (
+              <Typography
+                color="text.secondary"
+              >
+                Thank you for submitting your
+                loan application. Your
+                application will be reviewed
+                by Umhlomunye Finance.
+              </Typography>
+            )}
 
             <Typography
               color="text.secondary"
@@ -772,7 +1108,13 @@ export default function PublicApplication() {
                   uploadMessage &&
                   uploadErrors.length ===
                     0 && (
-                    <Alert severity="success">
+                    <Alert
+                      severity={
+                        pendingSync
+                          ? "info"
+                          : "success"
+                      }
+                    >
                       {uploadMessage}
                     </Alert>
                   )}
@@ -811,7 +1153,8 @@ export default function PublicApplication() {
               </Box>
             )}
 
-            {applicationId &&
+            {!pendingSync &&
+              applicationId &&
               uploadToken &&
               documents.length ===
                 0 && (
@@ -998,16 +1341,28 @@ export default function PublicApplication() {
             {idChecked &&
               !existingCustomer && (
                 <Alert
-                  severity="info"
-                  icon={<PersonAddIcon />}
+                  severity={
+                    !navigator.onLine
+                      ? "warning"
+                      : "info"
+                  }
+                  icon={
+                    !navigator.onLine ? (
+                      undefined
+                    ) : (
+                      <PersonAddIcon />
+                    )
+                  }
                   sx={{ mt: 2 }}
                 >
                   <strong>
-                    New customer application.
+                    {!navigator.onLine
+                      ? "Offline application."
+                      : "New customer application."}
                   </strong>{" "}
-                  Please complete your
-                  personal, employment and
-                  banking information below.
+                  {!navigator.onLine
+                    ? "The ID number will be checked when the application synchronizes with the server."
+                    : "Please complete your personal, employment and banking information below."}
                 </Alert>
               )}
 
@@ -1587,7 +1942,11 @@ export default function PublicApplication() {
               </Typography>
 
               <Alert
-                severity="info"
+                severity={
+                  navigator.onLine
+                    ? "info"
+                    : "warning"
+                }
                 sx={{ mb: 2 }}
               >
                 Upload supporting documents
@@ -1597,6 +1956,16 @@ export default function PublicApplication() {
                 files are accepted. Maximum{" "}
                 {MAX_FILES} files, 10 MB per
                 file.
+                {!navigator.onLine && (
+                  <>
+                    {" "}
+                    You are currently offline;
+                    selected documents will be
+                    saved on this device and
+                    synchronized when internet
+                    access returns.
+                  </>
+                )}
               </Alert>
 
               <input
@@ -1807,7 +2176,9 @@ export default function PublicApplication() {
                   }
                 >
                   {loading
-                    ? "Submitting..."
+                    ? "Saving..."
+                    : !navigator.onLine
+                    ? "Save Application Offline"
                     : "Submit Application"}
                 </Button>
               </Box>

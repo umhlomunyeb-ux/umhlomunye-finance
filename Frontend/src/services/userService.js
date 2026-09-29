@@ -1,17 +1,46 @@
 import { supabase } from "../lib/supabase";
 
+import {
+  getCurrentUser,
+} from "./authService";
+
+import {
+  isOfflineMode,
+  localApiUrl,
+} from "../config/appMode";
+
 /**
  * Get the currently authenticated user's profile
  * from the public.users table.
+ *
+ * ONLINE:
+ *   Supabase Auth -> public.users
+ *
+ * OFFLINE:
+ *   Local authentication -> local PostgreSQL users
  */
 export async function getCurrentUserProfile() {
+  if (isOfflineMode) {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return null;
+    }
+
+    return user;
+  }
+
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
 
   if (authError) {
-    console.error("getCurrentUserProfile auth error:", authError);
+    console.error(
+      "getCurrentUserProfile auth error:",
+      authError
+    );
+
     throw authError;
   }
 
@@ -19,19 +48,37 @@ export async function getCurrentUserProfile() {
     return null;
   }
 
-  console.log("CURRENT AUTH USER:", user.id, user.email);
+  console.log(
+    "CURRENT AUTH USER:",
+    user.id,
+    user.email
+  );
 
-  const { data, error } = await supabase
+  const {
+    data,
+    error,
+  } = await supabase
     .from("users")
     .select("*")
     .eq("id", user.id)
     .maybeSingle();
 
-  console.log("CURRENT USER PROFILE:", data);
-  console.log("CURRENT USER PROFILE ERROR:", error);
+  console.log(
+    "CURRENT USER PROFILE:",
+    data
+  );
+
+  console.log(
+    "CURRENT USER PROFILE ERROR:",
+    error
+  );
 
   if (error) {
-    console.error("getCurrentUserProfile:", error);
+    console.error(
+      "getCurrentUserProfile:",
+      error
+    );
+
     throw error;
   }
 
@@ -43,11 +90,13 @@ export async function getCurrentUserProfile() {
  * is an active administrator.
  */
 export async function isCurrentUserAdmin() {
-  const profile = await getCurrentUserProfile();
+  const profile =
+    await getCurrentUserProfile();
 
   return (
     profile &&
-    String(profile.role).toLowerCase() === "admin" &&
+    String(profile.role).toLowerCase() ===
+      "admin" &&
     profile.is_active !== false &&
     profile.is_deleted !== true
   );
@@ -55,9 +104,49 @@ export async function isCurrentUserAdmin() {
 
 /**
  * Get all non-deleted users.
+ *
+ * ONLINE:
+ *   Supabase
+ *
+ * OFFLINE:
+ *   Local API
  */
 export async function getUsers() {
-  const { data, error } = await supabase
+  if (isOfflineMode) {
+    const token =
+      localStorage.getItem(
+        "lms_local_auth_token"
+      );
+
+    const response = await fetch(
+      `${localApiUrl}/api/users`,
+      {
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          "Unable to load users."
+      );
+    }
+
+    return Array.isArray(data?.users)
+      ? data.users
+      : [];
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase
     .from("users")
     .select(`
       id,
@@ -72,10 +161,16 @@ export async function getUsers() {
       updated_at
     `)
     .eq("is_deleted", false)
-    .order("created_at", { ascending: false });
+    .order("created_at", {
+      ascending: false,
+    });
 
   if (error) {
-    console.error("getUsers:", error);
+    console.error(
+      "getUsers:",
+      error
+    );
+
     throw error;
   }
 
@@ -83,18 +178,56 @@ export async function getUsers() {
 }
 
 /**
- * Create a new user through the protected
- * create-user-admin Edge Function.
+ * Create a new user.
  *
- * The Edge Function is responsible for:
- * - Admin authorization
- * - Password validation
- * - Duplicate checking
- * - Supabase Auth user creation
- * - users table profile creation
+ * ONLINE:
+ *   Protected Supabase Edge Function.
+ *
+ * OFFLINE:
+ *   Local API.
  */
-export async function createUser(userData) {
-  const { data, error } = await supabase.functions.invoke(
+export async function createUser(
+  userData
+) {
+  if (isOfflineMode) {
+    const token =
+      localStorage.getItem(
+        "lms_local_auth_token"
+      );
+
+    const response = await fetch(
+      `${localApiUrl}/api/users`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+          Authorization:
+            `Bearer ${token}`,
+        },
+        body: JSON.stringify(
+          userData
+        ),
+      }
+    );
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          "Unable to create user."
+      );
+    }
+
+    return data.user;
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.functions.invoke(
     "create-user-admin",
     {
       body: userData,
@@ -102,19 +235,15 @@ export async function createUser(userData) {
   );
 
   if (error) {
-    console.error("createUser Functions error:", error);
+    console.error(
+      "createUser Functions error:",
+      error
+    );
 
-    /*
-     * Supabase FunctionsHttpError can contain the
-     * actual Edge Function Response in error.context.
-     *
-     * Read it so that the real backend error is shown
-     * instead of only:
-     * "Edge Function returned a non-2xx status code."
-     */
     if (error.context) {
       try {
-        const errorBody = await error.context.json();
+        const errorBody =
+          await error.context.json();
 
         console.error(
           "createUser Edge Function response:",
@@ -126,11 +255,9 @@ export async function createUser(userData) {
             "The create-user-admin function returned an error."
         );
       } catch (parseError) {
-        /*
-         * If the response was already converted into
-         * an Error above, pass that useful message through.
-         */
-        if (parseError instanceof Error) {
+        if (
+          parseError instanceof Error
+        ) {
           throw parseError;
         }
       }
@@ -141,7 +268,8 @@ export async function createUser(userData) {
 
   if (!data?.success) {
     throw new Error(
-      data?.error || "Unable to create user."
+      data?.error ||
+        "Unable to create user."
     );
   }
 
@@ -149,24 +277,59 @@ export async function createUser(userData) {
 }
 
 /**
- * Update an existing user through the protected
- * manage-user-admin Edge Function.
- *
- * Supported fields include:
- * - username
- * - full_name
- * - email
- * - cellphone
- * - role
- * - is_active
- * - password
+ * Update an existing user.
  */
-export async function updateUser(userId, userData) {
+export async function updateUser(
+  userId,
+  userData
+) {
   if (!userId) {
-    throw new Error("User ID is required.");
+    throw new Error(
+      "User ID is required."
+    );
   }
 
-  const { data, error } = await supabase.functions.invoke(
+  if (isOfflineMode) {
+    const token =
+      localStorage.getItem(
+        "lms_local_auth_token"
+      );
+
+    const response = await fetch(
+      `${localApiUrl}/api/users/${encodeURIComponent(
+        userId
+      )}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type":
+            "application/json",
+          Authorization:
+            `Bearer ${token}`,
+        },
+        body: JSON.stringify(
+          userData
+        ),
+      }
+    );
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          "Unable to update user."
+      );
+    }
+
+    return data.user;
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.functions.invoke(
     "manage-user-admin",
     {
       body: {
@@ -178,11 +341,15 @@ export async function updateUser(userId, userData) {
   );
 
   if (error) {
-    console.error("updateUser Functions error:", error);
+    console.error(
+      "updateUser Functions error:",
+      error
+    );
 
     if (error.context) {
       try {
-        const errorBody = await error.context.json();
+        const errorBody =
+          await error.context.json();
 
         console.error(
           "updateUser Edge Function response:",
@@ -194,7 +361,9 @@ export async function updateUser(userId, userData) {
             "The manage-user-admin function returned an error."
         );
       } catch (parseError) {
-        if (parseError instanceof Error) {
+        if (
+          parseError instanceof Error
+        ) {
           throw parseError;
         }
       }
@@ -205,7 +374,8 @@ export async function updateUser(userId, userData) {
 
   if (!data?.success) {
     throw new Error(
-      data?.error || "Unable to update user."
+      data?.error ||
+        "Unable to update user."
     );
   }
 
@@ -213,18 +383,53 @@ export async function updateUser(userId, userData) {
 }
 
 /**
- * Soft-delete a user through the protected
- * manage-user-admin Edge Function.
- *
- * The backend preserves the user's historical
- * database records and disables their Auth account.
+ * Soft-delete a user.
  */
-export async function deleteUser(userId) {
+export async function deleteUser(
+  userId
+) {
   if (!userId) {
-    throw new Error("User ID is required.");
+    throw new Error(
+      "User ID is required."
+    );
   }
 
-  const { data, error } = await supabase.functions.invoke(
+  if (isOfflineMode) {
+    const token =
+      localStorage.getItem(
+        "lms_local_auth_token"
+      );
+
+    const response = await fetch(
+      `${localApiUrl}/api/users/${encodeURIComponent(
+        userId
+      )}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          "Unable to delete user."
+      );
+    }
+
+    return data;
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.functions.invoke(
     "manage-user-admin",
     {
       body: {
@@ -235,11 +440,15 @@ export async function deleteUser(userId) {
   );
 
   if (error) {
-    console.error("deleteUser Functions error:", error);
+    console.error(
+      "deleteUser Functions error:",
+      error
+    );
 
     if (error.context) {
       try {
-        const errorBody = await error.context.json();
+        const errorBody =
+          await error.context.json();
 
         console.error(
           "deleteUser Edge Function response:",
@@ -251,7 +460,9 @@ export async function deleteUser(userId) {
             "The manage-user-admin function returned an error."
         );
       } catch (parseError) {
-        if (parseError instanceof Error) {
+        if (
+          parseError instanceof Error
+        ) {
           throw parseError;
         }
       }
@@ -262,7 +473,8 @@ export async function deleteUser(userId) {
 
   if (!data?.success) {
     throw new Error(
-      data?.error || "Unable to delete user."
+      data?.error ||
+        "Unable to delete user."
     );
   }
 

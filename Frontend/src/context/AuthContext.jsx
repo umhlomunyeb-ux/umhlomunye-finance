@@ -1,5 +1,9 @@
 import { createContext, useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
+
+import {
+  getCurrentUser,
+  onAuthStateChange,
+} from "../services/authService";
 
 export const AuthContext = createContext({
   user: null,
@@ -13,15 +17,16 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    const initializeAuth = async () => {
+    async function initializeAuth() {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const currentUser =
+          await getCurrentUser();
 
         if (!mounted) return;
 
-        setUser(session?.user ?? null);
+        setUser(
+          currentUser ?? null
+        );
       } catch (error) {
         console.error(
           "AUTH INITIALIZATION ERROR:",
@@ -36,24 +41,28 @@ export function AuthProvider({ children }) {
           setLoading(false);
         }
       }
-    };
+    }
 
     initializeAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
+    } = onAuthStateChange(
       (_event, session) => {
         if (!mounted) return;
 
-        setUser(session?.user ?? null);
+        setUser(
+          session?.user ?? null
+        );
+
         setLoading(false);
       }
     );
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+
+      subscription?.unsubscribe?.();
     };
   }, []);
 

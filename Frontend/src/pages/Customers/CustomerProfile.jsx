@@ -16,11 +16,11 @@ import toast from "react-hot-toast";
 
 import {
   updateCustomer,
+  getCustomerById,
 } from "../../services/customerService";
 
 import { parseSouthAfricanId } from "../../utils/saIdValidator";
 
-import { supabase } from "../../lib/supabase";
 
 export default function CustomerProfile() {
   const { id } = useParams();
@@ -35,29 +35,25 @@ export default function CustomerProfile() {
     loadCustomer();
   }, [id]);
 
-  async function loadCustomer() {
-    try {
-      setLoading(true);
-      setError("");
+async function loadCustomer() {
+  try {
+    setLoading(true);
+    setError("");
 
-      const { data, error } = await supabase
-        .from("customers")
-        .select("*")
-        .eq("id", id)
-        .single();
+    const data =
+      await getCustomerById(id);
 
-      if (error) {
-        throw error;
-      }
-
-      setCustomer(data);
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "Unable to load customer.");
-    } finally {
-      setLoading(false);
-    }
+    setCustomer(data);
+  } catch (err) {
+    console.error(err);
+    setError(
+      err.message ||
+        "Unable to load customer."
+    );
+  } finally {
+    setLoading(false);
   }
+}
 
   function handleChange(e) {
     const { name, value } = e.target;

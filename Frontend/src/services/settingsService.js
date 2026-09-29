@@ -1,5 +1,16 @@
 import { supabase } from "../lib/supabase";
-import { isCurrentUserAdmin } from "./userService";
+
+import {
+  isOfflineMode,
+  localApiUrl,
+} from "../config/appMode";
+
+import {
+  isCurrentUserAdmin,
+} from "./userService";
+
+const LOCAL_AUTH_TOKEN_KEY =
+  "lms_local_auth_token";
 
 const DEFAULT_SETTINGS = {
   // Company identity
@@ -49,20 +60,10 @@ const DEFAULT_SETTINGS = {
   timezone: "Africa/Johannesburg",
 };
 
-
-/**
- * Build the system identity from the registered company information.
- *
- * System name:
- *   Company Name + " LMS"
- *
- * Mobile app name:
- *   Short Name + " LMS"
- *
- * These are derived values and are intentionally not stored
- * as independent database fields.
- */
-function buildSystemIdentity(companyName, shortName) {
+function buildSystemIdentity(
+  companyName,
+  shortName
+) {
   const cleanCompanyName =
     typeof companyName === "string"
       ? companyName.trim()
@@ -84,20 +85,9 @@ function buildSystemIdentity(companyName, shortName) {
   };
 }
 
-
-/**
- * Normalize the financial year-end month.
- *
- * The database stores this as an integer:
- *
- * 1  = January
- * 2  = February
- * ...
- * 12 = December
- *
- * null means it has not yet been configured.
- */
-function normalizeFinancialYearEnd(value) {
+function normalizeFinancialYearEnd(
+  value
+) {
   if (
     value === null ||
     value === undefined ||
@@ -119,25 +109,7 @@ function normalizeFinancialYearEnd(value) {
   return month;
 }
 
-
-/**
- * Get the current system settings.
- *
- * All loan rules must be obtained from this record.
- */
-export async function getSystemSettings() {
-  const { data, error } = await supabase
-    .from("system_settings")
-    .select("*")
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("getSystemSettings:", error);
-    throw error;
-  }
-
+function normalizeSettings(data) {
   if (!data) {
     return {
       ...DEFAULT_SETTINGS,
@@ -154,10 +126,11 @@ export async function getSystemSettings() {
       ? data.short_name.trim()
       : "";
 
-  const identity = buildSystemIdentity(
-    companyName,
-    shortName
-  );
+  const identity =
+    buildSystemIdentity(
+      companyName,
+      shortName
+    );
 
   return {
     ...DEFAULT_SETTINGS,
@@ -197,14 +170,137 @@ export async function getSystemSettings() {
   };
 }
 
+function getLocalToken() {
+  try {
+    return localStorage.getItem(
+      LOCAL_AUTH_TOKEN_KEY
+    );
+  } catch (error) {
+    console.error(
+      "LOCAL SETTINGS TOKEN ERROR:",
+      error
+    );
+
+    return null;
+  }
+}
+
+async function localRequest(
+  path,
+  options = {}
+) {
+  const token =
+    getLocalToken();
+
+  const headers = {
+    "Content-Type":
+      "application/json",
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers.Authorization =
+      `Bearer ${token}`;
+  }
+
+  const response =
+    await fetch(
+      `${localApiUrl}${path}`,
+      {
+        ...options,
+        headers,
+      }
+    );
+
+  let data = null;
+
+  try {
+    data =
+      await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const error =
+      new Error(
+        data?.error ||
+          data?.message ||
+          `Settings request failed (${response.status}).`
+      );
+
+    error.status =
+      response.status;
+
+    error.data =
+      data;
+
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Get the current system settings.
+ *
+ * ONLINE:
+ *   Supabase
+ *
+ * OFFLINE:
+ *   Local PostgreSQL through Express API
+ */
+export async function getSystemSettings() {
+  if (isOfflineMode) {
+    const data =
+      await localRequest(
+        "/api/settings",
+        {
+          method: "GET",
+        }
+      );
+
+    return normalizeSettings(
+      data?.settings
+    );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("system_settings")
+    .select("*")
+    .order("updated_at", {
+      ascending: false,
+    })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "getSystemSettings:",
+      error
+    );
+
+    throw error;
+  }
+
+  return normalizeSettings(
+    data
+  );
+}
 
 /**
  * Update the system settings.
  *
  * Only an Administrator may change system settings.
  */
-export async function updateSystemSettings(settings) {
-  const admin = await isCurrentUserAdmin();
+export async function updateSystemSettings(
+  settings
+) {
+  const admin =
+    await isCurrentUserAdmin();
 
   if (!admin) {
     throw new Error(
@@ -212,7 +308,25 @@ export async function updateSystemSettings(settings) {
     );
   }
 
-  const current = await getSystemSettings();
+  if (isOfflineMode) {
+    const data =
+      await localRequest(
+        "/api/settings",
+        {
+          method: "PUT",
+          body: JSON.stringify(
+            settings
+          ),
+        }
+      );
+
+    return normalizeSettings(
+      data?.settings
+    );
+  }
+
+  const current =
+    await getSystemSettings();
 
   if (!current?.id) {
     throw new Error(
@@ -230,13 +344,16 @@ export async function updateSystemSettings(settings) {
   }
 
   const userId =
-    userData?.user?.id || null;
+    userData?.user?.id ||
+    null;
 
   const companyName =
-    settings.company_name?.trim() || "";
+    settings.company_name?.trim() ||
+    "";
 
   const shortName =
-    settings.short_name?.trim() || "";
+    settings.short_name?.trim() ||
+    "";
 
   const financialYearEnd =
     normalizeFinancialYearEnd(
@@ -244,116 +361,111 @@ export async function updateSystemSettings(settings) {
     );
 
   const payload = {
-    // ----------------------------------------------------------
-    // Company identity
-    // ----------------------------------------------------------
-
     company_name:
       companyName,
 
     short_name:
       shortName || null,
 
-    // ----------------------------------------------------------
-    // Company information
-    // ----------------------------------------------------------
-
     financial_year_end:
       financialYearEnd,
 
     company_address:
-      settings.company_address?.trim() || null,
+      settings.company_address?.trim() ||
+      null,
 
     company_logo_url:
-      settings.company_logo_url || null,
+      settings.company_logo_url ||
+      null,
 
     company_phone:
-      settings.company_phone?.trim() || null,
+      settings.company_phone?.trim() ||
+      null,
 
     company_whatsapp:
-      settings.company_whatsapp?.trim() || null,
+      settings.company_whatsapp?.trim() ||
+      null,
 
     company_email:
-      settings.company_email?.trim() || null,
-
-    // ----------------------------------------------------------
-    // Loan amount settings
-    // ----------------------------------------------------------
+      settings.company_email?.trim() ||
+      null,
 
     minimum_loan_amount:
-      Number(settings.minimum_loan_amount),
+      Number(
+        settings.minimum_loan_amount
+      ),
 
     maximum_loan_amount:
-      Number(settings.maximum_loan_amount),
-
-    // ----------------------------------------------------------
-    // Interest-rate settings
-    // ----------------------------------------------------------
+      Number(
+        settings.maximum_loan_amount
+      ),
 
     tier_1_max_amount:
-      Number(settings.tier_1_max_amount),
+      Number(
+        settings.tier_1_max_amount
+      ),
 
     tier_1_interest_rate:
-      Number(settings.tier_1_interest_rate),
+      Number(
+        settings.tier_1_interest_rate
+      ),
 
     tier_2_interest_rate:
-      Number(settings.tier_2_interest_rate),
-
-    // ----------------------------------------------------------
-    // Loan-term settings
-    // ----------------------------------------------------------
+      Number(
+        settings.tier_2_interest_rate
+      ),
 
     term_1_max_amount:
-      Number(settings.term_1_max_amount),
+      Number(
+        settings.term_1_max_amount
+      ),
 
     term_1_months:
-      Number(settings.term_1_months),
+      Number(
+        settings.term_1_months
+      ),
 
     term_2_max_amount:
-      Number(settings.term_2_max_amount),
+      Number(
+        settings.term_2_max_amount
+      ),
 
     term_2_months:
-      Number(settings.term_2_months),
+      Number(
+        settings.term_2_months
+      ),
 
     term_3_months:
-      Number(settings.term_3_months),
-
-    // ----------------------------------------------------------
-    // Global loan-term safety limit
-    // ----------------------------------------------------------
+      Number(
+        settings.term_3_months
+      ),
 
     maximum_loan_term_months:
       Number(
         settings.maximum_loan_term_months
       ),
 
-    // ----------------------------------------------------------
-    // Interest-cycle settings
-    // ----------------------------------------------------------
-
     interest_cycle_enabled:
-      Boolean(settings.interest_cycle_enabled),
+      Boolean(
+        settings.interest_cycle_enabled
+      ),
 
     interest_cycle_days:
-      Number(settings.interest_cycle_days),
+      Number(
+        settings.interest_cycle_days
+      ),
 
     interest_cycle_time:
-      settings.interest_cycle_time || null,
-
-    // ----------------------------------------------------------
-    // Regional settings
-    // ----------------------------------------------------------
+      settings.interest_cycle_time ||
+      null,
 
     currency:
-      settings.currency || "ZAR",
+      settings.currency ||
+      "ZAR",
 
     timezone:
       settings.timezone ||
       "Africa/Johannesburg",
-
-    // ----------------------------------------------------------
-    // Audit
-    // ----------------------------------------------------------
 
     updated_at:
       new Date().toISOString(),
@@ -362,13 +474,15 @@ export async function updateSystemSettings(settings) {
       userId,
   };
 
-  const { data, error } =
-    await supabase
-      .from("system_settings")
-      .update(payload)
-      .eq("id", current.id)
-      .select()
-      .single();
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("system_settings")
+    .update(payload)
+    .eq("id", current.id)
+    .select()
+    .single();
 
   if (error) {
     console.error(
@@ -379,58 +493,9 @@ export async function updateSystemSettings(settings) {
     throw error;
   }
 
-  const savedCompanyName =
-    typeof data.company_name === "string"
-      ? data.company_name.trim()
-      : "";
-
-  const savedShortName =
-    typeof data.short_name === "string"
-      ? data.short_name.trim()
-      : "";
-
-  const identity =
-    buildSystemIdentity(
-      savedCompanyName,
-      savedShortName
-    );
-
-  return {
-    ...DEFAULT_SETTINGS,
-    ...data,
-
-    company_name:
-      savedCompanyName,
-
-    short_name:
-      savedShortName,
-
-    financial_year_end:
-      normalizeFinancialYearEnd(
-        data.financial_year_end
-      ),
-
-    company_address:
-      data.company_address || "",
-
-    company_logo_url:
-      data.company_logo_url || "",
-
-    company_phone:
-      data.company_phone || "",
-
-    company_whatsapp:
-      data.company_whatsapp || "",
-
-    company_email:
-      data.company_email || "",
-
-    system_name:
-      identity.system_name,
-
-    mobile_app_name:
-      identity.mobile_app_name,
-  };
+  return normalizeSettings(
+    data
+  );
 }
 
 
@@ -438,17 +503,9 @@ export async function updateSystemSettings(settings) {
    MOBILE APP PAIRING
    ============================================================ */
 
-
-/**
- * Generate a new secure mobile-app pairing credential.
- *
- * The actual token and numeric code are generated inside
- * PostgreSQL and returned only once.
- *
- * Only an authenticated administrator can call this.
- */
 export async function createMobilePairing() {
-  const admin = await isCurrentUserAdmin();
+  const admin =
+    await isCurrentUserAdmin();
 
   if (!admin) {
     throw new Error(
@@ -456,10 +513,18 @@ export async function createMobilePairing() {
     );
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      "create_mobile_pairing"
+  if (isOfflineMode) {
+    throw new Error(
+      "Mobile pairing is not yet available while the LMS is running offline."
     );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "create_mobile_pairing"
+  );
 
   if (error) {
     console.error(
@@ -479,12 +544,9 @@ export async function createMobilePairing() {
   return data;
 }
 
-
-/**
- * Get all mobile devices connected to this LMS.
- */
 export async function getMobileDevices() {
-  const admin = await isCurrentUserAdmin();
+  const admin =
+    await isCurrentUserAdmin();
 
   if (!admin) {
     throw new Error(
@@ -492,10 +554,18 @@ export async function getMobileDevices() {
     );
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      "get_mobile_devices"
+  if (isOfflineMode) {
+    throw new Error(
+      "Mobile device management is not yet available while the LMS is running offline."
     );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "get_mobile_devices"
+  );
 
   if (error) {
     console.error(
@@ -511,14 +581,11 @@ export async function getMobileDevices() {
     : [];
 }
 
-
-/**
- * Revoke one mobile device.
- */
 export async function revokeMobileDevice(
   deviceId
 ) {
-  const admin = await isCurrentUserAdmin();
+  const admin =
+    await isCurrentUserAdmin();
 
   if (!admin) {
     throw new Error(
@@ -532,13 +599,22 @@ export async function revokeMobileDevice(
     );
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      "revoke_mobile_device",
-      {
-        p_device_id: deviceId,
-      }
+  if (isOfflineMode) {
+    throw new Error(
+      "Mobile device management is not yet available while the LMS is running offline."
     );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "revoke_mobile_device",
+    {
+      p_device_id:
+        deviceId,
+    }
+  );
 
   if (error) {
     console.error(
@@ -552,12 +628,9 @@ export async function revokeMobileDevice(
   return data;
 }
 
-
-/**
- * Revoke every mobile device connected to this LMS.
- */
 export async function revokeAllMobileDevices() {
-  const admin = await isCurrentUserAdmin();
+  const admin =
+    await isCurrentUserAdmin();
 
   if (!admin) {
     throw new Error(
@@ -565,10 +638,18 @@ export async function revokeAllMobileDevices() {
     );
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      "revoke_all_mobile_devices"
+  if (isOfflineMode) {
+    throw new Error(
+      "Mobile device management is not yet available while the LMS is running offline."
     );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "revoke_all_mobile_devices"
+  );
 
   if (error) {
     console.error(
@@ -587,17 +668,12 @@ export async function revokeAllMobileDevices() {
    LOAN RULES
    ============================================================ */
 
-
-/**
- * Determine the applicable interest rate for a loan amount.
- *
- * The threshold and rates come entirely from Settings.
- */
 export function getInterestRateForAmount(
   amount,
   settings
 ) {
-  const value = Number(amount);
+  const value =
+    Number(amount);
 
   if (
     !Number.isFinite(value) ||
@@ -613,13 +689,19 @@ export function getInterestRateForAmount(
   }
 
   const tierLimit =
-    Number(settings.tier_1_max_amount);
+    Number(
+      settings.tier_1_max_amount
+    );
 
   const tier1Rate =
-    Number(settings.tier_1_interest_rate);
+    Number(
+      settings.tier_1_interest_rate
+    );
 
   const tier2Rate =
-    Number(settings.tier_2_interest_rate);
+    Number(
+      settings.tier_2_interest_rate
+    );
 
   if (
     !Number.isFinite(tierLimit) ||
@@ -636,15 +718,12 @@ export function getInterestRateForAmount(
     : tier2Rate;
 }
 
-
-/**
- * Determine the applicable loan term from Settings.
- */
 export function getLoanTermForAmount(
   amount,
   settings
 ) {
-  const value = Number(amount);
+  const value =
+    Number(amount);
 
   if (
     !Number.isFinite(value) ||
@@ -662,25 +741,39 @@ export function getLoanTermForAmount(
   }
 
   const minimum =
-    Number(settings.minimum_loan_amount);
+    Number(
+      settings.minimum_loan_amount
+    );
 
   const maximum =
-    Number(settings.maximum_loan_amount);
+    Number(
+      settings.maximum_loan_amount
+    );
 
   const term1Max =
-    Number(settings.term_1_max_amount);
+    Number(
+      settings.term_1_max_amount
+    );
 
   const term1Months =
-    Number(settings.term_1_months);
+    Number(
+      settings.term_1_months
+    );
 
   const term2Max =
-    Number(settings.term_2_max_amount);
+    Number(
+      settings.term_2_max_amount
+    );
 
   const term2Months =
-    Number(settings.term_2_months);
+    Number(
+      settings.term_2_months
+    );
 
   const term3Months =
-    Number(settings.term_3_months);
+    Number(
+      settings.term_3_months
+    );
 
   const maximumTerm =
     Number(
@@ -746,13 +839,6 @@ export function getLoanTermForAmount(
   return termMonths;
 }
 
-
-/**
- * Validate the interest-cycle configuration.
- *
- * No business-rule fallback is supplied here.
- * The values must come from Settings.
- */
 export function validateInterestCycleSettings(
   settings
 ) {
@@ -766,7 +852,9 @@ export function validateInterestCycleSettings(
     settings.interest_cycle_enabled;
 
   const days =
-    Number(settings.interest_cycle_days);
+    Number(
+      settings.interest_cycle_days
+    );
 
   const time =
     settings.interest_cycle_time;
@@ -774,7 +862,9 @@ export function validateInterestCycleSettings(
   const timezone =
     settings.timezone;
 
-  if (typeof enabled !== "boolean") {
+  if (
+    typeof enabled !== "boolean"
+  ) {
     throw new Error(
       "Interest-cycle enabled setting is invalid."
     );
@@ -819,5 +909,6 @@ export function validateInterestCycleSettings(
   };
 }
 
-
-export { DEFAULT_SETTINGS };
+export {
+  DEFAULT_SETTINGS,
+};
