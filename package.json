@@ -1,7 +1,4 @@
 {
-  "dependencies": {
-    "firebase": "^12.16.0"
-  },
   "devDependencies": {
     "supabase": "^2.116.0"
   }
