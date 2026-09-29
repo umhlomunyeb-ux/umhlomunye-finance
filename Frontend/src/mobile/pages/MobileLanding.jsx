@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import {
   Alert,
   Box,
@@ -23,19 +29,18 @@ import LinkOffIcon from "@mui/icons-material/LinkOff";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 
 import { useNavigate } from "react-router-dom";
-import { Capacitor } from "@capacitor/core";
-import {
-  CapacitorBarcodeScanner,
-  CapacitorBarcodeScannerCameraDirection,
-  CapacitorBarcodeScannerTypeHint,
-} from "@capacitor/barcode-scanner";
+import { Html5Qrcode } from "html5-qrcode";
 
 import { supabase } from "../../lib/supabase";
 
-const DEVICE_ID_STORAGE_KEY = "lms_companion_device_id";
+const DEVICE_ID_STORAGE_KEY =
+  "lms_companion_device_id";
 
 const INSTALLATION_ID_STORAGE_KEY =
   "lms_companion_installation_id";
+
+const QR_SCANNER_ELEMENT_ID =
+  "lms-companion-qr-reader";
 
 function getDeviceId() {
   try {
@@ -122,10 +127,6 @@ function getDeviceName() {
 }
 
 function getPlatform() {
-  if (Capacitor.isNativePlatform()) {
-    return Capacitor.getPlatform();
-  }
-
   return "web";
 }
 
@@ -184,6 +185,9 @@ function extractQrPayload(rawValue) {
 export default function MobileLanding() {
   const navigate = useNavigate();
 
+  const qrScannerRef = useRef(null);
+  const qrScannerRunningRef = useRef(false);
+
   const [deviceId, setDeviceId] = useState("");
   const [deviceLinked, setDeviceLinked] =
     useState(false);
@@ -192,6 +196,7 @@ export default function MobileLanding() {
 
   const [checkingStatus, setCheckingStatus] =
     useState(true);
+
   const [pairing, setPairing] =
     useState(false);
 
@@ -199,8 +204,43 @@ export default function MobileLanding() {
 
   const [numericDialogOpen, setNumericDialogOpen] =
     useState(false);
+
   const [numericCode, setNumericCode] =
     useState("");
+
+  const [qrScannerOpen, setQrScannerOpen] =
+    useState(false);
+
+  const stopQrScanner = useCallback(async () => {
+    const scanner = qrScannerRef.current;
+
+    if (!scanner) {
+      return;
+    }
+
+    try {
+      if (qrScannerRunningRef.current) {
+        await scanner.stop();
+      }
+    } catch (err) {
+      console.warn(
+        "QR scanner stop warning:",
+        err
+      );
+    }
+
+    try {
+      scanner.clear();
+    } catch (err) {
+      console.warn(
+        "QR scanner clear warning:",
+        err
+      );
+    }
+
+    qrScannerRunningRef.current = false;
+    qrScannerRef.current = null;
+  }, []);
 
   const checkDeviceStatus = useCallback(
     async (currentDeviceId) => {
@@ -236,13 +276,6 @@ export default function MobileLanding() {
           Boolean(status?.is_revoked)
         );
 
-        /*
-         * If the device is already linked, restore
-         * the LMS installation ID from the database.
-         *
-         * This allows the app to recover the installation
-         * association if localStorage lost the value.
-         */
         if (
           status?.is_linked &&
           status?.installation_id
@@ -252,12 +285,6 @@ export default function MobileLanding() {
           );
         }
 
-        /*
-         * If the device has been explicitly revoked,
-         * remove the stored LMS installation ID so
-         * this device cannot continue using stale
-         * installation information.
-         */
         if (status?.is_revoked) {
           clearStoredInstallationId();
         }
@@ -344,22 +371,11 @@ export default function MobileLanding() {
           );
         }
 
-        /*
-         * Save the LMS installation that this
-         * device has successfully paired with.
-         *
-         * The returned installation_id is preferred,
-         * with the QR installation ID as a fallback.
-         */
         saveInstallationId(
           result?.installation_id ||
             installationId
         );
 
-        /*
-         * The server has already consumed the
-         * pairing credential at this point.
-         */
         await checkDeviceStatus(deviceId);
       } finally {
         setPairing(false);
@@ -368,79 +384,167 @@ export default function MobileLanding() {
     [checkDeviceStatus, deviceId]
   );
 
-  const handleScanQr = async () => {
-    if (!Capacitor.isNativePlatform()) {
-      setError(
-        "QR scanning is available in the installed mobile app."
-      );
+  useEffect(() => {
+    if (!qrScannerOpen) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const startScanner = async () => {
+      try {
+        setError("");
+
+        if (
+          typeof navigator === "undefined" ||
+          !navigator.mediaDevices ||
+          !navigator.mediaDevices.getUserMedia
+        ) {
+          throw new Error(
+            "Camera access is not available in this browser."
+          );
+        }
+
+        const scanner = new Html5Qrcode(
+          QR_SCANNER_ELEMENT_ID
+        );
+
+        qrScannerRef.current = scanner;
+
+        if (cancelled) {
+          return;
+        }
+
+        await scanner.start(
+          {
+            facingMode: "environment",
+          },
+          {
+            fps: 10,
+            qrbox: {
+              width: 250,
+              height: 250,
+            },
+            aspectRatio: 1,
+          },
+          async (decodedText) => {
+            if (cancelled) {
+              return;
+            }
+
+            cancelled = true;
+
+            try {
+              await stopQrScanner();
+
+              setQrScannerOpen(false);
+              setPairing(false);
+
+              const payload =
+                extractQrPayload(decodedText);
+
+              await completeQrPairing({
+                installationId:
+                  payload.installation_id,
+                pairingToken:
+                  payload.pairing_token,
+              });
+            } catch (err) {
+              console.error(
+                "QR pairing failed:",
+                err
+              );
+
+              setQrScannerOpen(false);
+              setPairing(false);
+
+              setError(
+                err?.message ||
+                  "Unable to scan or use the LMS pairing QR code."
+              );
+            }
+          },
+          () => {
+            /*
+             * QR decode failures are expected while
+             * the camera is searching. Do not display
+             * an error for every unsuccessful frame.
+             */
+          }
+        );
+
+        qrScannerRunningRef.current = true;
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "Unable to start QR scanner:",
+          err
+        );
+
+        setQrScannerOpen(false);
+        setPairing(false);
+
+        const message = String(
+          err?.message || ""
+        ).toLowerCase();
+
+        if (
+          message.includes("permission") ||
+          message.includes("notallowed")
+        ) {
+          setError(
+            "Camera permission was denied. Please allow camera access and try again."
+          );
+        } else if (
+          message.includes("secure context") ||
+          message.includes("https")
+        ) {
+          setError(
+            "QR scanning requires a secure HTTPS connection."
+          );
+        } else {
+          setError(
+            err?.message ||
+              "Unable to access the camera for QR scanning."
+          );
+        }
+      }
+    };
+
+    const timer = setTimeout(
+      startScanner,
+      100
+    );
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+
+      stopQrScanner();
+    };
+  }, [
+    completeQrPairing,
+    qrScannerOpen,
+    stopQrScanner,
+  ]);
+
+  const handleScanQr = () => {
+    setError("");
+    setPairing(true);
+    setQrScannerOpen(true);
+  };
+
+  const handleCloseQrScanner = async () => {
+    if (pairing) {
       return;
     }
 
-    try {
-      setPairing(true);
-      setError("");
+    await stopQrScanner();
 
-      const result =
-        await CapacitorBarcodeScanner.scanBarcode({
-          hint:
-            CapacitorBarcodeScannerTypeHint.QR_CODE,
-
-          scanInstructions:
-            "Scan the LMS pairing QR code",
-
-          scanButton: true,
-
-          scanText: "Scan",
-
-          cameraDirection:
-            CapacitorBarcodeScannerCameraDirection.BACK,
-        });
-
-      const rawValue = result?.ScanResult;
-
-      if (!rawValue) {
-        throw new Error(
-          "No QR code was scanned."
-        );
-      }
-
-      const payload =
-        extractQrPayload(rawValue);
-
-      setPairing(false);
-
-      await completeQrPairing({
-        installationId:
-          payload.installation_id,
-
-        pairingToken:
-          payload.pairing_token,
-      });
-    } catch (err) {
-      console.error(
-        "QR pairing failed:",
-        err
-      );
-
-      setPairing(false);
-
-      const message = String(
-        err?.message || ""
-      ).toLowerCase();
-
-      if (
-        message.includes("cancel") ||
-        message.includes("user cancelled") ||
-        message.includes("user canceled")
-      ) {
-        return;
-      }
-
-      setError(
-        err?.message ||
-          "Unable to scan or use the LMS pairing QR code."
-      );
-    }
+    setQrScannerOpen(false);
   };
 
   const handleNumericPairing = async () => {
@@ -492,10 +596,6 @@ export default function MobileLanding() {
         );
       }
 
-      /*
-       * Save the LMS installation returned by
-       * the successful numeric pairing.
-       */
       if (result?.installation_id) {
         saveInstallationId(
           result.installation_id
@@ -505,10 +605,6 @@ export default function MobileLanding() {
       setNumericDialogOpen(false);
       setNumericCode("");
 
-      /*
-       * The server has already consumed the
-       * numeric pairing credential.
-       */
       await checkDeviceStatus(deviceId);
     } catch (err) {
       console.error(
@@ -793,6 +889,72 @@ export default function MobileLanding() {
           </CardContent>
         </Card>
       </Box>
+
+      <Dialog
+        open={qrScannerOpen}
+        onClose={handleCloseQrScanner}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          Scan LMS Pairing QR Code
+        </DialogTitle>
+
+        <DialogContent>
+          <Stack spacing={2}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ textAlign: "center" }}
+            >
+              Allow camera access, then position
+              the LMS pairing QR code inside the
+              scanning area.
+            </Typography>
+
+            <Box
+              id={QR_SCANNER_ELEMENT_ID}
+              sx={{
+                width: "100%",
+                minHeight: 300,
+                overflow: "hidden",
+                borderRadius: 2,
+                "& video": {
+                  width: "100% !important",
+                  height: "auto !important",
+                  borderRadius: 2,
+                },
+                "& img": {
+                  maxWidth: "100%",
+                },
+              }}
+            />
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ textAlign: "center" }}
+            >
+              QR scanning uses this device's
+              browser camera.
+            </Typography>
+          </Stack>
+        </DialogContent>
+
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: 2,
+          }}
+        >
+          <Button
+            onClick={handleCloseQrScanner}
+            disabled={pairing}
+          >
+            Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={numericDialogOpen}

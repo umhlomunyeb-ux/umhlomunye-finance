@@ -1,5 +1,4 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Capacitor } from "@capacitor/core";
 
 import Login from "./pages/Login/Login";
 import Dashboard from "./pages/Dashboard/Dashboard";
@@ -26,33 +25,8 @@ import TestEmail from "./pages/TestEmail";
 import PendingApplications from "./pages/Applications/PendingApplications";
 import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
-import MobileLanding from "./mobile/pages/MobileLanding";
-import MobilePreview from "./mobile/pages/MobilePreview";
-
-import MobileApp from "./mobile/MobileApp";
 
 export default function App() {
-  /*
-   * NATIVE MOBILE APPLICATION
-   *
-   * Android/iOS only:
-   * Login
-   *   ↓
-   * Pending Applications
-   *   ↓
-   * Application Review
-   *
-   * The desktop system is not rendered inside the native app.
-   */
-  if (Capacitor.isNativePlatform()) {
-    return <MobileApp />;
-  }
-
-  /*
-   * EXISTING DESKTOP WEB APPLICATION
-   *
-   * This section remains unchanged.
-   */
   return (
     <>
       <Toaster position="top-right" />
@@ -77,35 +51,6 @@ export default function App() {
           <Route
             path="/verify-agreement/:token"
             element={<VerifyAgreement />}
-          />
-
-                      <Route 
-              path="/mobile" 
-              element={<MobileLanding />} 
-            />
-
-            <Route 
-              path="/mobile/preview" 
-              element={<MobilePreview />} 
-            />
-
-          {/* MOBILE APPLICATION REVIEW - WEB */}
-          <Route
-            path="/mobile/application-review"
-            element={
-              <ProtectedRoute>
-                <MobileApplicationReviews />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/mobile/application-review/:id"
-            element={
-              <ProtectedRoute>
-                <MobileApplicationReview />
-              </ProtectedRoute>
-            }
           />
 
           {/* DESKTOP PROTECTED SYSTEM */}
@@ -172,6 +117,16 @@ export default function App() {
             />
 
             <Route
+              path="/mobile/application-review"
+              element={<MobileApplicationReviews />}
+            />
+
+            <Route
+              path="/mobile/application-review/:id"
+              element={<MobileApplicationReview />}
+            />
+
+            <Route
               path="/loans/:id"
               element={<LoanProfile />}
             />
@@ -190,7 +145,6 @@ export default function App() {
               path="/pending-applications"
               element={<PendingApplications />}
             />
-
           </Route>
         </Routes>
       </BrowserRouter>
