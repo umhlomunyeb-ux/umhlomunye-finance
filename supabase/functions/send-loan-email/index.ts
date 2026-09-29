@@ -17,7 +17,7 @@ type EmailRequest = {
   applicationId?: string;
   loanId?: string;
 
-  recipientEmail: string;
+  recipientEmail?: string;
   recipientName?: string;
 
   applicationNumber?: string;
@@ -52,8 +52,13 @@ function formatCurrency(value: unknown): string {
   }).format(amount);
 }
 
-function buildEmailContent(data: EmailRequest) {
-  const clientName = escapeHtml(data.clientName || data.recipientName || "Client");
+function buildEmailContent(
+  data: EmailRequest,
+  frontendAppUrl: string
+) {
+  const clientName = escapeHtml(
+    data.clientName || data.recipientName || "Client"
+  );
 
   const applicationNumber = escapeHtml(
     data.applicationNumber || ""
@@ -68,12 +73,16 @@ function buildEmailContent(data: EmailRequest) {
   let body = "";
 
   if (data.notificationType === "PENDING_REVIEW") {
-    subject = `New Loan Application Pending Review – ${applicationNumber}`;
+    subject = `New Loan Application Pending Review - ${applicationNumber}`;
 
     title = "New Loan Application";
 
+    const reviewUrl = `${frontendAppUrl.replace(/\/+$/, "")}/applications/${encodeURIComponent(
+      data.applicationId || ""
+    )}`;
+
     body = `
-      <p>Hello Administrator,</p>
+      <p>Hello,</p>
 
       <p>
         A new loan application has been submitted and is
@@ -110,13 +119,35 @@ function buildEmailContent(data: EmailRequest) {
       </table>
 
       <p>
-        Please log in to Umhlomunye Finance to review the application.
+        Please use the button below to open the application directly.
+      </p>
+
+      <p style="text-align:center;margin:30px 0;">
+        <a
+          href="${escapeHtml(reviewUrl)}"
+          style="
+            display:inline-block;
+            padding:14px 24px;
+            background:#0b1f3a;
+            color:#ffffff;
+            text-decoration:none;
+            border-radius:6px;
+            font-weight:bold;
+          "
+        >
+          Review Application
+        </a>
+      </p>
+
+      <p style="font-size:12px;color:#777;">
+        If the button does not work, log in to Umhlomunye Finance
+        and open the Applications section.
       </p>
     `;
   }
 
   if (data.notificationType === "APPROVED") {
-    subject = `Loan Application Approved – ${loanNumber}`;
+    subject = `Loan Application Approved - ${loanNumber}`;
 
     title = "Loan Application Approved";
 
@@ -190,7 +221,7 @@ function buildEmailContent(data: EmailRequest) {
   }
 
   if (data.notificationType === "AGREEMENT") {
-    subject = `Loan Agreement Ready – ${loanNumber}`;
+    subject = `Loan Agreement Ready - ${loanNumber}`;
 
     title = "Loan Agreement Ready";
 
@@ -231,7 +262,7 @@ function buildEmailContent(data: EmailRequest) {
   }
 
   if (data.notificationType === "REJECTED") {
-    subject = `Loan Application Update – ${applicationNumber}`;
+    subject = `Loan Application Update - ${applicationNumber}`;
 
     title = "Loan Application Update";
 
@@ -333,6 +364,134 @@ function buildEmailContent(data: EmailRequest) {
   };
 }
 
+async function sendEmail(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  brevoApiKey: string,
+  senderEmail: string,
+  senderName: string,
+  recipientEmail: string,
+  recipientName: string | null,
+  data: EmailRequest,
+  frontendAppUrl: string
+) {
+  const email = buildEmailContent(
+    {
+      ...data,
+      recipientEmail,
+      recipientName: recipientName || undefined,
+    },
+    frontendAppUrl
+  );
+
+  const { data: notification, error: insertError } =
+    await supabaseAdmin
+      .from("email_notifications")
+      .insert({
+        application_id: data.applicationId || null,
+        loan_id: data.loanId || null,
+        recipient_email: recipientEmail,
+        recipient_name: recipientName || null,
+        notification_type: data.notificationType,
+        subject: email.subject,
+        status: "PENDING",
+      })
+      .select()
+      .single();
+
+  if (insertError) {
+    console.error(
+      "Notification log insert error:",
+      insertError
+    );
+  }
+
+  const brevoResponse = await fetch(
+    "https://api.brevo.com/v3/smtp/email",
+    {
+      method: "POST",
+
+      headers: {
+        accept: "application/json",
+        "api-key": brevoApiKey,
+        "content-type": "application/json",
+      },
+
+      body: JSON.stringify({
+        sender: {
+          name: senderName,
+          email: senderEmail,
+        },
+
+        to: [
+          {
+            email: recipientEmail,
+            name: recipientName || undefined,
+          },
+        ],
+
+        subject: email.subject,
+
+        htmlContent: email.html,
+      }),
+    }
+  );
+
+  const responseText = await brevoResponse.text();
+
+  if (!brevoResponse.ok) {
+    let errorMessage = responseText;
+
+    try {
+      const parsed = JSON.parse(responseText);
+
+      errorMessage =
+        parsed.message ||
+        parsed.code ||
+        responseText;
+    } catch {
+      // Keep raw response.
+    }
+
+    if (notification?.id) {
+      await supabaseAdmin
+        .from("email_notifications")
+        .update({
+          status: "FAILED",
+          error_message: errorMessage,
+        })
+        .eq("id", notification.id);
+    }
+
+    throw new Error(
+      `Brevo email failed for ${recipientEmail}: ${errorMessage}`
+    );
+  }
+
+  let brevoResult: {
+    messageId?: string;
+  } = {};
+
+  try {
+    brevoResult = JSON.parse(responseText);
+  } catch {
+    // Ignore JSON parsing failure.
+  }
+
+  if (notification?.id) {
+    await supabaseAdmin
+      .from("email_notifications")
+      .update({
+        status: "SENT",
+        brevo_message_id:
+          brevoResult.messageId || null,
+        sent_at: new Date().toISOString(),
+      })
+      .eq("id", notification.id);
+  }
+
+  return brevoResult.messageId || null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
@@ -347,10 +506,6 @@ Deno.serve(async (req) => {
       throw new Error("notificationType is required.");
     }
 
-    if (!body.recipientEmail) {
-      throw new Error("recipientEmail is required.");
-    }
-
     const brevoApiKey = Deno.env.get("BREVO_API_KEY");
     const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL");
     const senderName =
@@ -362,7 +517,9 @@ Deno.serve(async (req) => {
     }
 
     if (!senderEmail) {
-      throw new Error("BREVO_SENDER_EMAIL is not configured.");
+      throw new Error(
+        "BREVO_SENDER_EMAIL is not configured."
+      );
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -376,142 +533,147 @@ Deno.serve(async (req) => {
       );
     }
 
+    const frontendAppUrl =
+      Deno.env.get("FRONTEND_APP_URL");
+
+    if (!frontendAppUrl) {
+      throw new Error(
+        "FRONTEND_APP_URL is not configured."
+      );
+    }
+
     const supabaseAdmin = createClient(
       supabaseUrl,
       supabaseSecretKey
     );
 
-    const email = buildEmailContent(body);
-
-    const { data: notification, error: insertError } =
-      await supabaseAdmin
-        .from("email_notifications")
-        .insert({
-          application_id:
-            body.applicationId || null,
-
-          loan_id:
-            body.loanId || null,
-
-          recipient_email:
-            body.recipientEmail,
-
-          recipient_name:
-            body.recipientName || null,
-
-          notification_type:
-            body.notificationType,
-
-          subject:
-            email.subject,
-
-          status:
-            "PENDING",
-        })
-        .select()
-        .single();
-
-    if (insertError) {
-      console.error(
-        "Notification log insert error:",
-        insertError
-      );
-    }
-
-    const brevoResponse = await fetch(
-      "https://api.brevo.com/v3/smtp/email",
-      {
-        method: "POST",
-
-        headers: {
-          accept: "application/json",
-          "api-key": brevoApiKey,
-          "content-type": "application/json",
-        },
-
-        body: JSON.stringify({
-          sender: {
-            name: senderName,
-            email: senderEmail,
-          },
-
-          to: [
-            {
-              email: body.recipientEmail,
-              name:
-                body.recipientName ||
-                body.clientName ||
-                undefined,
-            },
-          ],
-
-          subject: email.subject,
-
-          htmlContent: email.html,
-        }),
-      }
-    );
-
-    const responseText =
-      await brevoResponse.text();
-
-    if (!brevoResponse.ok) {
-      let errorMessage = responseText;
-
-      try {
-        const parsed = JSON.parse(responseText);
-
-        errorMessage =
-          parsed.message ||
-          parsed.code ||
-          responseText;
-      } catch {
-        // Keep raw response.
-      }
-
-      if (notification?.id) {
+    /*
+     * PENDING_REVIEW:
+     * Send the same notification to every active,
+     * non-deleted registered user with an email address.
+     */
+    if (body.notificationType === "PENDING_REVIEW") {
+      const { data: users, error: usersError } =
         await supabaseAdmin
-          .from("email_notifications")
-          .update({
-            status: "FAILED",
-            error_message: errorMessage,
-          })
-          .eq("id", notification.id);
+          .from("users")
+          .select("email, full_name")
+          .eq("is_active", true)
+          .eq("is_deleted", false)
+          .not("email", "is", null);
+
+      if (usersError) {
+        throw new Error(
+          `Unable to load notification recipients: ${usersError.message}`
+        );
       }
 
-      throw new Error(
-        `Brevo email failed: ${errorMessage}`
+      const recipients = (users || [])
+        .map((user) => ({
+          email: String(user.email || "").trim(),
+          fullName: user.full_name || null,
+        }))
+        .filter(
+          (user) => user.email.length > 0
+        );
+
+      if (recipients.length === 0) {
+        throw new Error(
+          "No active registered users with email addresses were found."
+        );
+      }
+
+      const results = [];
+
+      for (const recipient of recipients) {
+        try {
+          const messageId = await sendEmail(
+            supabaseAdmin,
+            brevoApiKey,
+            senderEmail,
+            senderName,
+            recipient.email,
+            recipient.fullName,
+            body,
+            frontendAppUrl
+          );
+
+          results.push({
+            email: recipient.email,
+            success: true,
+            messageId,
+          });
+        } catch (error) {
+          results.push({
+            email: recipient.email,
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unknown error",
+          });
+        }
+      }
+
+      const failed = results.filter(
+        (result) => !result.success
+      );
+
+      if (failed.length > 0) {
+        console.error(
+          "Some PENDING_REVIEW emails failed:",
+          failed
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: failed.length === 0,
+          recipients: results.length,
+          sent: results.filter(
+            (result) => result.success
+          ).length,
+          failed: failed.length,
+          results,
+        }),
+        {
+          status:
+            failed.length === results.length
+              ? 500
+              : 200,
+          headers: {
+            ...corsHeaders,
+            "Content-Type":
+              "application/json",
+          },
+        }
       );
     }
 
-    let brevoResult: {
-      messageId?: string;
-    } = {};
-
-    try {
-      brevoResult =
-        JSON.parse(responseText);
-    } catch {
-      // Ignore JSON parsing failure.
+    /*
+     * All other notification types continue to use
+     * the explicitly supplied recipient.
+     */
+    if (!body.recipientEmail) {
+      throw new Error(
+        "recipientEmail is required for this notification type."
+      );
     }
 
-    if (notification?.id) {
-      await supabaseAdmin
-        .from("email_notifications")
-        .update({
-          status: "SENT",
-          brevo_message_id:
-            brevoResult.messageId || null,
-          sent_at: new Date().toISOString(),
-        })
-        .eq("id", notification.id);
-    }
+    const messageId = await sendEmail(
+      supabaseAdmin,
+      brevoApiKey,
+      senderEmail,
+      senderName,
+      body.recipientEmail,
+      body.recipientName || null,
+      body,
+      frontendAppUrl
+    );
 
     return new Response(
       JSON.stringify({
         success: true,
-        messageId:
-          brevoResult.messageId || null,
+        messageId,
       }),
       {
         status: 200,

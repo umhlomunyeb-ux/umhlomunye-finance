@@ -1,24 +1,50 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
+
 import { supabase } from "../../lib/supabase";
 
 export default function Header() {
+  const navigate = useNavigate();
+
   const [userName, setUserName] = useState("User");
   const [companyName, setCompanyName] = useState(
     "Umhlomunye Finance"
   );
   const [companyLogo, setCompanyLogo] = useState(null);
+  const [pendingApplications, setPendingApplications] =
+    useState(0);
 
   useEffect(() => {
     loadHeaderData();
+    loadPendingApplications();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
       loadHeaderData();
+      loadPendingApplications();
     });
+
+    const channel = supabase
+      .channel("header-pending-applications")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "loan_applications",
+        },
+        () => {
+          loadPendingApplications();
+        }
+      )
+      .subscribe();
 
     return () => {
       subscription.unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -31,6 +57,33 @@ export default function Header() {
     } catch (error) {
       console.error(
         "Header data error:",
+        error
+      );
+    }
+  }
+
+  async function loadPendingApplications() {
+    try {
+      const { count, error } = await supabase
+        .from("loan_applications")
+        .select("id", {
+          count: "exact",
+          head: true,
+        })
+        .in("status", ["PENDING", "UNDER_REVIEW"]);
+
+      if (error) {
+        console.error(
+          "Unable to load pending applications:",
+          error
+        );
+        return;
+      }
+
+      setPendingApplications(count || 0);
+    } catch (error) {
+      console.error(
+        "Pending applications error:",
         error
       );
     }
@@ -127,6 +180,10 @@ export default function Header() {
     }
   }
 
+  function handleNotifications() {
+    navigate("/applications");
+  }
+
   return (
     <div
       style={{
@@ -141,10 +198,7 @@ export default function Header() {
         gap: 20,
       }}
     >
-      {/* ==================================================
-          LEFT SIDE - LOGO + COMPANY NAME + PAGE TITLE
-      =================================================== */}
-
+      {/* LEFT SIDE - LOGO + COMPANY NAME */}
       <div
         style={{
           display: "flex",
@@ -153,8 +207,6 @@ export default function Header() {
           minWidth: 0,
         }}
       >
-        {/* Company Logo */}
-
         {companyLogo ? (
           <img
             src={companyLogo}
@@ -187,8 +239,6 @@ export default function Header() {
           </div>
         )}
 
-        {/* Company Name */}
-
         <div
           style={{
             minWidth: 0,
@@ -206,23 +256,81 @@ export default function Header() {
           >
             {companyName}
           </div>
-          
         </div>
       </div>
 
-
-      {/* ==================================================
-          RIGHT SIDE - USER
-      =================================================== */}
-
-      <strong
+      {/* RIGHT SIDE - NOTIFICATIONS + USER */}
+      <div
         style={{
-          whiteSpace: "nowrap",
-          color: "#374151",
+          display: "flex",
+          alignItems: "center",
+          gap: 20,
         }}
       >
-        {userName}
-      </strong>
+        <button
+          type="button"
+          onClick={handleNotifications}
+          aria-label={
+            pendingApplications > 0
+              ? `${pendingApplications} applications require attention`
+              : "Notifications"
+          }
+          style={{
+            position: "relative",
+            width: 42,
+            height: 42,
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 8,
+          }}
+        >
+          <NotificationsNoneOutlinedIcon
+            style={{
+              fontSize: 27,
+              color: "#374151",
+            }}
+          />
+
+          {pendingApplications > 0 && (
+            <span
+              style={{
+                position: "absolute",
+                top: 2,
+                right: 2,
+                minWidth: 20,
+                height: 20,
+                padding: "0 5px",
+                borderRadius: 10,
+                background: "#dc2626",
+                color: "white",
+                fontSize: 11,
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxSizing: "border-box",
+              }}
+            >
+              {pendingApplications > 99
+                ? "99+"
+                : pendingApplications}
+            </span>
+          )}
+        </button>
+
+        <strong
+          style={{
+            whiteSpace: "nowrap",
+            color: "#374151",
+          }}
+        >
+          {userName}
+        </strong>
+      </div>
     </div>
   );
 }

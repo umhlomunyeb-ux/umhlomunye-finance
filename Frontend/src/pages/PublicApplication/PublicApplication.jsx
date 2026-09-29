@@ -653,6 +653,26 @@ export default function PublicApplication() {
         );
       }
 
+      try {
+        await supabase.functions.invoke(
+          "send-loan-email",
+          {
+            body: {
+              notificationType: "PENDING_REVIEW",
+              applicationId: id,
+              applicationNumber: number,
+              clientName: `${form.first_name.trim()} ${form.last_name.trim()}`,
+              amountRequested: amount,
+            },
+          }
+        );
+      } catch (emailError) {
+        console.error(
+          "APPLICATION REVIEW EMAIL ERROR:",
+          emailError
+        );
+      }
+
       setApplicationNumber(
         number || "SUBMITTED"
       );
