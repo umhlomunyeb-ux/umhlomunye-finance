@@ -1,0 +1,66 @@
+name: Deploy LMS Clients
+
+on:
+  push:
+    branches:
+      - online-lms
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lms-client-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ matrix.client }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - client: Umhlomunye
+            worker: umhlomunye-finance2
+            supabase_url_secret: UMHLOMUNYE_SUPABASE_URL
+            supabase_anon_secret: UMHLOMUNYE_SUPABASE_ANON_KEY
+            public_app_url_secret: UMHLOMUNYE_PUBLIC_APP_URL
+
+          - client: Umthaniya
+            worker: umthaniya-finance
+            supabase_url_secret: UMTHANIYA_SUPABASE_URL
+            supabase_anon_secret: UMTHANIYA_SUPABASE_ANON_KEY
+            public_app_url_secret: UMTHANIYA_PUBLIC_APP_URL
+
+    env:
+      VITE_SUPABASE_URL: ${{ secrets[matrix.supabase_url_secret] }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets[matrix.supabase_anon_secret] }}
+      VITE_PUBLIC_APP_URL: ${{ secrets[matrix.public_app_url_secret] }}
+
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: Frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: Frontend
+        run: npm run build
+
+      - name: Deploy Cloudflare Worker
+        working-directory: Frontend
+        run: npx wrangler deploy --name "${{ matrix.worker }}"
