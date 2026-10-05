@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -60,6 +61,42 @@ const menu = [
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [companyName, setCompanyName] = useState("Company");
+
+  useEffect(() => {
+    loadCompanySettings();
+  }, []);
+
+  async function loadCompanySettings() {
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("system_settings")
+        .select("company_name")
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          "Unable to load company settings:",
+          error
+        );
+        return;
+      }
+
+      setCompanyName(
+        data?.company_name || "Company"
+      );
+    } catch (error) {
+      console.error(
+        "Company settings error:",
+        error
+      );
+    }
+  }
 
   const handleLogout = async () => {
     try {
@@ -142,7 +179,7 @@ export default function Sidebar() {
                 whiteSpace: "nowrap",
               }}
             >
-              Umhlomunye
+              {companyName}
             </div>
 
             <div

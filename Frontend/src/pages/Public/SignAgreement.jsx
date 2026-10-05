@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import {
@@ -10,729 +10,939 @@ import {
   Divider,
   FormControlLabel,
   Paper,
+  Stack,
   TextField,
   Typography,
 } from "@mui/material";
 
 import QRCode from "qrcode";
-import { supabase } from "../../lib/supabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+
+import { supabase } from "../../lib/supabase";
+
+import {
+  drawPdfCompanyHeader,
+  getPdfCompanyInfo,
+  getPdfLogoDataUrl,
+  getLogoAccentColor,
+} from "../../services/pdfBrandingService";
 
 const acceptanceText =
   "I have read, understood and agree to the terms and conditions of this loan agreement.";
 
+const NEUTRAL_TEXT = [0, 0, 0];
+const NEUTRAL_GREY = [80, 80, 80];
+const LIGHT_GREY = [200, 200, 200];
+
+function rgbToCss(rgb) {
+  if (!Array.isArray(rgb) || rgb.length < 3) {
+    return "rgb(80, 80, 80)";
+  }
+
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+function safeString(value, fallback = "-") {
+  if (
+    value === null ||
+    value === undefined ||
+    String(value).trim() === ""
+  ) {
+    return fallback;
+  }
+
+  return String(value);
+}
+
+function formatCurrency(value) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "R 0.00";
+  }
+
+  return new Intl.NumberFormat("en-ZA", {
+    style: "currency",
+    currency: "ZAR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat("en-ZA", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat("en-ZA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function getAgreementCustomerName(agreement) {
+  if (!agreement) {
+    return "";
+  }
+
+  return (
+    agreement.customer_name ||
+    agreement.customer?.full_name ||
+    agreement.customer?.name ||
+    [
+      agreement.customer?.first_name,
+      agreement.customer?.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    ""
+  );
+}
+
 /* ============================================================
-   GENERATE SIGNED AGREEMENT PDF
+   MASTER STATEMENT TABLE STYLE
 ============================================================ */
 
-const generateSignedAgreementPdf = async (
-  agreement,
-  acceptance
-) => {
-  const doc = new jsPDF("p", "mm", "a4");
+function applyMasterTable(pdf, accent, options = {}) {
+  const {
+    startY,
+    head,
+    body,
+    columnStyles,
+    margin = 14,
+    fontSize = 8,
+  } = options;
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
+  autoTable(pdf, {
+    startY,
 
-  const margin = 18;
-  const contentWidth = pageWidth - margin * 2;
-
-  const verificationUrl =
-    `${window.location.origin}/verify-agreement/` +
-    agreement.verification_token;
-
-  const qrCode = await QRCode.toDataURL(verificationUrl, {
-    width: 220,
-    margin: 1,
-    errorCorrectionLevel: "H",
-  });
-
-  /* ==========================================================
-     HEADER
-  ========================================================== */
-
-  doc.setFillColor(15, 39, 71);
-  doc.rect(0, 0, pageWidth, 30, "F");
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-
-  doc.text(
-    "UMHLOMUNYE FINANCE",
-    margin,
-    12
-  );
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-
-  doc.text(
-    "Our dreams, Our hope",
-    margin,
-    18
-  );
-
-  doc.setFontSize(7);
-
-  doc.text(
-    "Reg. No. 2020/191721/07",
-    margin,
-    23
-  );
-
-  doc.text(
-    "20 Jacaranda Street, Kinross, 2270",
-    margin + 38,
-    23
-  );
-
-  doc.text(
-    "Tel: 078 078 3879 | WhatsApp: 060 508 6672",
-    margin,
-    27
-  );
-
-  doc.text(
-    "Email: umhlomunyeb@gmail.com",
-    margin + 80,
-    27
-  );
-
-  /* ==========================================================
-     QR CODE - TOP RIGHT
-  ========================================================== */
-
-  doc.addImage(
-    qrCode,
-    "PNG",
-    pageWidth - margin - 30,
-    34,
-    30,
-    30
-  );
-
-  doc.setTextColor(15, 39, 71);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-
-  doc.text(
-    "VERIFY AGREEMENT",
-    pageWidth - margin - 30,
-    67
-  );
-
-  /* ==========================================================
-     TITLE
-  ========================================================== */
-
-  doc.setTextColor(15, 39, 71);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-
-  doc.text(
-    "LOAN AGREEMENT",
-    margin,
-    48
-  );
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(80, 80, 80);
-
-  doc.text(
-    "Official electronically accepted agreement",
-    margin,
-    54
-  );
-
-  /* ==========================================================
-     AGREEMENT INFORMATION
-  ========================================================== */
-
-  autoTable(doc, {
-    startY: 72,
     margin: {
       left: margin,
       right: margin,
     },
+
+    head,
+    body,
+
     theme: "grid",
 
-    head: [
-      [
-        "Agreement Number",
-        "Loan Number",
-        "Agreement Version",
-      ],
-    ],
-
-    body: [
-      [
-        agreement.agreement_number || "-",
-        agreement.loan_number || "-",
-        agreement.agreement_version || "-",
-      ],
-    ],
-
     styles: {
-      fontSize: 8,
-      cellPadding: 4,
+      font: "helvetica",
+      fontSize,
+      cellPadding: 3,
+      textColor: NEUTRAL_TEXT,
+      lineColor: accent,
+      lineWidth: 0.2,
+      valign: "middle",
     },
 
     headStyles: {
-      fillColor: [15, 39, 71],
-      textColor: 255,
+      fillColor: accent,
+      textColor: [255, 255, 255],
       fontStyle: "bold",
+      lineColor: accent,
+      lineWidth: 0.2,
     },
+
+    alternateRowStyles: {
+      fillColor: [255, 255, 255],
+    },
+
+    columnStyles,
   });
 
-  /* ==========================================================
-     CUSTOMER
-  ========================================================== */
+  return (
+    pdf.lastAutoTable?.finalY ||
+    startY + 12
+  );
+}
 
-  let y = doc.lastAutoTable.finalY + 10;
+/* ============================================================
+   MASTER SECTION HEADING
+============================================================ */
 
-  doc.setTextColor(15, 39, 71);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+function drawSectionHeading(
+  pdf,
+  title,
+  y,
+  accent
+) {
+  pdf.setFont(
+    "helvetica",
+    "bold"
+  );
 
-  doc.text(
-    "CUSTOMER DETAILS",
-    margin,
+  pdf.setFontSize(12);
+
+  pdf.setTextColor(
+    ...accent
+  );
+
+  pdf.text(
+    title,
+    14,
     y
   );
 
-  y += 6;
-
-  autoTable(doc, {
-    startY: y,
-    margin: {
-      left: margin,
-      right: margin,
-    },
-    theme: "grid",
-
-    body: [
-      [
-        "Customer Name",
-        agreement.customer_name || "-",
-      ],
-      [
-        "Loan Number",
-        agreement.loan_number || "-",
-      ],
-      [
-        "Agreement Number",
-        agreement.agreement_number || "-",
-      ],
-    ],
-
-    styles: {
-      fontSize: 8,
-      cellPadding: 4,
-    },
-
-    columnStyles: {
-      0: {
-        fontStyle: "bold",
-        cellWidth: 55,
-      },
-
-      1: {
-        cellWidth: contentWidth - 55,
-      },
-    },
-  });
-
-  /* ==========================================================
-     LOAN DETAILS
-  ========================================================== */
-
-  y = doc.lastAutoTable.finalY + 10;
-
-  doc.setTextColor(15, 39, 71);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-
-  doc.text(
-    "LOAN DETAILS",
-    margin,
-    y
+  pdf.setTextColor(
+    ...NEUTRAL_TEXT
   );
 
-  y += 6;
+  return y + 5;
+}
 
-  const money = (value) =>
-    `R${Number(value || 0).toFixed(2)}`;
+/* ============================================================
+   MASTER BODY TEXT
+============================================================ */
 
-  autoTable(doc, {
-    startY: y,
-    margin: {
-      left: margin,
-      right: margin,
-    },
-    theme: "grid",
+function drawBodyText(
+  pdf,
+  text,
+  x,
+  y,
+  width,
+  options = {}
+) {
+  const {
+    fontSize = 9,
+    lineHeight = 4.5,
+    fontStyle = "normal",
+    color = NEUTRAL_TEXT,
+  } = options;
 
-    body: [
-      [
-        "Principal Amount",
-        money(agreement.principal_amount),
-      ],
-
-      [
-        "Interest Rate",
-        `${Number(
-          agreement.interest_rate || 0
-        ).toFixed(2)}%`,
-      ],
-
-      [
-        "Interest Amount",
-        money(agreement.interest_amount),
-      ],
-
-      [
-        "Total Repayment",
-        money(agreement.total_repayment),
-      ],
-
-      [
-        "Current Balance",
-        money(agreement.current_balance),
-      ],
-
-      [
-        "First Payment Date",
-        agreement.first_payment_date || "-",
-      ],
-
-      [
-        "Next Payment Date",
-        agreement.next_payment_date || "-",
-      ],
-    ],
-
-    styles: {
-      fontSize: 8,
-      cellPadding: 4,
-    },
-
-    columnStyles: {
-      0: {
-        fontStyle: "bold",
-        cellWidth: 55,
-      },
-
-      1: {
-        cellWidth: contentWidth - 55,
-      },
-    },
-  });
-
-  /* ==========================================================
-     TERMS AND CONDITIONS
-  ========================================================== */
-
-  y = doc.lastAutoTable.finalY + 12;
-
-  doc.setTextColor(15, 39, 71);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-
-  doc.text(
-    "TERMS AND CONDITIONS",
-    margin,
-    y
+  pdf.setFont(
+    "helvetica",
+    fontStyle
   );
 
-  y += 7;
-
-  const terms = [
-    [
-      "1.",
-      "Loan Agreement",
-      "This agreement records the terms governing the loan advanced by Umhlomunye Finance to the customer.",
-    ],
-
-    [
-      "2.",
-      "Principal Amount",
-      "The principal amount is the amount advanced to the customer as recorded in the loan details above.",
-    ],
-
-    [
-      "3.",
-      "Interest",
-      "Interest is charged at the rate stated in this agreement and forms part of the customer's repayment obligation.",
-    ],
-
-    [
-      "4.",
-      "Repayment",
-      "The customer agrees to repay the amount due according to the applicable repayment schedule.",
-    ],
-
-    [
-      "5.",
-      "Payment Dates",
-      "The customer is responsible for making payments on or before the applicable payment dates.",
-    ],
-
-    [
-      "6.",
-      "Payment Allocation",
-      "Payments received may be allocated against amounts due in accordance with the lender's applicable repayment rules.",
-    ],
-
-    [
-      "7.",
-      "Outstanding Balance",
-      "The outstanding balance may change following payments, interest calculations and other applicable charges.",
-    ],
-
-    [
-      "8.",
-      "Early Payment",
-      "The customer may make payment before the scheduled payment date, subject to the applicable terms.",
-    ],
-
-    [
-      "9.",
-      "Default",
-      "Failure to meet repayment obligations may result in the account being treated as overdue.",
-    ],
-
-    [
-      "10.",
-      "Customer Information",
-      "The customer confirms that information supplied in connection with this loan is accurate and complete.",
-    ],
-
-    [
-      "11.",
-      "Communication",
-      "The customer agrees that the lender may communicate regarding the loan using the contact information supplied.",
-    ],
-
-    [
-      "12.",
-      "Electronic Agreement",
-      "This agreement may be accepted electronically and electronic acceptance constitutes confirmation of the customer's agreement to these terms.",
-    ],
-
-    [
-      "13.",
-      "Digital Signature",
-      "The customer's electronic acceptance is recorded as a digital signature reference together with the acceptance date and time.",
-    ],
-
-    [
-      "14.",
-      "Electronic Records",
-      "Electronic records maintained by the lender may be used as evidence of the agreement and acceptance.",
-    ],
-
-    [
-      "15.",
-      "Verification",
-      "The authenticity of this agreement may be checked using the verification QR code or verification facility provided by Umhlomunye Finance.",
-    ],
-
-    [
-      "16.",
-      "Agreement Documents",
-      "The electronically accepted agreement may be stored electronically as an official loan document.",
-    ],
-
-    [
-      "17.",
-      "Customer Responsibility",
-      "The customer remains responsible for complying with the repayment obligations contained in this agreement.",
-    ],
-
-    [
-      "18.",
-      "Changes",
-      "Any changes to the contractual terms must be recorded through an authorised process.",
-    ],
-
-    [
-      "19.",
-      "Notices",
-      "Important notices relating to the loan may be provided using the customer's registered contact details.",
-    ],
-
-    [
-      "20.",
-      "Confidentiality",
-      "Information relating to the customer's loan will be handled in accordance with applicable requirements.",
-    ],
-
-    [
-      "21.",
-      "Applicable Law",
-      "This agreement is subject to applicable laws and regulatory requirements governing the lending relationship.",
-    ],
-
-    [
-      "22.",
-      "Customer Confirmation",
-      "The customer confirms that they have had an opportunity to review the agreement before accepting it.",
-    ],
-
-    [
-      "23.",
-      "Acceptance",
-      "By electronically accepting this agreement, the customer confirms that they agree to the terms contained in this document.",
-    ],
-
-    [
-      "24.",
-      "Entire Agreement",
-      "This document records the loan agreement accepted electronically by the customer.",
-    ],
-  ];
-
-  autoTable(doc, {
-    startY: y,
-
-    margin: {
-      left: margin,
-      right: margin,
-      bottom: 25,
-    },
-
-    theme: "grid",
-
-    body: terms,
-
-    styles: {
-      fontSize: 7.5,
-      cellPadding: 3,
-      valign: "top",
-      overflow: "linebreak",
-    },
-
-    columnStyles: {
-      0: {
-        cellWidth: 10,
-        fontStyle: "bold",
-      },
-
-      1: {
-        cellWidth: 38,
-        fontStyle: "bold",
-      },
-
-      2: {
-        cellWidth: contentWidth - 48,
-      },
-    },
-  });
-
-  /* ==========================================================
-     ELECTRONIC ACCEPTANCE
-  ========================================================== */
-
-  y = doc.lastAutoTable.finalY + 12;
-
-  if (y > pageHeight - 85) {
-    doc.addPage();
-    y = 25;
-  }
-
-  doc.setTextColor(15, 39, 71);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-
-  doc.text(
-    "ELECTRONIC ACCEPTANCE RECORD",
-    margin,
-    y
+  pdf.setFontSize(
+    fontSize
   );
 
-  y += 7;
-
-  const acceptedAt = acceptance.accepted_at
-    ? new Date(
-        acceptance.accepted_at
-      ).toLocaleString("en-ZA")
-    : "-";
-
-  autoTable(doc, {
-    startY: y,
-
-    margin: {
-      left: margin,
-      right: margin,
-    },
-
-    theme: "grid",
-
-    body: [
-      [
-        "Customer Name",
-        acceptance.customer_name_at_acceptance ||
-          "-",
-      ],
-
-      [
-        "Acceptance Date & Time",
-        acceptedAt,
-      ],
-
-      [
-        "Digital Signature Reference",
-        acceptance.digital_signature_reference ||
-          "-",
-      ],
-
-      [
-        "Acceptance",
-        "Electronically accepted",
-      ],
-
-      [
-        "Acceptance Statement",
-        acceptance.acceptance_text || "-",
-      ],
-    ],
-
-    styles: {
-      fontSize: 8,
-      cellPadding: 4,
-      valign: "top",
-    },
-
-    columnStyles: {
-      0: {
-        fontStyle: "bold",
-        cellWidth: 60,
-      },
-
-      1: {
-        cellWidth: contentWidth - 60,
-      },
-    },
-  });
-
-  /* ==========================================================
-     AUTHENTICITY
-  ========================================================== */
-
-  y = doc.lastAutoTable.finalY + 10;
-
-  if (y > pageHeight - 70) {
-    doc.addPage();
-    y = 25;
-  }
-
-  doc.setTextColor(15, 39, 71);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-
-  doc.text(
-    "AUTHENTICITY VERIFICATION",
-    margin,
-    y
+  pdf.setTextColor(
+    ...color
   );
 
-  y += 6;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(70, 70, 70);
-
-  doc.text(
-    "Scan the QR code to verify the authenticity of this agreement.",
-    margin,
-    y
-  );
-
-  doc.addImage(
-    qrCode,
-    "PNG",
-    pageWidth - margin - 35,
-    y + 5,
-    35,
-    35
-  );
-
-  doc.setFontSize(7);
-
-  const verificationLines =
-    doc.splitTextToSize(
-      verificationUrl,
-      contentWidth - 45
+  const lines =
+    pdf.splitTextToSize(
+      safeString(text, ""),
+      width
     );
 
-  doc.text(
-    verificationLines,
-    margin,
-    y + 12
+  pdf.text(
+    lines,
+    x,
+    y
   );
 
-  /* ==========================================================
-     FOOTER
-  ========================================================== */
+  return (
+    y +
+    lines.length *
+      lineHeight
+  );
+}
 
-  const totalPages =
-    doc.getNumberOfPages();
+/* ============================================================
+   MASTER FOOTER
+============================================================ */
+
+function drawPdfFooter(pdf) {
+  const pageCount =
+    pdf.getNumberOfPages();
+
+  const pageWidth =
+    pdf.internal.pageSize.getWidth();
+
+  const pageHeight =
+    pdf.internal.pageSize.getHeight();
 
   for (
-    let i = 1;
-    i <= totalPages;
-    i++
+    let page = 1;
+    page <= pageCount;
+    page++
   ) {
-    doc.setPage(i);
+    pdf.setPage(page);
 
-    doc.setDrawColor(
-      200,
-      200,
-      200
+    pdf.setDrawColor(
+      ...LIGHT_GREY
     );
 
-    doc.line(
-      margin,
-      pageHeight - 14,
-      pageWidth - margin,
-      pageHeight - 14
+    pdf.setLineWidth(0.2);
+
+    pdf.line(
+      14,
+      pageHeight - 15,
+      pageWidth - 14,
+      pageHeight - 15
     );
 
-    doc.setFont(
+    pdf.setFont(
       "helvetica",
       "normal"
     );
 
-    doc.setFontSize(7);
-    doc.setTextColor(
-      100,
-      100,
-      100
+    pdf.setFontSize(8);
+
+    pdf.setTextColor(
+      ...NEUTRAL_GREY
     );
 
-    doc.text(
-      "UMHLOMUNYE FINANCE • Official Loan Agreement",
-      margin,
-      pageHeight - 8
+    pdf.text(
+      "Official Loan Agreement",
+      14,
+      pageHeight - 9
     );
 
-    doc.text(
-      `Page ${i} of ${totalPages}`,
-      pageWidth - margin,
-      pageHeight - 8,
+    pdf.text(
+      `Page ${page} of ${pageCount}`,
+      pageWidth - 14,
+      pageHeight - 9,
       {
         align: "right",
       }
     );
   }
-
-  return doc.output("blob");
-};
+}
 
 /* ============================================================
-   SIGN AGREEMENT
+   SIGNED AGREEMENT PDF
+   Uses the Statement PDF as the master visual template.
+============================================================ */
+
+async function generateSignedAgreementPdf(
+  agreement,
+  customerName
+) {
+  if (!agreement) {
+    throw new Error(
+      "Agreement information is not available."
+    );
+  }
+
+  const pdf = new jsPDF(
+    "p",
+    "mm",
+    "a4"
+  );
+
+  const margin = 14;
+
+  const pageWidth =
+    pdf.internal.pageSize.getWidth();
+
+  const contentWidth =
+    pageWidth -
+    margin * 2;
+
+  const verificationToken =
+    agreement.verification_token ||
+    null;
+
+  const verificationUrl =
+    verificationToken
+      ? `${window.location.origin}/verify-agreement/${verificationToken}`
+      : null;
+
+  /*
+   * MASTER STATEMENT HEADER
+   */
+  const {
+    contentStartY,
+    accent,
+  } =
+    await drawPdfCompanyHeader(
+      pdf,
+      verificationUrl
+    );
+
+  /*
+   * MASTER TITLE
+   */
+  let currentY =
+    contentStartY;
+
+  pdf.setFontSize(15);
+
+  pdf.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  pdf.setTextColor(
+    ...accent
+  );
+
+  pdf.text(
+    "LOAN AGREEMENT",
+    margin,
+    currentY
+  );
+
+  pdf.setTextColor(
+    ...NEUTRAL_TEXT
+  );
+
+  /*
+   * AGREEMENT INFORMATION
+   */
+  const detailsStartY =
+    currentY + 8;
+
+  const agreementRows = [
+    [
+      "Agreement Number",
+      safeString(
+        agreement.agreement_number
+      ),
+    ],
+    [
+      "Loan Number",
+      safeString(
+        agreement.loan_number
+      ),
+    ],
+    [
+      "Agreement Version",
+      safeString(
+        agreement.agreement_version ||
+          agreement.version
+      ),
+    ],
+    [
+      "Customer",
+      safeString(
+        customerName
+      ),
+    ],
+  ];
+
+  applyMasterTable(
+    pdf,
+    accent,
+    {
+      startY:
+        detailsStartY,
+
+      head: [
+        [
+          "Agreement Information",
+          "Value",
+        ],
+      ],
+
+      body:
+        agreementRows,
+
+      columnStyles: {
+        0: {
+          cellWidth: 72,
+          fontStyle: "bold",
+        },
+
+        1: {
+          cellWidth: 108,
+        },
+      },
+    }
+  );
+
+  currentY =
+    pdf.lastAutoTable?.finalY ||
+    detailsStartY + 20;
+
+  /*
+   * LOAN DETAILS
+   */
+  currentY += 12;
+
+  currentY =
+    drawSectionHeading(
+      pdf,
+      "Loan Details",
+      currentY,
+      accent
+    );
+
+  const loanRows = [
+    [
+      "Customer Name",
+      safeString(
+        customerName
+      ),
+    ],
+    [
+      "Loan Number",
+      safeString(
+        agreement.loan_number
+      ),
+    ],
+    [
+      "Principal Amount",
+      formatCurrency(
+        agreement.principal_amount
+      ),
+    ],
+    [
+      "Interest Rate",
+      `${safeString(
+        agreement.interest_rate,
+        "0"
+      )}%`,
+    ],
+    [
+      "Interest Amount",
+      formatCurrency(
+        agreement.interest_amount
+      ),
+    ],
+    [
+      "Total Repayment",
+      formatCurrency(
+        agreement.total_repayment
+      ),
+    ],
+    [
+      "Current Balance",
+      formatCurrency(
+        agreement.current_balance
+      ),
+    ],
+    [
+      "First Payment Date",
+      formatDate(
+        agreement.first_payment_date
+      ),
+    ],
+    [
+      "Next Payment Date",
+      formatDate(
+        agreement.next_payment_date
+      ),
+    ],
+  ];
+
+  applyMasterTable(
+    pdf,
+    accent,
+    {
+      startY:
+        currentY,
+
+      head: [
+        [
+          "Loan Information",
+          "Details",
+        ],
+      ],
+
+      body:
+        loanRows,
+
+      columnStyles: {
+        0: {
+          cellWidth: 72,
+          fontStyle: "bold",
+        },
+
+        1: {
+          cellWidth: 108,
+        },
+      },
+    }
+  );
+
+  currentY =
+    pdf.lastAutoTable?.finalY ||
+    currentY + 20;
+
+  /*
+   * TERMS AND CONDITIONS
+   */
+  currentY += 12;
+
+  currentY =
+    drawSectionHeading(
+      pdf,
+      "Terms and Conditions",
+      currentY,
+      accent
+    );
+
+  const terms =
+    Array.isArray(
+      agreement.terms
+    )
+      ? agreement.terms
+      : [];
+
+  if (terms.length > 0) {
+    for (
+      let index = 0;
+      index < terms.length;
+      index++
+    ) {
+      const term =
+        terms[index];
+
+      const title =
+        term.title ||
+        term.heading ||
+        `Term ${index + 1}`;
+
+      const body =
+        term.content ||
+        term.text ||
+        term.description ||
+        "";
+
+      /*
+       * Start a new page when required.
+       *
+       * IMPORTANT:
+       * This is intentionally inside the async
+       * function so the header can be awaited safely.
+       */
+      if (
+        currentY >
+        pdf.internal.pageSize.getHeight() -
+          35
+      ) {
+        pdf.addPage();
+
+        const newHeader =
+          await drawPdfCompanyHeader(
+            pdf,
+            verificationUrl
+          );
+
+        currentY =
+          newHeader.contentStartY;
+      }
+
+      pdf.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      pdf.setFontSize(9);
+
+      pdf.setTextColor(
+        ...NEUTRAL_TEXT
+      );
+
+      pdf.text(
+        `${index + 1}. ${safeString(
+          title,
+          ""
+        )}`,
+        margin,
+        currentY
+      );
+
+      currentY += 4;
+
+      currentY =
+        drawBodyText(
+          pdf,
+          body,
+          margin,
+          currentY,
+          contentWidth,
+          {
+            fontSize: 9,
+            lineHeight: 4.5,
+          }
+        );
+
+      currentY += 4;
+    }
+  } else {
+    const agreementTerms =
+      agreement.terms_and_conditions ||
+      agreement.terms_text ||
+      agreement.agreement_terms ||
+      "";
+
+    if (agreementTerms) {
+      currentY =
+        drawBodyText(
+          pdf,
+          agreementTerms,
+          margin,
+          currentY,
+          contentWidth,
+          {
+            fontSize: 9,
+            lineHeight: 4.5,
+          }
+        );
+
+      currentY += 4;
+    }
+  }
+
+  /*
+   * ELECTRONIC ACCEPTANCE
+   */
+  if (
+    currentY >
+    pdf.internal.pageSize.getHeight() -
+      85
+  ) {
+    pdf.addPage();
+
+    const newHeader =
+      await drawPdfCompanyHeader(
+        pdf,
+        verificationUrl
+      );
+
+    currentY =
+      newHeader.contentStartY;
+  }
+
+  currentY += 8;
+
+  currentY =
+    drawSectionHeading(
+      pdf,
+      "Electronic Acceptance Record",
+      currentY,
+      accent
+    );
+
+  const acceptanceDate =
+    agreement.accepted_at ||
+    agreement.acceptance_date ||
+    agreement.signed_at ||
+    null;
+
+  const acceptanceRows = [
+    [
+      "Customer Name",
+      safeString(
+        agreement.customer_name ||
+          customerName
+      ),
+    ],
+    [
+      "Acceptance Date & Time",
+      formatDateTime(
+        acceptanceDate
+      ),
+    ],
+    [
+      "Digital Signature Reference",
+      safeString(
+        agreement.signature_reference ||
+          agreement.digital_signature_reference
+      ),
+    ],
+    [
+      "Acceptance",
+      "Accepted electronically",
+    ],
+    [
+      "Acceptance Statement",
+      acceptanceText,
+    ],
+  ];
+
+  applyMasterTable(
+    pdf,
+    accent,
+    {
+      startY:
+        currentY,
+
+      head: [
+        [
+          "Acceptance Field",
+          "Recorded Value",
+        ],
+      ],
+
+      body:
+        acceptanceRows,
+
+      columnStyles: {
+        0: {
+          cellWidth: 65,
+          fontStyle: "bold",
+        },
+
+        1: {
+          cellWidth: 115,
+        },
+      },
+    }
+  );
+
+  currentY =
+    pdf.lastAutoTable?.finalY ||
+    currentY + 20;
+
+  /*
+   * AUTHENTICITY AND VERIFICATION
+   */
+  if (
+    currentY >
+    pdf.internal.pageSize.getHeight() -
+      65
+  ) {
+    pdf.addPage();
+
+    const newHeader =
+      await drawPdfCompanyHeader(
+        pdf,
+        verificationUrl
+      );
+
+    currentY =
+      newHeader.contentStartY;
+  }
+
+  currentY += 12;
+
+  currentY =
+    drawSectionHeading(
+      pdf,
+      "Authenticity and Verification",
+      currentY,
+      accent
+    );
+
+  currentY =
+    drawBodyText(
+      pdf,
+      "This document is the electronically accepted loan agreement associated with the agreement and verification records maintained by the lending system.",
+      margin,
+      currentY,
+      contentWidth,
+      {
+        fontSize: 9,
+        lineHeight: 4.5,
+      }
+    );
+
+  currentY += 5;
+
+  /*
+   * Verification QR.
+   *
+   * The master header already contains the QR.
+   * This second QR is retained at the verification
+   * section because it provides a direct verification
+   * reference in the body of the agreement.
+   */
+  if (verificationUrl) {
+    try {
+      const qrDataUrl =
+        await QRCode.toDataURL(
+          verificationUrl,
+          {
+            errorCorrectionLevel:
+              "M",
+            margin: 1,
+            width: 300,
+          }
+        );
+
+      pdf.addImage(
+        qrDataUrl,
+        "PNG",
+        margin,
+        currentY,
+        31,
+        31
+      );
+
+      pdf.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      pdf.setFontSize(7);
+
+      pdf.setTextColor(
+        ...NEUTRAL_GREY
+      );
+
+      pdf.text(
+        "Scan to verify",
+        margin + 15.5,
+        currentY + 35,
+        {
+          align: "center",
+        }
+      );
+
+      const urlX =
+        margin + 38;
+
+      const urlY =
+        currentY + 8;
+
+      const wrappedUrl =
+        pdf.splitTextToSize(
+          verificationUrl,
+          contentWidth - 38
+        );
+
+      pdf.text(
+        wrappedUrl,
+        urlX,
+        urlY
+      );
+
+      pdf.setTextColor(
+        ...NEUTRAL_TEXT
+      );
+    } catch (qrError) {
+      console.warn(
+        "PDF VERIFICATION QR ERROR:",
+        qrError
+      );
+    }
+  }
+
+  /*
+   * MASTER FOOTER
+   */
+  drawPdfFooter(
+    pdf
+  );
+
+  return pdf;
+}
+
+/* ============================================================
+   SIGN AGREEMENT PAGE
 ============================================================ */
 
 export default function SignAgreement() {
@@ -741,13 +951,6 @@ export default function SignAgreement() {
     agreementId,
   } = useParams();
 
-  /*
-   * Public mode:
-   *   /sign-agreement/:token
-   *
-   * Same-computer mode:
-   *   /sign-agreement/offline/:agreementId
-   */
   const isSameComputerMode =
     Boolean(agreementId);
 
@@ -775,750 +978,814 @@ export default function SignAgreement() {
   const [success, setSuccess] =
     useState(false);
 
+  const [companyInfo, setCompanyInfo] =
+    useState({
+      companyName: "",
+      shortName: "",
+      companyAddress: "",
+      companyPhone: "",
+      companyWhatsapp: "",
+      companyEmail: "",
+      companyLogoUrl: "",
+    });
+
+  const [brandAccent, setBrandAccent] =
+    useState([
+      80,
+      80,
+      80,
+    ]);
+
+  const [companyLogo, setCompanyLogo] =
+    useState(null);
+
+  /* ==========================================================
+     CENTRALIZED BRANDING
+  ========================================================== */
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadBranding() {
+      try {
+        const info =
+          await getPdfCompanyInfo();
+
+        if (!active) {
+          return;
+        }
+
+        setCompanyInfo(
+          info
+        );
+
+        const logo =
+          await getPdfLogoDataUrl(
+            info.companyLogoUrl
+          );
+
+        if (!active) {
+          return;
+        }
+
+        setCompanyLogo(
+          logo
+        );
+
+        const accent =
+          await getLogoAccentColor(
+            logo
+          );
+
+        if (!active) {
+          return;
+        }
+
+        setBrandAccent(
+          accent
+        );
+      } catch (brandingError) {
+        console.error(
+          "BRANDING LOAD ERROR:",
+          brandingError
+        );
+      }
+    }
+
+    loadBranding();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   /* ==========================================================
      LOAD AGREEMENT
   ========================================================== */
 
-  useEffect(() => {
-    loadAgreement();
-  }, [token, agreementId]);
-
-  async function loadAgreement() {
-    try {
-      setLoading(true);
-      setError("");
-      setAgreement(null);
-
-      let agreementData = null;
-
-      /* ========================================================
-         SAME-COMPUTER MODE
-      ======================================================== */
-
-      if (isSameComputerMode) {
-        if (!agreementId) {
-          throw new Error(
-            "No agreement ID was provided."
-          );
-        }
-
-        const {
-          data,
-          error: agreementError,
-        } = await supabase
-          .from("loan_agreements")
-          .select(`
-            id,
-            loan_id,
-            customer_id,
-            agreement_number,
-            agreement_version,
-            status,
-            signing_token,
-            verification_token,
-            generated_at,
-            created_at,
-            updated_at,
-            accepted_at,
-            digital_signature_reference,
-            acceptance_text,
-            customer_name_at_acceptance,
-            document_path
-          `)
-          .eq("id", agreementId)
-          .maybeSingle();
-
-        if (agreementError) {
-          throw agreementError;
-        }
-
-        if (!data) {
-          setError(
-            "The agreement could not be found."
-          );
-          return;
-        }
-
-        if (
-          String(data.status || "")
-            .toLowerCase() !== "pending"
-        ) {
-          setError(
-            `This agreement is already ${data.status || "not available"} and cannot be signed again.`
-          );
-          return;
-        }
-
-        if (!data.signing_token) {
-          throw new Error(
-            "This agreement does not have a valid signing token."
-          );
-        }
-
-        agreementData = data;
-
-        /* ======================================================
-           LOAD CUSTOMER
-        ====================================================== */
-
-        if (data.customer_id) {
-          const {
-            data: customerData,
-            error: customerError,
-          } = await supabase
-            .from("customers")
-            .select(`
-              first_name,
-              last_name
-            `)
-            .eq("id", data.customer_id)
-            .maybeSingle();
-
-          if (customerError) {
-            console.warn(
-              "Could not load customer:",
-              customerError
-            );
-          }
-
-          if (customerData) {
-            agreementData = {
-              ...agreementData,
-              first_name:
-                customerData.first_name,
-              last_name:
-                customerData.last_name,
-            };
-          }
-        }
-
-        /* ======================================================
-           LOAD LOAN
-        ====================================================== */
-
-        if (data.loan_id) {
-          const {
-            data: loanData,
-            error: loanError,
-          } = await supabase
-            .from("loans")
-            .select(`
-              loan_number,
-              principal_amount,
-              interest_rate,
-              interest_amount,
-              total_repayment,
-              current_balance,
-              first_payment_date,
-              next_payment_date
-            `)
-            .eq("id", data.loan_id)
-            .maybeSingle();
-
-          if (loanError) {
-            throw loanError;
-          }
-
-          if (loanData) {
-            agreementData = {
-              ...agreementData,
-              ...loanData,
-            };
-          }
-        }
-      }
-
-      /* ========================================================
-         PUBLIC ONLINE MODE
-      ======================================================== */
-
-      else {
-        if (!token) {
-          setError(
-            "No agreement signing token was provided."
-          );
-          return;
-        }
-
-        const {
-          data,
-          error: rpcError,
-        } = await supabase.rpc(
-          "get_agreement_for_signing",
-          {
-            p_signing_token: token,
-          }
-        );
-
-        if (rpcError) {
-          throw rpcError;
-        }
-
-        if (!data || data.length === 0) {
-          setError(
-            "This agreement link is invalid or has expired."
-          );
-          return;
-        }
-
-        agreementData = data[0];
-      }
-
-      /* ========================================================
-         CUSTOMER NAME
-      ======================================================== */
-
-      const fullCustomerName =
-        agreementData.customer_name ||
-        agreementData.customer_name_at_acceptance ||
-        `${agreementData.first_name || ""} ${
-          agreementData.last_name || ""
-        }`.trim();
-
-      setAgreement(agreementData);
-      setCustomerName(fullCustomerName);
-
-      /* ========================================================
-         QR CODE
-      ======================================================== */
-
-      if (!agreementData.verification_token) {
-        throw new Error(
-          "This agreement does not have a verification token."
-        );
-      }
-
-      const agreementUrl =
-        `${window.location.origin}/verify-agreement/` +
-        agreementData.verification_token;
-
-      const qrDataUrl =
-        await QRCode.toDataURL(
-          agreementUrl,
-          {
-            width: 220,
-            margin: 1,
-            errorCorrectionLevel: "H",
-          }
-        );
-
-      setQrCode(qrDataUrl);
-    } catch (err) {
-      console.error(
-        "LOAD AGREEMENT ERROR:",
-        err
-      );
-
-      setError(
-        err?.message ||
-          "Unable to load the loan agreement."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /* ============================================================
-     ACCEPT AGREEMENT
-  ============================================================ */
-
-  const handleAccept = async () => {
-    if (!customerName.trim()) {
-      setError(
-        "Please enter your full name."
-      );
-      return;
-    }
-
-    if (!accepted) {
-      setError(
-        "Please tick the agreement checkbox before submitting."
-      );
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setError("");
-
-      /* ========================================================
-         DETERMINE SIGNING TOKEN
-      ======================================================== */
-
-      let signingToken = token;
-
-      if (isSameComputerMode) {
-        signingToken =
-          agreement?.signing_token;
-      }
-
-      if (!signingToken) {
-        throw new Error(
-          "A valid agreement signing token could not be found."
-        );
-      }
-
-      /* ========================================================
-         1. RECORD CUSTOMER ACCEPTANCE
-      ======================================================== */
-
-      const {
-        data: acceptedAgreementId,
-        error: acceptError,
-      } = await supabase.rpc(
-        "accept_loan_agreement",
-        {
-          p_signing_token:
-            signingToken,
-
-          p_customer_name:
-            customerName.trim(),
-
-          p_acceptance_text:
-            acceptanceText,
-
-          p_ip_address:
-            null,
-
-          p_user_agent:
-            navigator.userAgent,
-        }
-      );
-
-      if (acceptError) {
-        throw acceptError;
-      }
-
-      if (!acceptedAgreementId) {
-        throw new Error(
-          "The agreement was accepted, but no agreement ID was returned."
-        );
-      }
-
-      /* ========================================================
-         2. LOAD SIGNED AGREEMENT
-      ======================================================== */
-
-      const {
-        data: signedAgreement,
-        error: signedError,
-      } = await supabase
-        .from("loan_agreements")
-        .select(`
-          id,
-          loan_id,
-          customer_id,
-          agreement_number,
-          agreement_version,
-          status,
-          generated_at,
-          accepted_at,
-          digital_signature_reference,
-          acceptance_text,
-          customer_name_at_acceptance,
-          verification_token,
-          signing_token
-        `)
-        .eq("id", acceptedAgreementId)
-        .single();
-
-      if (signedError) {
-        throw signedError;
-      }
-
-      if (!signedAgreement) {
-        throw new Error(
-          "Unable to retrieve the accepted agreement."
-        );
-      }
-
-      /* ========================================================
-         3. LOAD LOAN
-      ======================================================== */
-
-      const {
-        data: loanData,
-        error: loanError,
-      } = await supabase
-        .from("loans")
-        .select(`
-          loan_number,
-          principal_amount,
-          interest_rate,
-          interest_amount,
-          total_repayment,
-          current_balance,
-          first_payment_date,
-          next_payment_date
-        `)
-        .eq(
-          "id",
-          signedAgreement.loan_id
-        )
-        .single();
-
-      if (loanError) {
-        throw loanError;
-      }
-
-      /* ========================================================
-         4. PREPARE PDF DATA
-      ======================================================== */
-
-      const agreementForPdf = {
-        ...signedAgreement,
-        ...loanData,
-
-        customer_name:
-          signedAgreement.customer_name_at_acceptance ||
-          customerName.trim(),
-      };
-
-      /* ========================================================
-         5. GENERATE OFFICIAL SIGNED PDF
-      ======================================================== */
-
-      const pdfBlob =
-        await generateSignedAgreementPdf(
-          agreementForPdf,
-          signedAgreement
-        );
-
-      if (!(pdfBlob instanceof Blob)) {
-        throw new Error(
-          "The signed agreement PDF could not be generated."
-        );
-      }
-
-      if (
-        !signedAgreement.verification_token
-      ) {
-        throw new Error(
-          "The accepted agreement does not have a verification token."
-        );
-      }
-
-      /* ========================================================
-         6. GET SIGNING TOKEN
-      ======================================================== */
-
-      let finalSigningToken =
-        signedAgreement.signing_token;
-
-      if (!finalSigningToken) {
-        const {
-          data: agreementWithToken,
-          error: tokenError,
-        } = await supabase
-          .from("loan_agreements")
-          .select(`
-            id,
-            signing_token,
-            agreement_number,
-            document_path
-          `)
-          .eq(
-            "id",
-            signedAgreement.id
-          )
-          .single();
-
-        if (tokenError) {
-          throw tokenError;
-        }
-
-        finalSigningToken =
-          agreementWithToken?.signing_token;
-      }
-
-      if (!finalSigningToken) {
-        throw new Error(
-          "The accepted agreement does not have a valid signing token."
-        );
-      }
-
-      /* ========================================================
-         7. PREPARE PDF FOR SECURE STORAGE
-      ======================================================== */
-
-      const formData =
-        new FormData();
-
-      formData.append(
-        "agreement_id",
-        signedAgreement.id
-      );
-
-      formData.append(
-        "signing_token",
-        finalSigningToken
-      );
-
-      formData.append(
-        "pdf",
-        pdfBlob,
-        `${signedAgreement.agreement_number}-signed.pdf`
-      );
-
-      /* ========================================================
-         8. CREATE SIGNED DOCUMENT
-      ======================================================== */
-
-      const {
-        data: functionData,
-        error: functionError,
-      } =
-        await supabase.functions.invoke(
-          "create-signed-agreement-document",
-          {
-            body: formData,
-          }
-        );
-
-      if (functionError) {
-        console.error(
-          "Signed agreement document function error:",
-          functionError
-        );
-
-        let functionMessage =
-          functionError.message;
+  const loadAgreement =
+    useCallback(
+      async () => {
+        setLoading(true);
+        setError("");
 
         try {
-          if (functionError.context) {
-            const responseBody =
-              await functionError.context.json();
+          let agreementData =
+            null;
 
-            console.error(
-              "Signed agreement Edge Function response:",
-              responseBody
-            );
+          /*
+           * PUBLIC ONLINE SIGNING
+           */
+          if (
+            !isSameComputerMode
+          ) {
+            if (!token) {
+              throw new Error(
+                "The agreement signing link is invalid."
+              );
+            }
 
-            if (responseBody?.error) {
-              functionMessage =
-                responseBody.error;
+            const {
+              data,
+              error:
+                agreementError,
+            } =
+              await supabase.rpc(
+                "get_agreement_for_signing",
+                {
+                  p_signing_token:
+                    token,
+                }
+              );
+
+            if (
+              agreementError
+            ) {
+              throw agreementError;
+            }
+
+            agreementData =
+              Array.isArray(data)
+                ? data[0]
+                : data;
+
+            if (
+              !agreementData
+            ) {
+              throw new Error(
+                "Agreement not found or the signing link is no longer valid."
+              );
             }
           }
-        } catch (parseError) {
-          console.error(
-            "Could not read Edge Function error response:",
-            parseError
+
+          /*
+           * SAME-COMPUTER SIGNING
+           */
+          else {
+            const {
+              data: agreementRow,
+              error:
+                agreementError,
+            } =
+              await supabase
+                .from(
+                  "loan_agreements"
+                )
+                .select("*")
+                .eq(
+                  "id",
+                  agreementId
+                )
+                .maybeSingle();
+
+            if (
+              agreementError
+            ) {
+              throw agreementError;
+            }
+
+            if (
+              !agreementRow
+            ) {
+              throw new Error(
+                "Agreement not found."
+              );
+            }
+
+            if (
+              agreementRow.status &&
+              String(
+                agreementRow.status
+              ).toLowerCase() !==
+                "pending"
+            ) {
+              throw new Error(
+                "This agreement is no longer awaiting acceptance."
+              );
+            }
+
+            if (
+              !agreementRow.signing_token
+            ) {
+              throw new Error(
+                "This agreement does not have a valid signing token."
+              );
+            }
+
+            let customerData =
+              null;
+
+            if (
+              agreementRow.customer_id
+            ) {
+              const {
+                data,
+                error:
+                  customerError,
+              } =
+                await supabase
+                  .from(
+                    "customers"
+                  )
+                  .select(
+                    "id, first_name, last_name, full_name, name"
+                  )
+                  .eq(
+                    "id",
+                    agreementRow.customer_id
+                  )
+                  .maybeSingle();
+
+              if (
+                customerError
+              ) {
+                throw customerError;
+              }
+
+              customerData =
+                data;
+            }
+
+            let loanData =
+              null;
+
+            if (
+              agreementRow.loan_id
+            ) {
+              const {
+                data,
+                error:
+                  loanError,
+              } =
+                await supabase
+                  .from(
+                    "loans"
+                  )
+                  .select("*")
+                  .eq(
+                    "id",
+                    agreementRow.loan_id
+                  )
+                  .maybeSingle();
+
+              if (
+                loanError
+              ) {
+                throw loanError;
+              }
+
+              loanData =
+                data;
+            }
+
+            agreementData = {
+              ...agreementRow,
+              ...(loanData || {}),
+              customer:
+                customerData,
+              customer_name:
+                agreementRow.customer_name ||
+                customerData?.full_name ||
+                customerData?.name ||
+                [
+                  customerData?.first_name,
+                  customerData?.last_name,
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+            };
+          }
+
+          /*
+           * REQUIRE VERIFICATION TOKEN
+           */
+          if (
+            !agreementData.verification_token
+          ) {
+            throw new Error(
+              "This agreement does not have a verification token."
+            );
+          }
+
+          const derivedName =
+            getAgreementCustomerName(
+              agreementData
+            );
+
+          setAgreement(
+            agreementData
           );
+
+          setCustomerName(
+            derivedName
+          );
+
+          /*
+           * QR FOR ONLINE PAGE
+           */
+          const verificationUrl =
+            `${window.location.origin}/verify-agreement/${agreementData.verification_token}`;
+
+          const qr =
+            await QRCode.toDataURL(
+              verificationUrl,
+              {
+                errorCorrectionLevel:
+                  "M",
+                margin: 1,
+                width: 300,
+              }
+            );
+
+          setQrCode(
+            qr
+          );
+        } catch (loadError) {
+          console.error(
+            "LOAD AGREEMENT ERROR:",
+            loadError
+          );
+
+          setError(
+            loadError?.message ||
+              "Unable to load the loan agreement."
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      [
+        agreementId,
+        isSameComputerMode,
+        token,
+      ]
+    );
+
+  useEffect(() => {
+    loadAgreement();
+  }, [
+    loadAgreement,
+  ]);
+
+  /* ==========================================================
+     ACCEPT AGREEMENT
+  ========================================================== */
+
+  const handleAccept =
+    useCallback(
+      async () => {
+        if (!agreement) {
+          return;
         }
 
-        throw new Error(
-          functionMessage
-        );
-      }
+        const trimmedName =
+          customerName.trim();
 
-      if (!functionData?.success) {
-        throw new Error(
-          functionData?.error ||
-            "The official signed document could not be stored."
-        );
-      }
+        if (!trimmedName) {
+          setError(
+            "Please enter your full name."
+          );
+          return;
+        }
 
-      if (!functionData.document_path) {
-        throw new Error(
-          "The agreement was accepted, but no document path was returned."
-        );
-      }
+        if (!accepted) {
+          setError(
+            "Please confirm that you have read, understood and agree to the terms and conditions."
+          );
+          return;
+        }
 
-      console.log(
-        "Official signed agreement stored successfully:",
-        functionData.document_path
-      );
+        setSubmitting(true);
+        setError("");
 
-      /* ========================================================
-         9. EVERYTHING SUCCESSFUL
-      ======================================================== */
+        try {
+          const signingToken =
+            agreement.signing_token ||
+            token;
 
-      setAgreement({
-        ...agreement,
-        ...signedAgreement,
-        ...loanData,
+          if (
+            !signingToken
+          ) {
+            throw new Error(
+              "A valid signing token is required."
+            );
+          }
 
-        customer_name:
-          signedAgreement.customer_name_at_acceptance ||
-          customerName.trim(),
-      });
+          /*
+           * ACCEPTANCE RPC
+           */
+          const {
+            error:
+              acceptanceError,
+          } =
+            await supabase.rpc(
+              "accept_loan_agreement",
+              {
+                p_signing_token:
+                  signingToken,
 
-      setSuccess(true);
-    } catch (err) {
-      console.error(
-        "Agreement acceptance/storage error:",
-        err
-      );
+                p_customer_name:
+                  trimmedName,
 
-      setError(
-        err?.message ||
-          "The agreement was accepted, but we could not complete the document storage process."
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+                p_acceptance_text:
+                  acceptanceText,
 
-  /* ============================================================
+                p_ip_address:
+                  null,
+
+                p_user_agent:
+                  typeof navigator !==
+                  "undefined"
+                    ? navigator.userAgent
+                    : null,
+              }
+            );
+
+          if (
+            acceptanceError
+          ) {
+            throw acceptanceError;
+          }
+
+          /*
+           * RELOAD SIGNED AGREEMENT
+           */
+          let signedAgreement =
+            null;
+
+          const {
+            data,
+            error:
+              reloadError,
+          } =
+            await supabase.rpc(
+              "get_agreement_for_signing",
+              {
+                p_signing_token:
+                  signingToken,
+              }
+            );
+
+          if (
+            reloadError
+          ) {
+            throw reloadError;
+          }
+
+          signedAgreement =
+            Array.isArray(data)
+              ? data[0]
+              : data;
+
+          signedAgreement =
+            signedAgreement ||
+            agreement;
+
+          const agreementForPdf =
+            {
+              ...agreement,
+              ...signedAgreement,
+              customer_name:
+                signedAgreement?.customer_name ||
+                trimmedName,
+            };
+
+          /*
+           * GENERATE SIGNED PDF
+           */
+          const pdf =
+            await generateSignedAgreementPdf(
+              agreementForPdf,
+              trimmedName
+            );
+
+          const pdfBlob =
+            pdf.output(
+              "blob"
+            );
+
+          /*
+           * EXISTING EDGE FUNCTION
+           */
+          const formData =
+            new FormData();
+
+          formData.append(
+            "agreement_id",
+            String(
+              agreementForPdf.id ||
+                agreementId ||
+                ""
+            )
+          );
+
+          formData.append(
+            "signing_token",
+            String(
+              signingToken
+            )
+          );
+
+          formData.append(
+            "pdf",
+            pdfBlob,
+            `${
+              agreementForPdf.agreement_number ||
+              "loan-agreement"
+            }-signed.pdf`
+          );
+
+          const {
+            data:
+              functionData,
+            error:
+              functionError,
+          } =
+            await supabase.functions.invoke(
+              "create-signed-agreement-document",
+              {
+                body: formData,
+              }
+            );
+
+          if (
+            functionError
+          ) {
+            throw functionError;
+          }
+
+          if (
+            !functionData
+          ) {
+            throw new Error(
+              "The signed agreement document service returned no response."
+            );
+          }
+
+          if (
+            functionData.success ===
+              false ||
+            !functionData.document_path
+          ) {
+            throw new Error(
+              functionData.message ||
+                "The signed agreement PDF could not be stored."
+            );
+          }
+
+          setAgreement(
+            agreementForPdf
+          );
+
+          setCustomerName(
+            trimmedName
+          );
+
+          setSuccess(
+            true
+          );
+        } catch (acceptError) {
+          console.error(
+            "ACCEPT AGREEMENT ERROR:",
+            acceptError
+          );
+
+          setError(
+            acceptError?.message ||
+              "Unable to accept the agreement."
+          );
+        } finally {
+          setSubmitting(false);
+        }
+      },
+      [
+        accepted,
+        agreement,
+        agreementId,
+        customerName,
+        token,
+      ]
+    );
+
+  /* ==========================================================
+     BRANDING
+  ========================================================== */
+
+  const brandColor =
+    useMemo(
+      () =>
+        rgbToCss(
+          brandAccent
+        ),
+      [brandAccent]
+    );
+
+  const companyDisplayName =
+    companyInfo.companyName ||
+    companyInfo.shortName ||
+    "Loan Agreement";
+
+  /* ==========================================================
      LOADING
-  ============================================================ */
+  ========================================================== */
 
   if (loading) {
     return (
       <Box
         sx={{
           minHeight: "100vh",
+          bgcolor: "#fff",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#f4f6f8",
         }}
       >
-        <CircularProgress />
+        <CircularProgress
+          sx={{
+            color: brandColor,
+          }}
+        />
       </Box>
     );
   }
 
-  /* ============================================================
+  /* ==========================================================
      SUCCESS
-  ============================================================ */
+  ========================================================== */
 
   if (success) {
     return (
       <Box
         sx={{
           minHeight: "100vh",
-          backgroundColor: "#f4f6f8",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          p: 3,
+          bgcolor: "#fff",
+          px: 2,
+          py: 4,
         }}
       >
         <Paper
-          elevation={4}
+          elevation={0}
           sx={{
-            maxWidth: 650,
-            width: "100%",
-            p: 5,
-            textAlign: "center",
-            borderRadius: 3,
+            maxWidth: 760,
+            mx: "auto",
+            border:
+              "1px solid",
+            borderColor:
+              "divider",
+            borderRadius: 0,
+            p: {
+              xs: 3,
+              md: 5,
+            },
           }}
         >
-          <Typography
-            variant="h4"
-            sx={{
-              fontWeight: 700,
-              color: "#12355b",
-              mb: 2,
-            }}
+          <Stack
+            spacing={3}
+            alignItems="center"
+            textAlign="center"
           >
-            Agreement Accepted
-          </Typography>
+            {companyLogo && (
+              <Box
+                component="img"
+                src={companyLogo}
+                alt={
+                  companyDisplayName
+                }
+                sx={{
+                  width: 150,
+                  maxHeight: 100,
+                  objectFit:
+                    "contain",
+                }}
+              />
+            )}
 
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 600,
-              mb: 2,
-            }}
-          >
-            Congratulations!
-          </Typography>
+            <Divider
+              flexItem
+              sx={{
+                borderColor:
+                  brandColor,
+                borderBottomWidth: 2,
+              }}
+            />
 
-          <Typography sx={{ mb: 3 }}>
-            Your loan agreement has been
-            successfully accepted
-            electronically.
-          </Typography>
-
-          {agreement?.agreement_number && (
-            <Alert
-              severity="success"
-              sx={{ mb: 3 }}
+            <Typography
+              variant="h5"
+              fontWeight={700}
+              sx={{
+                color:
+                  brandColor,
+              }}
             >
-              Agreement Number:{" "}
-              <strong>
-                {agreement.agreement_number}
-              </strong>
-            </Alert>
-          )}
+              Agreement Accepted
+            </Typography>
 
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 3 }}
-          >
-            Your electronic acceptance has
-            been recorded together with the
-            acceptance date and time.
-          </Typography>
+            <Typography>
+              The loan agreement has
+              been electronically
+              accepted and the signed
+              document has been recorded
+              successfully.
+            </Typography>
 
-          <Button
-            variant="contained"
-            onClick={() => {
-              if (isSameComputerMode) {
+            {agreement?.agreement_number && (
+              <Typography
+                fontWeight={600}
+              >
+                Agreement Number:{" "}
+                {
+                  agreement.agreement_number
+                }
+              </Typography>
+            )}
+
+            <Button
+              variant="contained"
+              onClick={() => {
+                if (
+                  isSameComputerMode &&
+                  agreement?.loan_id
+                ) {
+                  window.location.href =
+                    `/loans/${agreement.loan_id}`;
+                  return;
+                }
+
                 window.location.href =
-                  `/loans/${agreement?.loan_id}`;
-              } else {
-                window.location.href = "/";
-              }
-            }}
-            sx={{
-              backgroundColor: "#12355b",
-              px: 5,
-              py: 1.2,
-              fontWeight: 700,
-
-              "&:hover": {
-                backgroundColor: "#0d2945",
-              },
-            }}
-          >
-            {isSameComputerMode
-              ? "Return to Loan"
-              : "Close"}
-          </Button>
-
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mt: 3 }}
-          >
-            Thank you for choosing
-            Umhlomunye Finance.
-          </Typography>
+                  "/";
+              }}
+              sx={{
+                bgcolor:
+                  brandColor,
+                borderRadius: 0,
+                "&:hover": {
+                  bgcolor:
+                    brandColor,
+                },
+              }}
+            >
+              Continue
+            </Button>
+          </Stack>
         </Paper>
       </Box>
     );
   }
 
-  /* ============================================================
-     AGREEMENT NOT FOUND
-  ============================================================ */
+  /* ==========================================================
+     NOT FOUND
+  ========================================================== */
 
   if (!agreement) {
     return (
       <Box
         sx={{
           minHeight: "100vh",
-          backgroundColor: "#f4f6f8",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          p: 3,
+          bgcolor: "#fff",
+          px: 2,
+          py: 4,
         }}
       >
         <Paper
-          elevation={3}
+          elevation={0}
           sx={{
-            maxWidth: 600,
-            width: "100%",
+            maxWidth: 760,
+            mx: "auto",
+            border:
+              "1px solid",
+            borderColor:
+              "divider",
+            borderRadius: 0,
             p: 4,
-            borderRadius: 3,
           }}
         >
-          <Alert severity="error">
+          <Typography
+            variant="h6"
+            fontWeight={700}
+            sx={{
+              color:
+                brandColor,
+              mb: 2,
+            }}
+          >
+            Loan Agreement
+          </Typography>
+
+          <Divider
+            sx={{
+              borderColor:
+                brandColor,
+              borderBottomWidth: 2,
+              mb: 3,
+            }}
+          />
+
+          <Alert
+            severity="error"
+            sx={{
+              borderRadius: 0,
+            }}
+          >
             {error ||
               "Agreement not found."}
           </Alert>
@@ -1527,859 +1794,772 @@ export default function SignAgreement() {
     );
   }
 
-  /* ============================================================
-     DISPLAY VALUES
-  ============================================================ */
-
-  const principal =
-    Number(
-      agreement.principal_amount || 0
-    );
-
-  const interestRate =
-    Number(
-      agreement.interest_rate || 0
-    );
-
-  const interestAmount =
-    Number(
-      agreement.interest_amount || 0
-    );
-
-  const totalRepayment =
-    Number(
-      agreement.total_repayment || 0
-    );
-
-  const loanNumber =
-    agreement.loan_number ||
-    "N/A";
+  /* ==========================================================
+     AGREEMENT DETAILS
+  ========================================================== */
 
   const agreementNumber =
     agreement.agreement_number ||
-    "N/A";
+    "-";
 
-  /* ============================================================
-     PAGE
-  ============================================================ */
+  const loanNumber =
+    agreement.loan_number ||
+    "-";
+
+  const principalAmount =
+    formatCurrency(
+      agreement.principal_amount
+    );
+
+  const interestRate =
+    `${safeString(
+      agreement.interest_rate,
+      "0"
+    )}%`;
+
+  const interestAmount =
+    formatCurrency(
+      agreement.interest_amount
+    );
+
+  const totalRepayment =
+    formatCurrency(
+      agreement.total_repayment
+    );
+
+  const firstPaymentDate =
+    formatDate(
+      agreement.first_payment_date
+    );
+
+  const nextPaymentDate =
+    formatDate(
+      agreement.next_payment_date
+    );
+
+  const onlineTerms =
+    Array.isArray(
+      agreement.terms
+    )
+      ? agreement.terms
+      : [];
+
+  /* ==========================================================
+     SIGNING PAGE
+  ========================================================== */
 
   return (
     <Box
       sx={{
         minHeight: "100vh",
-        backgroundColor: "#eef1f5",
-        py: 4,
-        px: 2,
+        bgcolor: "#fff",
+        px: {
+          xs: 1.5,
+          sm: 2,
+        },
+        py: {
+          xs: 2,
+          md: 4,
+        },
       }}
     >
       <Paper
-        elevation={4}
+        elevation={0}
         sx={{
           maxWidth: 950,
           mx: "auto",
-          p: {
-            xs: 2,
-            sm: 4,
-            md: 6,
-          },
-          borderRadius: 2,
+          bgcolor: "#fff",
+          border:
+            "1px solid",
+          borderColor:
+            "divider",
+          borderRadius: 0,
+          overflow: "hidden",
         }}
       >
-        {/* ====================================================
-            SAME-COMPUTER MODE NOTICE
-        ===================================================== */}
-
-        {isSameComputerMode && (
-          <Alert
-            severity="info"
-            sx={{
-              mb: 3,
-              fontWeight: 600,
-            }}
-          >
-            Same-Computer Signing: Please allow
-            the customer to review the complete
-            agreement before accepting it.
-          </Alert>
-        )}
-
-        {/* ====================================================
-            HEADER
-        ===================================================== */}
-
         <Box
           sx={{
-            display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems: "flex-start",
-            gap: 3,
-            mb: 4,
+            p: {
+              xs: 2,
+              sm: 3,
+              md: 4,
+            },
           }}
         >
-          <Box sx={{ flex: 1 }}>
+          {/* ==================================================
+              MASTER HEADER
+          ================================================== */}
+
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns:
+                "34px minmax(0, 1fr) 70px",
+              columnGap: 2,
+              alignItems:
+                "start",
+            }}
+          >
             <Box
               sx={{
-                width: 180,
-                height: 70,
-                border:
-                  "1px solid #d5dbe1",
-                display: "flex",
-                alignItems: "center",
-                justifyContent:
-                  "center",
-                mb: 2,
-                backgroundColor: "#fff",
+                width: 34,
+                height: 34,
+                mt: 0.25,
               }}
             >
+              {companyLogo && (
+                <Box
+                  component="img"
+                  src={companyLogo}
+                  alt={
+                    companyDisplayName
+                  }
+                  sx={{
+                    width: 34,
+                    height: 34,
+                    objectFit:
+                      "contain",
+                  }}
+                />
+              )}
+            </Box>
+
+            <Box>
               <Typography
                 sx={{
-                  fontWeight: 800,
-                  color: "#12355b",
-                  fontSize: 18,
+                  fontSize:
+                    "0.9rem",
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                }}
+              >
+                {
+                  companyDisplayName
+                }
+              </Typography>
+
+              {companyInfo.companyAddress && (
+                <Typography
+                  sx={{
+                    fontSize:
+                      "0.72rem",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {
+                    companyInfo.companyAddress
+                  }
+                </Typography>
+              )}
+
+              {companyInfo.companyPhone && (
+                <Typography
+                  sx={{
+                    fontSize:
+                      "0.72rem",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  Tel:{" "}
+                  {
+                    companyInfo.companyPhone
+                  }
+                </Typography>
+              )}
+
+              {companyInfo.companyWhatsapp && (
+                <Typography
+                  sx={{
+                    fontSize:
+                      "0.72rem",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  WhatsApp:{" "}
+                  {
+                    companyInfo.companyWhatsapp
+                  }
+                </Typography>
+              )}
+
+              {companyInfo.companyEmail && (
+                <Typography
+                  sx={{
+                    fontSize:
+                      "0.72rem",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  Email:{" "}
+                  {
+                    companyInfo.companyEmail
+                  }
+                </Typography>
+              )}
+            </Box>
+
+            <Box
+              sx={{
+                display:
+                  "flex",
+                flexDirection:
+                  "column",
+                alignItems:
+                  "center",
+              }}
+            >
+              {qrCode && (
+                <Box
+                  component="img"
+                  src={qrCode}
+                  alt="Scan to verify"
+                  sx={{
+                    width: 70,
+                    height: 70,
+                  }}
+                />
+              )}
+
+              <Typography
+                sx={{
+                  fontSize:
+                    "0.58rem",
+                  mt: 0.25,
                   textAlign:
                     "center",
                 }}
               >
-                UMHLOMUNYE
-                <br />
-                FINANCE
+                Scan to verify
               </Typography>
             </Box>
-
-            <Typography
-              variant="h4"
-              sx={{
-                fontWeight: 800,
-                color: "#12355b",
-                letterSpacing: 0.5,
-              }}
-            >
-              LOAN AGREEMENT
-            </Typography>
-
-            <Typography
-              sx={{
-                color: "#667085",
-                mt: 0.5,
-                fontStyle: "italic",
-              }}
-            >
-              Our dreams, Our hope
-            </Typography>
-
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mt: 2 }}
-            >
-              Registration Number:
-              {" "}
-              2020/191721/07
-            </Typography>
-
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              20 Jacaranda Street,
-              Kinross, 2270
-            </Typography>
-
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Tel: 078 078 3879 |
-              WhatsApp: 060 508 6672
-            </Typography>
-
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Email:
-              {" "}
-              umhlomunyeb@gmail.com
-            </Typography>
           </Box>
 
+          <Divider
+            sx={{
+              my: 2,
+              borderColor:
+                brandColor,
+              borderBottomWidth: 2,
+            }}
+          />
+
           {/* ==================================================
-              QR CODE
-          =================================================== */}
+              TITLE
+          ================================================== */}
+
+          <Typography
+            sx={{
+              fontSize:
+                "1.35rem",
+              fontWeight: 700,
+              color:
+                brandColor,
+              mb: 1,
+            }}
+          >
+            LOAN AGREEMENT
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize:
+                "0.78rem",
+              mb: 3,
+            }}
+          >
+            Official electronically
+            accepted agreement
+          </Typography>
+
+          {/* ==================================================
+              AGREEMENT INFORMATION
+          ================================================== */}
 
           <Box
             sx={{
-              width: 150,
-              minWidth: 150,
-              textAlign: "center",
+              border:
+                "1px solid",
+              borderColor:
+                "divider",
+              mb: 3,
             }}
           >
-            {qrCode && (
-              <Box
-                component="img"
-                src={qrCode}
-                alt="Agreement QR Code"
+            {[
+              [
+                "Agreement Number",
+                agreementNumber,
+              ],
+              [
+                "Loan Number",
+                loanNumber,
+              ],
+              [
+                "Agreement Version",
+                safeString(
+                  agreement.agreement_version ||
+                    agreement.version
+                ),
+              ],
+            ].map(
+              ([label, value]) => (
+                <Box
+                  key={label}
+                  sx={{
+                    display:
+                      "grid",
+                    gridTemplateColumns:
+                      {
+                        xs: "1fr",
+                        sm: "180px 1fr",
+                      },
+                    borderBottom:
+                      "1px solid",
+                    borderColor:
+                      "divider",
+                    "&:last-child":
+                      {
+                        borderBottom:
+                          0,
+                      },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      px: 1.5,
+                      py: 1,
+                      fontWeight: 700,
+                      fontSize:
+                        "0.78rem",
+                    }}
+                  >
+                    {label}
+                  </Box>
+
+                  <Box
+                    sx={{
+                      px: 1.5,
+                      py: 1,
+                      fontSize:
+                        "0.78rem",
+                    }}
+                  >
+                    {value}
+                  </Box>
+                </Box>
+              )
+            )}
+          </Box>
+
+          {/* ==================================================
+              CUSTOMER
+          ================================================== */}
+
+          <Typography
+            sx={{
+              fontSize:
+                "1rem",
+              fontWeight: 700,
+              color:
+                brandColor,
+              mb: 1,
+            }}
+          >
+            Customer
+          </Typography>
+
+          <Box
+            sx={{
+              border:
+                "1px solid",
+              borderColor:
+                "divider",
+              p: 1.5,
+              mb: 3,
+              fontSize:
+                "0.85rem",
+            }}
+          >
+            {
+              customerName
+            }
+          </Box>
+
+          {/* ==================================================
+              LOAN DETAILS
+          ================================================== */}
+
+          <Typography
+            sx={{
+              fontSize:
+                "1rem",
+              fontWeight: 700,
+              color:
+                brandColor,
+              mb: 1,
+            }}
+          >
+            Loan Details
+          </Typography>
+
+          <Box
+            sx={{
+              border:
+                "1px solid",
+              borderColor:
+                "divider",
+              mb: 3,
+            }}
+          >
+            {[
+              [
+                "Principal Amount",
+                principalAmount,
+              ],
+              [
+                "Interest Rate",
+                interestRate,
+              ],
+              [
+                "Interest Amount",
+                interestAmount,
+              ],
+              [
+                "Total Repayment",
+                totalRepayment,
+              ],
+              [
+                "Current Balance",
+                formatCurrency(
+                  agreement.current_balance
+                ),
+              ],
+              [
+                "First Payment Date",
+                firstPaymentDate,
+              ],
+              [
+                "Next Payment Date",
+                nextPaymentDate,
+              ],
+            ].map(
+              ([label, value]) => (
+                <Box
+                  key={label}
+                  sx={{
+                    display:
+                      "grid",
+                    gridTemplateColumns:
+                      {
+                        xs: "1fr",
+                        sm: "180px 1fr",
+                      },
+                    borderBottom:
+                      "1px solid",
+                    borderColor:
+                      "divider",
+                    "&:last-child":
+                      {
+                        borderBottom:
+                          0,
+                      },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      px: 1.5,
+                      py: 1,
+                      fontWeight: 700,
+                      fontSize:
+                        "0.78rem",
+                    }}
+                  >
+                    {label}
+                  </Box>
+
+                  <Box
+                    sx={{
+                      px: 1.5,
+                      py: 1,
+                      fontSize:
+                        "0.78rem",
+                    }}
+                  >
+                    {value}
+                  </Box>
+                </Box>
+              )
+            )}
+          </Box>
+
+          {/* ==================================================
+              TERMS
+          ================================================== */}
+
+          <Typography
+            sx={{
+              fontSize:
+                "1rem",
+              fontWeight: 700,
+              color:
+                brandColor,
+              mb: 1,
+            }}
+          >
+            Terms and Conditions
+          </Typography>
+
+          <Box
+            sx={{
+              mb: 3,
+            }}
+          >
+            {onlineTerms.length >
+            0 ? (
+              onlineTerms.map(
+                (term, index) => (
+                  <Box
+                    key={
+                      term.id ||
+                      `${index}-${term.title}`
+                    }
+                    sx={{
+                      mb: 2,
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        fontSize:
+                          "0.84rem",
+                        fontWeight: 700,
+                        mb: 0.5,
+                      }}
+                    >
+                      {index + 1}.{" "}
+                      {term.title ||
+                        term.heading ||
+                        `Term ${
+                          index + 1
+                        }`}
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontSize:
+                          "0.82rem",
+                        lineHeight:
+                          1.65,
+                      }}
+                    >
+                      {term.content ||
+                        term.text ||
+                        term.description ||
+                        ""}
+                    </Typography>
+                  </Box>
+                )
+              )
+            ) : (
+              <Typography
                 sx={{
-                  width: 130,
-                  height: 130,
-                  display: "block",
-                  mx: "auto",
+                  fontSize:
+                    "0.82rem",
+                  lineHeight:
+                    1.65,
+                  whiteSpace:
+                    "pre-line",
+                }}
+              >
+                {agreement.terms_and_conditions ||
+                  agreement.terms_text ||
+                  agreement.agreement_terms ||
+                  "The terms and conditions of this loan agreement apply to the loan described above."}
+              </Typography>
+            )}
+          </Box>
+
+          <Divider
+            sx={{
+              my: 3,
+              borderColor:
+                brandColor,
+            }}
+          />
+
+          {/* ==================================================
+              ELECTRONIC ACCEPTANCE
+          ================================================== */}
+
+          <Typography
+            sx={{
+              fontSize:
+                "1rem",
+              fontWeight: 700,
+              color:
+                brandColor,
+              mb: 1,
+            }}
+          >
+            Electronic Acceptance
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize:
+                "0.82rem",
+              lineHeight:
+                1.6,
+              mb: 2,
+            }}
+          >
+            Confirm your full name
+            and accept the agreement
+            electronically.
+          </Typography>
+
+          <TextField
+            fullWidth
+            label="Customer Name"
+            value={
+              customerName
+            }
+            onChange={(
+              event
+            ) => {
+              setCustomerName(
+                event.target.value
+              );
+              setError("");
+            }}
+            disabled={
+              submitting
+            }
+            margin="normal"
+            size="small"
+          />
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={
+                  accepted
+                }
+                onChange={(
+                  event
+                ) => {
+                  setAccepted(
+                    event.target
+                      .checked
+                  );
+                  setError("");
+                }}
+                disabled={
+                  submitting
+                }
+                sx={{
+                  "&.Mui-checked":
+                    {
+                      color:
+                        brandColor,
+                    },
                 }}
               />
-            )}
-
-            <Typography
-              variant="caption"
-              sx={{
-                display: "block",
-                mt: 1,
-                fontWeight: 700,
-                color: "#12355b",
-              }}
-            >
-              VERIFY AGREEMENT
-            </Typography>
-
-            <Typography
-              variant="caption"
-              color="text.secondary"
-            >
-              Scan this QR code to
-              access this secure
-              agreement.
-            </Typography>
-          </Box>
-        </Box>
-
-        <Divider sx={{ mb: 4 }} />
-
-        {/* ====================================================
-            AGREEMENT IDENTIFICATION
-        ===================================================== */}
-
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: {
-              xs: "1fr",
-              sm: "1fr 1fr",
-            },
-            gap: 2,
-            mb: 4,
-          }}
-        >
-          <Box>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Agreement Number
-            </Typography>
-
-            <Typography
-              sx={{
-                fontWeight: 700,
-                fontSize: 17,
-              }}
-            >
-              {agreementNumber}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Loan Number
-            </Typography>
-
-            <Typography
-              sx={{
-                fontWeight: 700,
-                fontSize: 17,
-              }}
-            >
-              {loanNumber}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Customer
-            </Typography>
-
-            <Typography
-              sx={{
-                fontWeight: 700,
-                fontSize: 17,
-              }}
-            >
-              {customerName ||
-                "N/A"}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Agreement Version
-            </Typography>
-
-            <Typography
-              sx={{
-                fontWeight: 700,
-                fontSize: 17,
-              }}
-            >
-              {agreement.agreement_version ||
-                "1.0"}
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* ====================================================
-            LOAN DETAILS
-        ===================================================== */}
-
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 800,
-            color: "#12355b",
-            mb: 2,
-          }}
-        >
-          1. Loan Details
-        </Typography>
-
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: {
-              xs: "1fr",
-              sm: "1fr 1fr",
-            },
-            gap: 2,
-            mb: 4,
-          }}
-        >
-          <Paper
-            variant="outlined"
-            sx={{ p: 2 }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Principal Amount
-            </Typography>
-
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 700,
-              }}
-            >
-              R{principal.toFixed(2)}
-            </Typography>
-          </Paper>
-
-          <Paper
-            variant="outlined"
-            sx={{ p: 2 }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Interest Rate
-            </Typography>
-
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 700,
-              }}
-            >
-              {interestRate.toFixed(2)}%
-            </Typography>
-          </Paper>
-
-          <Paper
-            variant="outlined"
-            sx={{ p: 2 }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Interest Amount
-            </Typography>
-
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 700,
-              }}
-            >
-              R{interestAmount.toFixed(2)}
-            </Typography>
-          </Paper>
-
-          <Paper
-            variant="outlined"
-            sx={{ p: 2 }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-            >
-              Total Repayment
-            </Typography>
-
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 700,
-              }}
-            >
-              R{totalRepayment.toFixed(2)}
-            </Typography>
-          </Paper>
-        </Box>
-
-        {/* ====================================================
-            AGREEMENT TERMS
-        ===================================================== */}
-
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 800,
-            color: "#12355b",
-            mb: 2,
-          }}
-        >
-          2. Terms and Conditions
-        </Typography>
-
-        <Box sx={{ mb: 4 }}>
-          <Typography paragraph>
-            <strong>
-              2.1 Loan Advance.
-            </strong>{" "}
-            Umhlomunye Finance agrees to
-            advance the principal amount
-            stated in this agreement to
-            the customer, subject to the
-            terms and conditions contained
-            herein.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.2 Interest.
-            </strong>{" "}
-            Interest will be charged at
-            the rate stated in this
-            agreement and will be
-            calculated in accordance with
-            the applicable loan product
-            and system rules.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.3 Repayment.
-            </strong>{" "}
-            The customer agrees to repay
-            the total amount due according
-            to the agreed repayment
-            schedule.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.4 Payment Dates.
-            </strong>{" "}
-            The scheduled payment date
-            recorded against the loan
-            remains the applicable payment
-            date for the relevant
-            repayment cycle.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.5 Partial Payments.
-            </strong>{" "}
-            Where permitted, the customer
-            may make partial payments.
-            Multiple payments may be
-            accumulated toward the
-            applicable repayment
-            obligation.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.6 Payment Records.
-            </strong>{" "}
-            All payments received by
-            Umhlomunye Finance will be
-            recorded against the customer's
-            loan account.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.7 Outstanding Balance.
-            </strong>{" "}
-            The customer remains
-            responsible for any outstanding
-            amount reflected on the loan
-            account.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.8 Interest Events.
-            </strong>{" "}
-            Where applicable, interest may
-            be applied to the outstanding
-            balance in accordance with the
-            loan's repayment cycle.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.9 Overdue Amounts.
-            </strong>{" "}
-            Where the required amount has
-            not been paid by the applicable
-            due date, an overdue amount may
-            be recorded against the relevant
-            repayment cycle.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.10 Account Information.
-            </strong>{" "}
-            The customer may request
-            information concerning
-            transactions, payments,
-            balances and other information
-            relating to the loan account.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.11 Electronic Acceptance.
-            </strong>{" "}
-            The customer's electronic
-            acceptance of this agreement is
-            recorded by the system together
-            with the acceptance information
-            available at the time of
-            acceptance.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.12 Customer Responsibility.
-            </strong>{" "}
-            The customer is responsible for
-            reviewing this agreement
-            carefully before accepting it.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.13 Accuracy of Information.
-            </strong>{" "}
-            The customer confirms that the
-            information supplied in
-            connection with the loan
-            application is accurate and
-            complete to the best of their
-            knowledge.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.14 Contact Details.
-            </strong>{" "}
-            The customer should notify
-            Umhlomunye Finance of any
-            changes to relevant contact
-            information.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.15 Notices.
-            </strong>{" "}
-            Communications concerning the
-            loan may be sent using the
-            contact information provided by
-            the customer, including
-            permitted electronic
-            communication channels.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.16 Default.
-            </strong>{" "}
-            Failure to meet repayment
-            obligations may result in the
-            account being treated in
-            accordance with the applicable
-            loan terms and applicable law.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.17 Account Closure.
-            </strong>{" "}
-            Once all amounts owing under
-            the loan have been paid, the
-            loan account may be closed in
-            accordance with the system
-            records.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.18 Records.
-            </strong>{" "}
-            Umhlomunye Finance may maintain
-            electronic records relating to
-            the loan, payments, agreement
-            acceptance and account activity.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.19 Digital Records.
-            </strong>{" "}
-            Electronic records generated by
-            the system may include
-            timestamps, agreement references
-            and transaction information.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.20 Agreement Integrity.
-            </strong>{" "}
-            The agreement number and QR
-            reference are intended to assist
-            with identifying and verifying
-            the agreement.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.21 Customer Review.
-            </strong>{" "}
-            The customer confirms that they
-            have been given an opportunity
-            to read and understand the
-            agreement before acceptance.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.22 Voluntary Acceptance.
-            </strong>{" "}
-            By completing the electronic
-            acceptance process, the customer
-            indicates their intention to be
-            bound by the agreement, subject
-            to applicable law.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.23 Applicable Law.
-            </strong>{" "}
-            This agreement is intended to
-            operate subject to the laws and
-            regulations applicable in the
-            Republic of South Africa.
-          </Typography>
-
-          <Typography paragraph>
-            <strong>
-              2.24 Entire Agreement.
-            </strong>{" "}
-            This agreement, together with
-            applicable loan records and
-            schedules, represents the terms
-            applicable to the loan
-            transaction.
-          </Typography>
-        </Box>
-
-        <Divider sx={{ mb: 4 }} />
-
-        {/* ====================================================
-            ELECTRONIC ACCEPTANCE
-        ===================================================== */}
-
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 800,
-            color: "#12355b",
-            mb: 2,
-          }}
-        >
-          3. Electronic Acceptance
-        </Typography>
-
-        <Alert
-          severity="info"
-          sx={{
-            mb: 3,
-          }}
-        >
-          Please read the complete agreement
-          carefully before accepting it
-          electronically.
-        </Alert>
-
-        <Typography sx={{ mb: 3 }}>
-          By ticking the checkbox below and
-          submitting this form, you confirm
-          that you have read, understood and
-          agree to the terms and conditions
-          of this loan agreement.
-        </Typography>
-
-        <TextField
-          fullWidth
-          label="Full Name"
-          value={customerName}
-          onChange={(e) =>
-            setCustomerName(
-              e.target.value
-            )
-          }
-          sx={{ mb: 2 }}
-        />
-
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={accepted}
-              onChange={(e) =>
-                setAccepted(
-                  e.target.checked
-                )
-              }
-            />
-          }
-          label={acceptanceText}
-          sx={{
-            alignItems:
-              "flex-start",
-            mb: 2,
-          }}
-        />
-
-        {error && (
-          <Alert
-            severity="error"
-            sx={{ mb: 2 }}
-          >
-            {error}
-          </Alert>
-        )}
-
-        <Button
-          fullWidth
-          variant="contained"
-          size="large"
-          disabled={submitting}
-          onClick={handleAccept}
-          sx={{
-            backgroundColor:
-              "#12355b",
-            py: 1.6,
-            fontSize: 16,
-            fontWeight: 700,
-
-            "&:hover": {
-              backgroundColor:
-                "#0d2945",
-            },
-          }}
-        >
-          {submitting
-            ? "Submitting Agreement..."
-            : "Submit & Accept Agreement"}
-        </Button>
-
-        {/* ====================================================
-            FOOTER
-        ===================================================== */}
-
-        <Divider sx={{ my: 4 }} />
-
-        <Box
-          sx={{
-            textAlign: "center",
-          }}
-        >
-          <Typography
-            variant="body2"
+            }
+            label={
+              acceptanceText
+            }
             sx={{
-              fontWeight: 700,
-              color: "#12355b",
-            }}
-          >
-            UMHLOMUNYE FINANCE
-          </Typography>
-
-          <Typography
-            variant="caption"
-            color="text.secondary"
-          >
-            Our dreams, Our hope
-          </Typography>
-
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{
-              display: "block",
+              alignItems:
+                "flex-start",
               mt: 1,
+              "& .MuiFormControlLabel-label":
+                {
+                  fontSize:
+                    "0.82rem",
+                  lineHeight:
+                    1.5,
+                },
+            }}
+          />
+
+          {error && (
+            <Alert
+              severity="error"
+              sx={{
+                mt: 2,
+                borderRadius: 0,
+              }}
+            >
+              {error}
+            </Alert>
+          )}
+
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent:
+                "flex-end",
             }}
           >
-            Agreement Number:{" "}
-            {agreementNumber}
-          </Typography>
+            <Button
+              variant="contained"
+              onClick={
+                handleAccept
+              }
+              disabled={
+                submitting ||
+                !accepted ||
+                !customerName.trim()
+              }
+              sx={{
+                bgcolor:
+                  brandColor,
+                borderRadius: 0,
+                px: 4,
+                "&:hover": {
+                  bgcolor:
+                    brandColor,
+                },
+              }}
+            >
+              {submitting ? (
+                <CircularProgress
+                  size={22}
+                  sx={{
+                    color:
+                      "#fff",
+                  }}
+                />
+              ) : (
+                "Accept Agreement"
+              )}
+            </Button>
+          </Box>
+
+          {/* ==================================================
+              FOOTER
+          ================================================== */}
+
+          <Divider
+            sx={{
+              mt: 4,
+              mb: 1.5,
+              borderColor:
+                "divider",
+            }}
+          />
 
           <Typography
-            variant="caption"
-            color="text.secondary"
             sx={{
-              display: "block",
+              fontSize:
+                "0.7rem",
+              textAlign:
+                "center",
             }}
           >
-            Scan the QR code at the top
-            of this agreement to access
-            the secure agreement link.
+            {
+              companyDisplayName
+            }
           </Typography>
         </Box>
       </Paper>

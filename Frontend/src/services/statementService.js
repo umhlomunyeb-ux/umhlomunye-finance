@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
 
 import { supabase } from "../lib/supabase";
+import { getSystemSettings } from "./settingsService";
 
 /* =========================================================
    CONSTANTS
@@ -288,6 +289,13 @@ async function buildStatementPdf(
       "en-ZA"
     );
 
+  const settings =
+    await getSystemSettings();
+
+  const companyName =
+    settings?.company_name ||
+    "Company";
+
   /* -------------------------------------------------------
      STATEMENT VERIFICATION QR
   ------------------------------------------------------- */
@@ -326,7 +334,7 @@ async function buildStatementPdf(
   );
 
   doc.text(
-    "UMHLOMUNYE FINANCE",
+    companyName,
     85,
     18,
     {
@@ -738,7 +746,7 @@ async function buildStatementPdf(
     );
 
     doc.text(
-      "Umhlomunye Finance",
+      companyName,
       15,
       pageHeight - 12
     );

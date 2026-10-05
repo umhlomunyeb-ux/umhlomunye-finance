@@ -27,7 +27,11 @@ export default function Statements() {
   const [statement, setStatement] = useState(null);
   const [loading, setLoading] = useState(false);
   const [companyLogo, setCompanyLogo] = useState("");
-  const [companyName, setCompanyName] = useState("UMHLOMUNYE FINANCE");
+  const [companyName, setCompanyName] = useState("Company");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyWhatsapp, setCompanyWhatsapp] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
 
   useEffect(() => {
     loadLoans();
@@ -47,7 +51,9 @@ export default function Statements() {
     try {
       const { data, error } = await supabase
         .from("system_settings")
-        .select("company_name, company_logo_url")
+        .select(
+          "company_name, company_address, company_phone, company_whatsapp, company_email, company_logo_url"
+        )
         .limit(1)
         .maybeSingle();
 
@@ -58,6 +64,22 @@ export default function Statements() {
 
       if (data?.company_name) {
         setCompanyName(data.company_name);
+      }
+
+      if (data?.company_address) {
+        setCompanyAddress(data.company_address);
+      }
+
+      if (data?.company_phone) {
+        setCompanyPhone(data.company_phone);
+      }
+
+      if (data?.company_whatsapp) {
+        setCompanyWhatsapp(data.company_whatsapp);
+      }
+
+      if (data?.company_email) {
+        setCompanyEmail(data.company_email);
       }
 
       if (data?.company_logo_url) {
@@ -256,9 +278,25 @@ export default function Statements() {
           `
         : `
             <div class="logo-placeholder">
-              UBS
+              APP
             </div>
           `;
+
+      const companyDetails = [
+        companyAddress,
+        companyPhone ? `Tel: ${companyPhone}` : "",
+        companyWhatsapp ? `WhatsApp: ${companyWhatsapp}` : "",
+        companyEmail ? `Email: ${companyEmail}` : "",
+      ]
+        .filter(Boolean)
+        .map(escapeHtml);
+
+      const companyDetailsHtml =
+        companyDetails.length > 0
+          ? companyDetails
+              .map((detail) => `${detail}<br>`)
+              .join("")
+          : "";
 
       const qrHtml = qrCode
         ? `
@@ -314,14 +352,6 @@ export default function Statements() {
               max-width: 180mm;
               margin: auto;
             }
-
-            /*
-             * =====================================================
-             * DOCUMENT HEADER
-             * Logo is positioned TOP LEFT.
-             * QR code remains TOP RIGHT.
-             * =====================================================
-             */
 
             .header {
               display: flex;
@@ -379,13 +409,6 @@ export default function Statements() {
               color: #17365d;
               font-size: 22px;
               font-weight: bold;
-              margin-bottom: 4px;
-            }
-
-            .slogan {
-              color: #666;
-              font-size: 10px;
-              font-style: italic;
               margin-bottom: 8px;
             }
 
@@ -592,25 +615,12 @@ export default function Statements() {
                 <div class="company-information">
 
                   <div class="company-name">
-                    ${escapeHtml(companyName).toUpperCase()}
-                  </div>
-
-                  <div class="slogan">
-                    "Our dreams, Our hope"
+                    ${escapeHtml(companyName)}
                   </div>
 
                   <div class="company-details">
 
-                    Reg. No: 2020/191721/07<br>
-
-                    20 Jacaranda Street,
-                    Kinross, 2270<br>
-
-                    Tel: 078 078 3879<br>
-
-                    WhatsApp: 060 508 6672<br>
-
-                    Email: umhlomunyeb@gmail.com
+                    ${companyDetailsHtml}
 
                   </div>
 
@@ -630,8 +640,7 @@ export default function Statements() {
               </h1>
 
               <p>
-                Official statement issued by
-                ${escapeHtml(companyName)}
+                Official statement
               </p>
 
             </div>
@@ -955,25 +964,14 @@ export default function Statements() {
             <div class="footer">
 
               <strong>
-                ${escapeHtml(companyName).toUpperCase()}
+                ${escapeHtml(companyName)}
               </strong>
-
-              <br>
-
-              "Our dreams, Our hope"
 
               <br>
 
               This is an electronically generated
               statement and does not require a physical
               signature.
-
-              <br>
-
-              Reg. No: 2020/191721/07 |
-              20 Jacaranda Street, Kinross, 2270 |
-              078 078 3879 |
-              060 508 6672
 
             </div>
 

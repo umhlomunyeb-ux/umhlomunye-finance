@@ -3256,7 +3256,7 @@ export async function getCompanyDocumentContext() {
   return {
     companyName:
       settings?.company_name ||
-      "Umhlomunye Finance",
+      "Company",
 
     companyAddress:
       settings?.company_address ||

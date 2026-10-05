@@ -17,9 +17,56 @@ export default function VerifyAgreement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [companyName, setCompanyName] = useState("Company");
+  const [companyRegistration, setCompanyRegistration] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyWhatsapp, setCompanyWhatsapp] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+
+  useEffect(() => {
+    loadCompanySettings();
+  }, []);
+
   useEffect(() => {
     verifyAgreement();
   }, [token]);
+
+  async function loadCompanySettings() {
+    try {
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select(
+          `
+          company_name,
+          company_registration_number,
+          company_address,
+          company_phone,
+          company_whatsapp,
+          company_email
+          `
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error("LOAD COMPANY SETTINGS ERROR:", error);
+        return;
+      }
+
+      if (data) {
+        setCompanyName(data.company_name || "Company");
+        setCompanyRegistration(
+          data.company_registration_number || ""
+        );
+        setCompanyAddress(data.company_address || "");
+        setCompanyPhone(data.company_phone || "");
+        setCompanyWhatsapp(data.company_whatsapp || "");
+        setCompanyEmail(data.company_email || "");
+      }
+    } catch (err) {
+      console.error("LOAD COMPANY SETTINGS ERROR:", err);
+    }
+  }
 
   async function verifyAgreement() {
     try {
@@ -113,8 +160,8 @@ export default function VerifyAgreement() {
             color="text.secondary"
             sx={{ mt: 3 }}
           >
-            If you believe this is an error, please contact
-            Umhlomunye Finance.
+            If you believe this is an error, please contact{" "}
+            {companyName}.
           </Typography>
         </Paper>
       </Box>
@@ -173,17 +220,7 @@ export default function VerifyAgreement() {
               color: "#12355b",
             }}
           >
-            UMHLOMUNYE FINANCE
-          </Typography>
-
-          <Typography
-            sx={{
-              fontStyle: "italic",
-              color: "text.secondary",
-              mt: 0.5,
-            }}
-          >
-            Our dreams, Our hope
+            {companyName}
           </Typography>
 
           <Typography
@@ -206,8 +243,8 @@ export default function VerifyAgreement() {
             fontWeight: 600,
           }}
         >
-          This agreement has been successfully verified as an
-          Umhlomunye Finance agreement.
+          This agreement has been successfully verified as an{" "}
+          {companyName} agreement.
         </Alert>
 
         {/* AGREEMENT DETAILS */}
@@ -429,36 +466,47 @@ export default function VerifyAgreement() {
               color: "#12355b",
             }}
           >
-            UMHLOMUNYE FINANCE
+            {companyName}
           </Typography>
 
-          <Typography
-            variant="body2"
-            color="text.secondary"
-          >
-            Registration Number: 2020/191721/07
-          </Typography>
+          {companyRegistration && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+            >
+              Registration Number: {companyRegistration}
+            </Typography>
+          )}
 
-          <Typography
-            variant="body2"
-            color="text.secondary"
-          >
-            20 Jacaranda Street, Kinross, 2270
-          </Typography>
+          {companyAddress && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+            >
+              {companyAddress}
+            </Typography>
+          )}
 
-          <Typography
-            variant="body2"
-            color="text.secondary"
-          >
-            Tel: 078 078 3879 | WhatsApp: 060 508 6672
-          </Typography>
+          {(companyPhone || companyWhatsapp) && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+            >
+              {companyPhone && `Tel: ${companyPhone}`}
+              {companyPhone && companyWhatsapp && " | "}
+              {companyWhatsapp &&
+                `WhatsApp: ${companyWhatsapp}`}
+            </Typography>
+          )}
 
-          <Typography
-            variant="body2"
-            color="text.secondary"
-          >
-            umhlomunyeb@gmail.com
-          </Typography>
+          {companyEmail && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+            >
+              {companyEmail}
+            </Typography>
+          )}
 
           <Typography
             variant="caption"

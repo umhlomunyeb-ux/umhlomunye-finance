@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   addLoanApplication,
@@ -69,6 +69,8 @@ const EMPTY_FORM = {
 };
 
 export default function PublicApplication() {
+  const [companyName, setCompanyName] = useState("Company");
+
   const [idNumber, setIdNumber] = useState("");
 
   const [checkingId, setCheckingId] = useState(false);
@@ -111,6 +113,36 @@ export default function PublicApplication() {
 
   const [form, setForm] =
     useState(EMPTY_FORM);
+
+  useEffect(() => {
+    loadCompanySettings();
+  }, []);
+
+  async function loadCompanySettings() {
+    try {
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("company_name")
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          "LOAD COMPANY SETTINGS ERROR:",
+          error
+        );
+        return;
+      }
+
+      if (data?.company_name) {
+        setCompanyName(data.company_name);
+      }
+    } catch (err) {
+      console.error(
+        "LOAD COMPANY SETTINGS ERROR:",
+        err
+      );
+    }
+  }
 
   function normalizeId(value) {
     return String(value || "")
@@ -769,7 +801,7 @@ export default function PublicApplication() {
               Thank you for submitting your
               loan application. Your
               application will be reviewed
-              by Umhlomunye Finance.
+              by {companyName}.
             </Typography>
 
             <Typography
@@ -878,7 +910,7 @@ export default function PublicApplication() {
             fontWeight="bold"
             gutterBottom
           >
-            Umhlomunye Finance
+            {companyName}
           </Typography>
 
           <Typography

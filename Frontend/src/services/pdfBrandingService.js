@@ -7,15 +7,18 @@ import { supabase } from "../lib/supabase";
  * PDF BRANDING / MASTER DOCUMENT TEMPLATE
  * ============================================================
  *
- * All system-generated PDFs should use this header.
+ * Statement is the master visual template.
  *
- * Layout:
- *   - Company logo: top-left
- *   - Company/contact information: beside logo
- *   - QR code: top-right
- *   - No standalone company-name document heading
+ * All generated documents use:
+ * - Plain white background
+ * - Logo top-left
+ * - Centralized company information
+ * - QR code top-right
+ * - Logo-derived accent colour divider
+ * - Consistent spacing
  *
- * The statement layout is the master visual template.
+ * Individual documents remain responsible for their own
+ * document-specific content.
  * ============================================================
  */
 
@@ -137,11 +140,144 @@ export async function getPdfLogoDataUrl(logoUrl) {
       };
 
       reader.onerror = reject;
+
       reader.readAsDataURL(blob);
     });
   } catch (error) {
     console.error("PDF LOGO ERROR:", error);
     return null;
+  }
+}
+
+/**
+ * ============================================================
+ * LOGO ACCENT COLOUR
+ * ============================================================
+ */
+
+export async function getLogoAccentColor(
+  logoDataUrl
+) {
+  /*
+   * Default neutral accent.
+   * The actual company logo determines the document accent
+   * whenever its image data can be analysed.
+   */
+
+  const fallback = [80, 80, 80];
+
+  if (!logoDataUrl) {
+    return fallback;
+  }
+
+  try {
+    const image = await new Promise(
+      (resolve, reject) => {
+        const img = new Image();
+
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = logoDataUrl;
+      }
+    );
+
+    const canvas =
+      document.createElement("canvas");
+
+    const context =
+      canvas.getContext("2d");
+
+    if (!context) {
+      return fallback;
+    }
+
+    canvas.width = Math.min(
+      image.width || 100,
+      100
+    );
+
+    canvas.height = Math.min(
+      image.height || 100,
+      100
+    );
+
+    context.drawImage(
+      image,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    const imageData =
+      context.getImageData(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    let count = 0;
+
+    for (
+      let index = 0;
+      index < imageData.data.length;
+      index += 4
+    ) {
+      const alpha =
+        imageData.data[index + 3];
+
+      if (alpha < 50) {
+        continue;
+      }
+
+      const r =
+        imageData.data[index];
+
+      const g =
+        imageData.data[index + 1];
+
+      const b =
+        imageData.data[index + 2];
+
+      /*
+       * Ignore very light pixels because they are normally
+       * background rather than the logo's accent.
+       */
+
+      if (
+        r > 235 &&
+        g > 235 &&
+        b > 235
+      ) {
+        continue;
+      }
+
+      red += r;
+      green += g;
+      blue += b;
+      count++;
+    }
+
+    if (!count) {
+      return fallback;
+    }
+
+    return [
+      Math.round(red / count),
+      Math.round(green / count),
+      Math.round(blue / count),
+    ];
+  } catch (error) {
+    console.warn(
+      "PDF LOGO ACCENT ERROR:",
+      error
+    );
+
+    return fallback;
   }
 }
 
@@ -164,29 +300,27 @@ export async function getPdfQrDataUrl(
       {
         errorCorrectionLevel: "M",
         margin: 1,
-        width: 180,
+        width: 300,
       }
     );
   } catch (error) {
-    console.error("PDF QR ERROR:", error);
+    console.error(
+      "PDF QR ERROR:",
+      error
+    );
+
     return null;
   }
 }
 
 /**
  * ============================================================
- * DRAW MASTER PDF HEADER
+ * MASTER PDF HEADER
  * ============================================================
  *
- * This is the ONLY function individual PDF generators should
- * need to call for their company header and QR code.
+ * This matches the Statement PDF header.
  *
- * verificationUrl:
- *   URL encoded into the document QR code.
- *
- * Returns:
- *   companyInfo
- *   contentStartY
+ * Every generated document should use this function.
  * ============================================================
  */
 
@@ -202,57 +336,45 @@ export async function drawPdfCompanyHeader(
       companyInfo.companyLogoUrl
     );
 
+  const accent =
+    await getLogoAccentColor(
+      companyLogoDataUrl
+    );
+
+  const qrTarget =
+    verificationUrl ||
+    (
+      typeof window !== "undefined"
+        ? window.location.href
+        : ""
+    );
+
   const qrDataUrl =
     await getPdfQrDataUrl(
-      verificationUrl
+      qrTarget
     );
 
   const pageWidth =
     pdf.internal.pageSize.getWidth();
 
   /*
-   * ----------------------------------------------------------
-   * MASTER HEADER DIMENSIONS
-   * ----------------------------------------------------------
-   */
-
-  const leftMargin = 14;
-  const topMargin = 10;
-
-  const logoX = leftMargin;
-  const logoY = topMargin;
-
-  const logoWidth = 25;
-  const logoHeight = 25;
-
-  const informationX = 44;
-
-  const qrSize = 30;
-  const qrX =
-    pageWidth -
-    leftMargin -
-    qrSize;
-
-  const qrY = 10;
-
-  /*
-   * ----------------------------------------------------------
-   * LOGO
-   * ----------------------------------------------------------
+   * ==========================================================
+   * COMPANY LOGO — TOP LEFT
+   * ==========================================================
    */
 
   if (companyLogoDataUrl) {
     try {
       pdf.addImage(
         companyLogoDataUrl,
-        "PNG",
-        logoX,
-        logoY,
-        logoWidth,
-        logoHeight
+        "AUTO",
+        14,
+        10,
+        34,
+        34
       );
     } catch (error) {
-      console.error(
+      console.warn(
         "PDF LOGO DRAW ERROR:",
         error
       );
@@ -260,87 +382,66 @@ export async function drawPdfCompanyHeader(
   }
 
   /*
-   * ----------------------------------------------------------
-   * COMPANY / CONTACT INFORMATION
-   * ----------------------------------------------------------
-   *
-   * Intentionally DO NOT render companyName as a standalone
-   * document heading.
-   *
-   * The company information appears as supporting information
-   * beside the logo.
-   * ----------------------------------------------------------
+   * ==========================================================
+   * COMPANY INFORMATION — BESIDE LOGO
+   * ==========================================================
    */
 
-  pdf.setFont(
-    "helvetica",
-    "normal"
+  const companyInfoLines = [
+    companyInfo.companyName,
+    companyInfo.companyAddress,
+    companyInfo.companyPhone
+      ? `Tel: ${companyInfo.companyPhone}`
+      : "",
+    companyInfo.companyWhatsapp
+      ? `WhatsApp: ${companyInfo.companyWhatsapp}`
+      : "",
+    companyInfo.companyEmail
+      ? `Email: ${companyInfo.companyEmail}`
+      : "",
+  ].filter(Boolean);
+
+  const companyInfoX = 54;
+  const companyInfoWidth = 100;
+
+  let textY = 15;
+
+  companyInfoLines.forEach(
+    (line, index) => {
+      pdf.setFont(
+        "helvetica",
+        index === 0
+          ? "bold"
+          : "normal"
+      );
+
+      pdf.setFontSize(
+        index === 0
+          ? 9
+          : 7.8
+      );
+
+      const wrapped =
+        pdf.splitTextToSize(
+          String(line),
+          companyInfoWidth
+        );
+
+      pdf.text(
+        wrapped,
+        companyInfoX,
+        textY
+      );
+
+      textY +=
+        wrapped.length * 3.8 + 0.8;
+    }
   );
 
-  pdf.setFontSize(8.5);
-
-  let informationY = 13;
-
-  const informationLines = [];
-
-  if (companyInfo.companyAddress) {
-    informationLines.push(
-      companyInfo.companyAddress
-    );
-  }
-
-  if (companyInfo.companyPhone) {
-    informationLines.push(
-      `Tel: ${companyInfo.companyPhone}`
-    );
-  }
-
-  if (companyInfo.companyWhatsapp) {
-    informationLines.push(
-      `WhatsApp: ${companyInfo.companyWhatsapp}`
-    );
-  }
-
-  if (companyInfo.companyEmail) {
-    informationLines.push(
-      `Email: ${companyInfo.companyEmail}`
-    );
-  }
-
   /*
-   * Limit the text area so it does not overlap the QR code.
-   */
-
-  const maximumTextWidth =
-    qrX -
-    informationX -
-    6;
-
-  for (const line of informationLines) {
-    const wrappedLines =
-      pdf.splitTextToSize(
-        line,
-        Math.max(
-          maximumTextWidth,
-          60
-        )
-      );
-
-    for (const wrappedLine of wrappedLines) {
-      pdf.text(
-        wrappedLine,
-        informationX,
-        informationY
-      );
-
-      informationY += 4;
-    }
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * QR CODE
-   * ----------------------------------------------------------
+   * ==========================================================
+   * QR CODE — TOP RIGHT
+   * ==========================================================
    */
 
   if (qrDataUrl) {
@@ -348,73 +449,79 @@ export async function drawPdfCompanyHeader(
       pdf.addImage(
         qrDataUrl,
         "PNG",
-        qrX,
-        qrY,
-        qrSize,
-        qrSize
+        165,
+        10,
+        31,
+        31
       );
 
-      pdf.setFontSize(6.5);
       pdf.setFont(
         "helvetica",
         "normal"
       );
 
+      pdf.setFontSize(7);
+
       pdf.text(
-        "Scan to verify",
-        qrX + qrSize / 2,
-        qrY + qrSize + 4,
+        verificationUrl
+          ? "Scan to verify"
+          : "Scan to open",
+        180.5,
+        45,
         {
           align: "center",
         }
       );
     } catch (error) {
-      console.error(
-        "PDF QR DRAW ERROR:",
+      console.warn(
+        "PDF QR ERROR:",
         error
       );
     }
   }
 
   /*
-   * ----------------------------------------------------------
-   * HEADER SEPARATOR
-   * ----------------------------------------------------------
+   * ==========================================================
+   * ACCENT DIVIDER
+   * ==========================================================
    */
 
-  pdf.setLineWidth(0.3);
+  const dividerY =
+    Math.max(
+      51,
+      textY + 3
+    );
+
+  pdf.setDrawColor(
+    ...accent
+  );
+
+  pdf.setLineWidth(0.8);
 
   pdf.line(
-    leftMargin,
-    43,
-    pageWidth - leftMargin,
-    43
+    14,
+    dividerY,
+    pageWidth - 14,
+    dividerY
   );
 
   /*
-   * ----------------------------------------------------------
-   * DOCUMENT CONTENT START
-   * ----------------------------------------------------------
-   *
-   * This keeps enough space below the standard header for
-   * every generated document.
-   * ----------------------------------------------------------
+   * ==========================================================
+   * CONTENT START
+   * ==========================================================
    */
-
-  const contentStartY = 53;
 
   return {
     companyInfo,
-    contentStartY,
+    contentStartY:
+      dividerY + 10,
+    accent,
   };
 }
 
 /**
  * ============================================================
  * GENERIC DOCUMENT VERIFICATION URL
- * ============================================================
- *
- * Used when a document has its own verification token.
  * ============================================================
  */
 

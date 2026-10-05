@@ -164,7 +164,7 @@ export default function Dashboard() {
 
   const [userName, setUserName] = useState("User");
   const [companyName, setCompanyName] =
-    useState("Umhlomunye Finance");
+    useState("Company");
 
   useEffect(() => {
     let mounted = true;
@@ -188,7 +188,7 @@ export default function Dashboard() {
 
         setCompanyName(
           settings?.company_name ||
-            "Umhlomunye Finance"
+            "Company"
         );
       } catch (err) {
         console.error(
@@ -199,9 +199,7 @@ export default function Dashboard() {
         if (!mounted) return;
 
         setUserName("User");
-        setCompanyName(
-          "Umhlomunye Finance"
-        );
+        setCompanyName("Company");
       }
     }
 

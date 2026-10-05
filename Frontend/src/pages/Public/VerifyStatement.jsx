@@ -19,9 +19,57 @@ export default function VerifyStatement() {
   const [statement, setStatement] = useState(null);
   const [error, setError] = useState("");
 
+  const [companyName, setCompanyName] = useState("Company");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyWhatsapp, setCompanyWhatsapp] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+
+  useEffect(() => {
+    loadCompanySettings();
+  }, []);
+
   useEffect(() => {
     verifyStatement();
   }, [token]);
+
+  async function loadCompanySettings() {
+    try {
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select(
+          `
+          company_name,
+          company_address,
+          company_phone,
+          company_whatsapp,
+          company_email
+          `
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          "LOAD COMPANY SETTINGS ERROR:",
+          error
+        );
+        return;
+      }
+
+      if (data) {
+        setCompanyName(data.company_name || "Company");
+        setCompanyAddress(data.company_address || "");
+        setCompanyPhone(data.company_phone || "");
+        setCompanyWhatsapp(data.company_whatsapp || "");
+        setCompanyEmail(data.company_email || "");
+      }
+    } catch (err) {
+      console.error(
+        "LOAD COMPANY SETTINGS ERROR:",
+        err
+      );
+    }
+  }
 
   async function verifyStatement() {
     try {
@@ -120,7 +168,6 @@ export default function VerifyStatement() {
         }}
       >
         <Container maxWidth="sm">
-
           <Paper
             elevation={3}
             sx={{
@@ -129,7 +176,6 @@ export default function VerifyStatement() {
               borderRadius: 2,
             }}
           >
-
             <Box
               sx={{
                 width: 70,
@@ -168,36 +214,45 @@ export default function VerifyStatement() {
               color="text.secondary"
             >
               If you believe this statement should be
-              valid, please contact Umhlomunye Finance.
+              valid, please contact {companyName}.
             </Typography>
 
             <Box sx={{ mt: 3 }}>
-
               <Typography
                 variant="body2"
                 fontWeight={600}
               >
-                UMHLOMUNYE FINANCE
+                {companyName}
               </Typography>
 
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Tel: 078 078 3879
-              </Typography>
+              {companyPhone && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  Tel: {companyPhone}
+                </Typography>
+              )}
 
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                WhatsApp: 060 508 6672
-              </Typography>
+              {companyWhatsapp && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  WhatsApp: {companyWhatsapp}
+                </Typography>
+              )}
 
+              {companyEmail && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  {companyEmail}
+                </Typography>
+              )}
             </Box>
-
           </Paper>
-
         </Container>
       </Box>
     );
@@ -214,9 +269,7 @@ export default function VerifyStatement() {
         },
       }}
     >
-
       <Container maxWidth="sm">
-
         <Paper
           elevation={3}
           sx={{
@@ -224,7 +277,6 @@ export default function VerifyStatement() {
             borderRadius: 2,
           }}
         >
-
           {/* HEADER */}
 
           <Box
@@ -235,38 +287,23 @@ export default function VerifyStatement() {
               textAlign: "center",
             }}
           >
-
             <Typography
               variant="h5"
               fontWeight={700}
             >
-              UMHLOMUNYE FINANCE
+              {companyName}
             </Typography>
-
-            <Typography
-              variant="body2"
-              sx={{
-                mt: 0.5,
-                opacity: 0.9,
-              }}
-            >
-              "Our dreams, Our hope"
-            </Typography>
-
           </Box>
-
 
           {/* VERIFIED AREA */}
 
           <Box sx={{ p: 4 }}>
-
             <Box
               sx={{
                 textAlign: "center",
                 mb: 4,
               }}
             >
-
               <Box
                 sx={{
                   width: 76,
@@ -298,12 +335,10 @@ export default function VerifyStatement() {
                 sx={{ mt: 1 }}
               >
                 This statement has been successfully
-                authenticated against the Umhlomunye
-                Finance loan management system.
+                authenticated against the {companyName}
+                loan management system.
               </Typography>
-
             </Box>
-
 
             {/* STATEMENT DETAILS */}
 
@@ -316,28 +351,19 @@ export default function VerifyStatement() {
             </Typography>
 
             <Stack spacing={2}>
-
               <Detail
                 label="Loan Number"
-                value={
-                  statement.loan_number
-                }
+                value={statement.loan_number}
               />
 
               <Detail
                 label="Customer"
-                value={
-                  statement.customer_name
-                }
+                value={statement.customer_name}
               />
 
               <Detail
                 label="Principal Amount"
-                value={
-                  money(
-                    statement.principal_amount
-                  )
-                }
+                value={money(statement.principal_amount)}
               />
 
               <Detail
@@ -349,40 +375,24 @@ export default function VerifyStatement() {
 
               <Detail
                 label="Total Repayment"
-                value={
-                  money(
-                    statement.total_repayment
-                  )
-                }
+                value={money(statement.total_repayment)}
               />
 
               <Detail
                 label="Total Paid"
-                value={
-                  money(
-                    statement.total_paid
-                  )
-                }
+                value={money(statement.total_paid)}
               />
 
               <Detail
                 label="Current Balance"
-                value={
-                  money(
-                    statement.current_balance
-                  )
-                }
+                value={money(statement.current_balance)}
               />
 
               <Detail
                 label="Loan Status"
-                value={
-                  statement.loan_status
-                }
+                value={statement.loan_status}
               />
-
             </Stack>
-
 
             {/* AUTHENTICITY */}
 
@@ -397,11 +407,10 @@ export default function VerifyStatement() {
               <br />
 
               The information displayed above was
-              retrieved directly from the Umhlomunye
-              Finance system using the secure statement
+              retrieved directly from the {companyName}
+              system using the secure statement
               verification reference.
             </Alert>
-
 
             {/* COMPANY */}
 
@@ -409,59 +418,56 @@ export default function VerifyStatement() {
               sx={{
                 mt: 4,
                 pt: 3,
-                borderTop:
-                  "1px solid #e1e5eb",
+                borderTop: "1px solid #e1e5eb",
                 textAlign: "center",
               }}
             >
-
-              <Typography
-                fontWeight={700}
-              >
-                UMHLOMUNYE FINANCE
+              <Typography fontWeight={700}>
+                {companyName}
               </Typography>
 
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Reg. No: 2020/191721/07
-              </Typography>
+              {companyAddress && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  {companyAddress}
+                </Typography>
+              )}
 
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                20 Jacaranda Street,
-                Kinross, 2270
-              </Typography>
+              {companyPhone && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  Tel: {companyPhone}
+                </Typography>
+              )}
 
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Tel: 078 078 3879
-              </Typography>
+              {companyWhatsapp && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  WhatsApp: {companyWhatsapp}
+                </Typography>
+              )}
 
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                WhatsApp: 060 508 6672
-              </Typography>
-
+              {companyEmail && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  {companyEmail}
+                </Typography>
+              )}
             </Box>
-
           </Box>
-
         </Paper>
-
       </Container>
-
     </Box>
   );
 }
-
 
 /*
  * ============================================================
@@ -481,7 +487,6 @@ function Detail({ label, value }) {
         borderRadius: 1,
       }}
     >
-
       <Typography
         variant="body2"
         color="text.secondary"
@@ -496,7 +501,6 @@ function Detail({ label, value }) {
       >
         {value || "-"}
       </Typography>
-
     </Box>
   );
 }

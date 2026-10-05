@@ -9,9 +9,7 @@ export default function Header() {
   const navigate = useNavigate();
 
   const [userName, setUserName] = useState("User");
-  const [companyName, setCompanyName] = useState(
-    "Umhlomunye Finance"
-  );
+  const [companyName, setCompanyName] = useState("Company");
   const [companyLogo, setCompanyLogo] = useState(null);
   const [pendingApplications, setPendingApplications] =
     useState(0);
@@ -165,8 +163,7 @@ export default function Header() {
       }
 
       setCompanyName(
-        data?.company_name ||
-          "Umhlomunye Finance"
+        data?.company_name || "Company"
       );
 
       setCompanyLogo(
@@ -235,7 +232,7 @@ export default function Header() {
               flexShrink: 0,
             }}
           >
-            UBS
+            APP
           </div>
         )}
 
