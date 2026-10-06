@@ -56,12 +56,16 @@ export default function MobileLogin() {
           );
         }
 
-        const { data: deviceStatus, error: deviceError } =
+        const { data, error: deviceError } =
           await supabase.rpc("get_mobile_device_status", {
             p_device_id: deviceId,
           });
 
         if (deviceError) throw deviceError;
+
+        const deviceStatus = Array.isArray(data)
+          ? data[0]
+          : data;
 
         if (
           deviceStatus?.is_linked !== true ||
@@ -175,7 +179,7 @@ export default function MobileLogin() {
       }
 
       const {
-        data: deviceStatus,
+        data,
         error: deviceError,
       } =
         await supabase.rpc(
@@ -186,6 +190,10 @@ export default function MobileLogin() {
         );
 
       if (deviceError) throw deviceError;
+
+      const deviceStatus = Array.isArray(data)
+        ? data[0]
+        : data;
 
       if (
         deviceStatus?.is_linked !== true ||
