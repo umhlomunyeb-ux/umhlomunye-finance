@@ -23,6 +23,8 @@ import {
 
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 
 import { getSystemSettings } from "../../services/settingsService";
@@ -42,6 +44,7 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // ------------------------------------------------------------
@@ -804,7 +807,7 @@ export default function Login() {
 
         <TextField
           fullWidth
-          type="password"
+          type={showPassword ? "text" : "password"}
           label="Password"
           placeholder="Enter your password"
           value={password}
