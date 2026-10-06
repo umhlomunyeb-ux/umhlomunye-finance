@@ -340,12 +340,12 @@ export default function MobileApplicationReview() {
 
   function handleNavigation(value) {
     if (value === "home") {
-      navigate("/mobile/preview");
+      navigate("/mobile/dashboard");
       return;
     }
 
     if (value === "applications") {
-      navigate("/mobile/application-review");
+      navigate("/mobile/dashboard");
     }
   }
 
@@ -382,7 +382,7 @@ export default function MobileApplicationReview() {
           sx={{ mt: 2 }}
           variant="outlined"
           onClick={() =>
-            navigate("/mobile/application-review")
+            navigate("/mobile/dashboard")
           }
         >
           Back to Applications
@@ -415,7 +415,7 @@ export default function MobileApplicationReview() {
           sx={{ mt: 2 }}
           variant="outlined"
           onClick={() =>
-            navigate("/mobile/application-review")
+            navigate("/mobile/dashboard")
           }
         >
           Back to Applications
@@ -459,7 +459,7 @@ export default function MobileApplicationReview() {
           <Button
             size="small"
             onClick={() =>
-              navigate("/mobile/application-review")
+              navigate("/mobile/dashboard")
             }
             sx={{
               minWidth: "auto",
@@ -979,11 +979,11 @@ function MobileBottomNavigation({
         value={current}
         onChange={(_, value) => {
           if (value === "home") {
-            navigate("/mobile/preview");
+            navigate("/mobile/dashboard");
           }
 
           if (value === "applications") {
-            navigate("/mobile/application-review");
+            navigate("/mobile/dashboard");
           }
         }}
         showLabels
