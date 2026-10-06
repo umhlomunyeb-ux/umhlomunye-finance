@@ -83,7 +83,7 @@ export default function MobileLogin() {
         if (sessionError) throw sessionError;
 
         if (sessionData?.session?.user) {
-          navigate("/mobile/application-review", {
+          navigate("/mobile/dashboard", {
             replace: true,
           });
           return;
@@ -217,7 +217,7 @@ export default function MobileLogin() {
       if (authError) throw authError;
 
       navigate(
-        "/mobile/application-review",
+        "/mobile/dashboard",
         {
           replace: true,
         }
