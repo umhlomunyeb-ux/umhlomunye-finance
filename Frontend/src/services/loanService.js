@@ -480,6 +480,15 @@ export async function voidLoan(id) {
   }
 
   const {
+    data: userData,
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) {
+    throw userError;
+  }
+
+  const {
     data,
     error,
   } = await supabase
@@ -487,6 +496,10 @@ export async function voidLoan(id) {
     .update({
       loan_status: "Void",
       is_deleted: true,
+      deleted_at:
+        new Date().toISOString(),
+      deleted_by:
+        userData?.user?.id || null,
       updated_at:
         new Date().toISOString(),
     })
