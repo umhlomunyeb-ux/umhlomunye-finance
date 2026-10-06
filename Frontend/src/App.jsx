@@ -82,6 +82,15 @@ export default function App() {
           />
 
           <Route
+            path="/mobile/dashboard"
+            element={
+              <ProtectedRoute>
+                <MobileApplicationReviews />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/mobile/application-review/:id"
             element={
               <ProtectedRoute>
