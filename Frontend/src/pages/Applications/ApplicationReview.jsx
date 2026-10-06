@@ -17,11 +17,20 @@ import {
   DialogActions,
   TextField,
   Stack,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 
 import { supabase } from "../../lib/supabase";
 import { findCustomerByIdNumber } from "../../services/customerService";
 import { sendLoanEmail } from "../../services/emailService";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import {
+  uploadDocument,
+  DOCUMENT_TYPES,
+  DOCUMENT_CATEGORIES,
+} from "../../services/documentService";
 
 export default function ApplicationReview() {
   const { id } = useParams();
@@ -49,6 +58,22 @@ export default function ApplicationReview() {
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsError, setDocumentsError] = useState("");
   const [openingDocument, setOpeningDocument] = useState(null);
+
+  const [selectedApplicationDocuments, setSelectedApplicationDocuments] =
+    useState({
+      idDocument: null,
+      bankStatement: null,
+      payslip: null,
+      proofOfResidence: null,
+    });
+
+  const [uploadingApplicationDocument, setUploadingApplicationDocument] =
+    useState("");
+
+  const [useBankStatementAsProofOfResidence, setUseBankStatementAsProofOfResidence] =
+    useState(false);
+
+  const [noDocuments, setNoDocuments] = useState(false);
 
   // --------------------------------------------------
   // FIND EXISTING CUSTOMER
@@ -411,6 +436,133 @@ export default function ApplicationReview() {
   }
 
   // --------------------------------------------------
+  // INTERNAL APPLICATION DOCUMENT UPLOAD
+  // --------------------------------------------------
+
+  function normalizeApplicationDocumentType(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replaceAll("_", " ")
+      .replaceAll("-", " ")
+      .replace(/\s+/g, " ");
+  }
+
+  function hasApplicationDocument(documentType) {
+    const requiredType =
+      normalizeApplicationDocumentType(documentType);
+
+    return documents.some((document) =>
+      normalizeApplicationDocumentType(
+        document?.document_type
+      ) === requiredType &&
+      !document?.is_archived &&
+      !document?.deleted_at
+    );
+  }
+
+  function handleApplicationDocumentChange(documentKey, event) {
+    const file = event.target.files?.[0] || null;
+
+    if (!file) {
+      return;
+    }
+
+    const allowedTypes = new Set([
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+    ]);
+
+    const maxSize = 10 * 1024 * 1024;
+
+    if (!allowedTypes.has(file.type)) {
+      setDocumentsError(
+        "Only PDF, JPG and PNG application documents are allowed."
+      );
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size <= 0 || file.size > maxSize) {
+      setDocumentsError(
+        "Each application document must be smaller than or equal to 10 MB."
+      );
+      event.target.value = "";
+      return;
+    }
+
+    setDocumentsError("");
+    setSelectedApplicationDocuments((current) => ({
+      ...current,
+      [documentKey]: file,
+    }));
+    event.target.value = "";
+  }
+
+  async function handleApplicationDocumentUpload({
+    documentKey,
+    documentType,
+    label,
+  }) {
+    const file = selectedApplicationDocuments[documentKey];
+
+    if (!file) {
+      setDocumentsError(
+        "Please choose the " + label.toLowerCase() + " first."
+      );
+      return;
+    }
+
+    try {
+      setUploadingApplicationDocument(documentKey);
+      setDocumentsError("");
+
+      await uploadDocument({
+        file,
+        documentType,
+        documentCategory: DOCUMENT_CATEGORIES.OTHER,
+        documentName:
+          label +
+          " - " +
+          (application.application_number || application.id),
+        applicationId: application.id,
+        applicationNumber:
+          application.application_number || null,
+        customerId:
+          application.customer_id ||
+          customer?.id ||
+          null,
+        customerIdNumber:
+          application.id_number ||
+          customer?.id_number ||
+          null,
+      });
+
+      setSelectedApplicationDocuments((current) => ({
+        ...current,
+        [documentKey]: null,
+      }));
+
+      await loadDocuments(application.id);
+    } catch (err) {
+      console.error(
+        "APPLICATION DOCUMENT UPLOAD ERROR:",
+        err
+      );
+
+      setDocumentsError(
+        err?.message ||
+          "Unable to upload the " +
+            label.toLowerCase() +
+            "."
+      );
+    } finally {
+      setUploadingApplicationDocument("");
+    }
+  }
+
+  // --------------------------------------------------
   // APPROVE APPLICATION
   // --------------------------------------------------
 
@@ -434,6 +586,49 @@ export default function ApplicationReview() {
             application.status
           )}.`
         );
+      }
+
+      if (!noDocuments) {
+        const missingApplicationDocuments = [];
+
+        if (!hasApplicationDocument(DOCUMENT_TYPES.ID_DOCUMENT)) {
+          missingApplicationDocuments.push("ID Document");
+        }
+
+        if (!hasApplicationDocument(DOCUMENT_TYPES.BANK_STATEMENT)) {
+          missingApplicationDocuments.push(
+            "3 Month Bank Statement"
+          );
+        }
+
+        if (!hasApplicationDocument(DOCUMENT_TYPES.PAYSLIP)) {
+          missingApplicationDocuments.push("Latest Payslip");
+        }
+
+        const proofOfResidenceSatisfied =
+          hasApplicationDocument(
+            DOCUMENT_TYPES.PROOF_OF_RESIDENCE
+          ) ||
+          (
+            useBankStatementAsProofOfResidence &&
+            hasApplicationDocument(
+              DOCUMENT_TYPES.BANK_STATEMENT
+            )
+          );
+
+        if (!proofOfResidenceSatisfied) {
+          missingApplicationDocuments.push(
+            "Proof of Residence"
+          );
+        }
+
+        if (missingApplicationDocuments.length > 0) {
+          throw new Error(
+            "The application cannot be approved until the following documents are uploaded, or the No Documents option is selected: " +
+              missingApplicationDocuments.join(", ") +
+              "."
+          );
+        }
       }
 
       // -----------------------------------------------
@@ -1487,6 +1682,225 @@ export default function ApplicationReview() {
               ))}
             </Stack>
           )}
+      </Paper>
+
+      {/* INTERNAL APPLICATION DOCUMENTS */}
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          justifyContent="space-between"
+          alignItems={{ xs: "flex-start", md: "center" }}
+          spacing={1}
+        >
+          <Typography variant="h6" fontWeight="bold">
+            Application Documents
+          </Typography>
+
+          <Typography variant="body2" color="text.secondary">
+            Staff can upload missing documents directly to this application.
+          </Typography>
+        </Stack>
+
+        <Divider sx={{ my: 2 }} />
+
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Required documents: ID, 3 month bank statement, latest payslip and proof of residence.
+          A bank statement may be used as proof of residence when selected below.
+        </Alert>
+
+        <Stack spacing={2}>
+          {[
+            {
+              key: "idDocument",
+              type: DOCUMENT_TYPES.ID_DOCUMENT,
+              label: "ID Document",
+            },
+            {
+              key: "bankStatement",
+              type: DOCUMENT_TYPES.BANK_STATEMENT,
+              label: "3 Month Bank Statement",
+            },
+            {
+              key: "payslip",
+              type: DOCUMENT_TYPES.PAYSLIP,
+              label: "Latest Payslip",
+            },
+            {
+              key: "proofOfResidence",
+              type: DOCUMENT_TYPES.PROOF_OF_RESIDENCE,
+              label: "Proof of Residence",
+            },
+          ].map((item) => {
+            const existing = hasApplicationDocument(item.type);
+            const selected = selectedApplicationDocuments[item.key];
+            const uploading =
+              uploadingApplicationDocument === item.key;
+
+            return (
+              <Paper
+                key={item.key}
+                variant="outlined"
+                sx={{ p: 2 }}
+              >
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  justifyContent="space-between"
+                  alignItems={{ xs: "flex-start", md: "center" }}
+                  spacing={2}
+                >
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                    >
+                      {existing && (
+                        <CheckCircleIcon
+                          color="success"
+                          fontSize="small"
+                        />
+                      )}
+
+                      <Typography fontWeight="bold">
+                        {item.label}
+                      </Typography>
+                    </Stack>
+
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 0.5 }}
+                    >
+                      {existing
+                        ? "Document available for this application."
+                        : selected
+                          ? selected.name
+                          : "No document uploaded yet."}
+                    </Typography>
+                  </Box>
+
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={1}
+                    sx={{
+                      width: {
+                        xs: "100%",
+                        md: "auto",
+                      },
+                    }}
+                  >
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      startIcon={<CloudUploadIcon />}
+                      disabled={
+                        uploading ||
+                        Boolean(uploadingApplicationDocument)
+                      }
+                    >
+                      {selected
+                        ? "Choose Different File"
+                        : "Choose File"}
+
+                      <input
+                        hidden
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png"
+                        onChange={(event) =>
+                          handleApplicationDocumentChange(
+                            item.key,
+                            event
+                          )
+                        }
+                      />
+                    </Button>
+
+                    <Button
+                      variant="contained"
+                      onClick={() =>
+                        handleApplicationDocumentUpload({
+                          documentKey: item.key,
+                          documentType: item.type,
+                          label: item.label,
+                        })
+                      }
+                      disabled={
+                        !selected ||
+                        Boolean(uploadingApplicationDocument)
+                      }
+                    >
+                      {uploading
+                        ? "Uploading..."
+                        : "Upload"}
+                    </Button>
+                  </Stack>
+                </Stack>
+              </Paper>
+            );
+          })}
+        </Stack>
+
+        <FormControlLabel
+          sx={{ mt: 2 }}
+          control={
+            <Checkbox
+              checked={useBankStatementAsProofOfResidence}
+              onChange={(event) =>
+                setUseBankStatementAsProofOfResidence(
+                  event.target.checked
+                )
+              }
+              disabled={
+                !hasApplicationDocument(
+                  DOCUMENT_TYPES.BANK_STATEMENT
+                )
+              }
+            />
+          }
+          label="Use the bank statement as Proof of Residence"
+        />
+
+        {useBankStatementAsProofOfResidence && (
+          <Alert severity="success" sx={{ mt: 1 }}>
+            The uploaded bank statement will satisfy the Proof of Residence requirement.
+          </Alert>
+        )}
+
+        <Box
+          sx={{
+            mt: 2,
+            p: 2,
+            border: "1px solid",
+            borderColor: noDocuments
+              ? "warning.main"
+              : "divider",
+            borderRadius: 1,
+            bgcolor: noDocuments
+              ? "#fff8e1"
+              : "transparent",
+          }}
+        >
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={noDocuments}
+                onChange={(event) =>
+                  setNoDocuments(event.target.checked)
+                }
+              />
+            }
+            label="No Documents"
+          />
+
+          <Typography
+            variant="body2"
+            color="text.secondary"
+          >
+            Select this when the applicant has no supporting documents.
+            Approval will be allowed without the document requirements.
+          </Typography>
+        </Box>
       </Paper>
 
       {/* LINKED RECORDS */}
