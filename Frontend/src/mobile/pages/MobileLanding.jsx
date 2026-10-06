@@ -377,11 +377,18 @@ export default function MobileLanding() {
         );
 
         await checkDeviceStatus(deviceId);
+
+        navigate("/login", {
+          replace: true,
+          state: {
+            fromMobile: true,
+          },
+        });
       } finally {
         setPairing(false);
       }
     },
-    [checkDeviceStatus, deviceId]
+    [checkDeviceStatus, deviceId, navigate]
   );
 
   useEffect(() => {
