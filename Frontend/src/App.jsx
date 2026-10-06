@@ -39,6 +39,11 @@ export default function App() {
           <Route path="/apply" element={<PublicApplication />} />
 
           <Route
+            path="/sign-agreement/offline/:agreementId"
+            element={<SignAgreement />}
+          />
+
+          <Route
             path="/sign-agreement/:token"
             element={<SignAgreement />}
           />
