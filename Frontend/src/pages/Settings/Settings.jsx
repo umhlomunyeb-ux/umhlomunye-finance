@@ -249,18 +249,16 @@ export default function Settings() {
       }
 
       try {
-        const payload = JSON.stringify({
-          type: "lms_pairing",
-          version: 1,
-          installation_id:
-            pairingResult.installation_id,
-          pairing_token:
-            pairingResult.pairing_token,
-        });
+        const pairingUrl =
+          window.location.origin +
+          "/mobile?installation_id=" +
+          encodeURIComponent(pairingResult.installation_id) +
+          "&pairing_token=" +
+          encodeURIComponent(pairingResult.pairing_token);
 
         const dataUrl =
           await QRCode.toDataURL(
-            payload,
+            pairingUrl,
             {
               errorCorrectionLevel: "M",
               margin: 2,
@@ -1816,7 +1814,7 @@ export default function Settings() {
                     variant="h6"
                     fontWeight={700}
                   >
-                    Mobile App Setup
+                    Browser Mobile Pairing
                   </Typography>
                 </Stack>
 
@@ -1942,7 +1940,7 @@ export default function Settings() {
                   color="text.secondary"
                   sx={{ mb: 2 }}
                 >
-                  Generate a temporary secure pairing credential.
+                  Generate a temporary secure browser pairing credential.
                   The QR code and numeric code expire automatically
                   and can be regenerated at any time.
                 </Typography>
@@ -2041,7 +2039,7 @@ export default function Settings() {
                                 src={
                                   pairingQrCode
                                 }
-                                alt="Mobile app pairing QR code"
+                                alt="Browser mobile pairing QR code"
                                 style={{
                                   width: 280,
                                   height: 280,
@@ -2059,7 +2057,10 @@ export default function Settings() {
                             color="text.secondary"
                             textAlign="center"
                           >
-                            Scan this QR code using LMS Companion.
+                            Scan this QR code with the phone's
+                             normal camera. The link will open
+                             the LMS in the browser and pair it
+                             automatically.
                           </Typography>
                         </Stack>
                       </Grid>
