@@ -3,12 +3,17 @@ import jsPDF from "npm:jspdf@4.2.1";
 import autoTable from "npm:jspdf-autotable@5.0.8";
 import QRCode from "npm:qrcode@1.5.4";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SUPABASE_SECRET_KEYS = JSON.parse(
+  Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}"
+);
+
+const SUPABASE_SECRET_KEY =
+  SUPABASE_SECRET_KEYS["default"] ?? "";
 const STATEMENT_GENERATOR_SECRET = Deno.env.get("STATEMENT_GENERATOR_SECRET") ?? "";
 const PUBLIC_APP_URL = Deno.env.get("PUBLIC_APP_URL") ?? "https://umhlomunye-finance2.umhlomunyeb.workers.dev";
 const DOCUMENT_BUCKET = "documents";
 const STATEMENT_DOCUMENT_TYPE = "Statement";
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
   auth: {
     persistSession: false,
     autoRefreshToken: false

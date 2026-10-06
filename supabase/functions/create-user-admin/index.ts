@@ -27,9 +27,17 @@ Deno.serve(async (req)=>{
   }
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+   const publishableKeys = JSON.parse(
+      Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}"
+    );
+
+    const secretKeys = JSON.parse(
+      Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"
+    );
+
+    const publishableKey = publishableKeys["default"];
+    const secretKey = secretKeys["default"];
+    if (!supabaseUrl || !secretKey || !publishableKey) {
       throw new Error("Supabase environment variables are missing.");
     }
     const authorization = req.headers.get("Authorization");
@@ -44,7 +52,7 @@ Deno.serve(async (req)=>{
      * This is used to identify the requesting user
      * and verify the administrator profile through
      * the user's existing RLS permissions.
-     */ const supabaseAuth = createClient(supabaseUrl, anonKey, {
+     */ const supabaseAuth = createClient(supabaseUrl, publishableKey, {
       global: {
         headers: {
           Authorization: authorization
@@ -64,7 +72,7 @@ Deno.serve(async (req)=>{
     /*
      * Service-role client.
      * This is required for privileged Auth operations.
-     */ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+     */ const supabaseAdmin = createClient(supabaseUrl, secretKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false

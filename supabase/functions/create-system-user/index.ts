@@ -13,8 +13,16 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const publishableKeys = JSON.parse(
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEYS")!
+    );
+
+    const secretKeys = JSON.parse(
+      Deno.env.get("SUPABASE_SECRET_KEYS")!
+    );
+
+    const supabasePublishableKey = publishableKeys["default"];
+    const secretKey = secretKeys["default"];
 
     const authHeader = req.headers.get("Authorization");
 
@@ -24,7 +32,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       supabaseUrl,
-      supabaseAnonKey,
+      supabasePublishableKey,
       {
         global: {
           headers: {
@@ -45,7 +53,7 @@ Deno.serve(async (req) => {
 
     const adminClient = createClient(
       supabaseUrl,
-      serviceRoleKey
+      secretKey
     );
 
     const { data: isAdmin, error: adminError } =

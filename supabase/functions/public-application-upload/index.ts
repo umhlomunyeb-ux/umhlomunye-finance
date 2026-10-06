@@ -67,7 +67,12 @@ Deno.serve(async (req)=>{
      * SUPABASE_SECRET_KEYS remains as a fallback
      * for environments where the existing custom
      * secret is still configured.
-     */ const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? "";
+     */
+    const secretKeys = JSON.parse(
+      Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}"
+    );
+
+    const supabaseKey = secretKeys["default"] ?? "";
     if (!supabaseUrl || !supabaseKey) {
       console.error("Supabase environment variables are not configured.");
       return jsonResponse({
