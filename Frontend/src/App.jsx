@@ -58,7 +58,7 @@ export default function App() {
           <Route
             path="/mobile/dashboard"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute redirectTo="/mobile/login">
                 <MobileDashboard />
               </ProtectedRoute>
             }
@@ -67,7 +67,7 @@ export default function App() {
           <Route
             path="/mobile/application-review"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute redirectTo="/mobile/login">
                 <MobileApplicationReviews />
               </ProtectedRoute>
             }
@@ -76,7 +76,7 @@ export default function App() {
           <Route
             path="/mobile/application-review/:id"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute redirectTo="/mobile/login">
                 <MobileApplicationReview />
               </ProtectedRoute>
             }
