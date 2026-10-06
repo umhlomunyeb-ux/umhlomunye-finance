@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login/Login";
 import MobileLogin from "./mobile/pages/MobileLogin";
@@ -28,33 +28,6 @@ import PendingApplications from "./pages/Applications/PendingApplications";
 import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
 
-const INSTALLATION_ID_STORAGE_KEY = "lms_companion_installation_id";
-const DEVICE_ID_STORAGE_KEY = "lms_companion_device_id";
-
-function LoginRoute() {
-  const location = useLocation();
-
-  let pairedMobileBrowser = Boolean(location.state?.fromMobile);
-
-  if (!pairedMobileBrowser) {
-    try {
-      pairedMobileBrowser =
-        Boolean(
-          localStorage.getItem(
-            INSTALLATION_ID_STORAGE_KEY
-          ) &&
-            localStorage.getItem(
-              DEVICE_ID_STORAGE_KEY
-            )
-        );
-    } catch {
-      pairedMobileBrowser = false;
-    }
-  }
-
-  return pairedMobileBrowser ? <MobileLogin /> : <Login />;
-}
-
 export default function App() {
   return (
     <>
@@ -64,7 +37,7 @@ export default function App() {
         <Routes>
           {/* PUBLIC */}
           <Route path="/" element={<Login />} />
-          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/apply" element={<PublicApplication />} />
 
           <Route
@@ -93,15 +66,6 @@ export default function App() {
 
           <Route
             path="/mobile/application-review"
-            element={
-              <ProtectedRoute>
-                <MobileApplicationReviews />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/mobile/dashboard"
             element={
               <ProtectedRoute>
                 <MobileApplicationReviews />
