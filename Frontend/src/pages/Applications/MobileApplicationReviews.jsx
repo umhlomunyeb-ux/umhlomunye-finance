@@ -17,8 +17,6 @@ import {
   Typography,
 } from "@mui/material";
 
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 
 import { supabase } from "../../lib/supabase";
 
@@ -124,17 +122,6 @@ export default function MobileApplicationReviews() {
     }
   }
 
-  function handleNavigation(value) {
-    if (value === "home") {
-      navigate("/mobile/preview");
-      return;
-    }
-
-    if (value === "applications") {
-      navigate("/mobile/application-review");
-    }
-  }
-
   return (
     <Box
       sx={{
@@ -166,14 +153,14 @@ export default function MobileApplicationReviews() {
               fontWeight="bold"
               sx={{ fontSize: "20px" }}
             >
-              Application Review
+              Loan Review
             </Typography>
 
             <Typography
               variant="caption"
               color="text.secondary"
             >
-              Pending loan applications
+              Review pending loan applications
             </Typography>
           </Box>
 
@@ -384,39 +371,7 @@ export default function MobileApplicationReviews() {
         )}
       </Box>
 
-      {/* MOBILE BOTTOM NAVIGATION */}
-      <Paper
-        elevation={8}
-        sx={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 100,
-          borderTop: "1px solid",
-          borderColor: "divider",
-        }}
-      >
-        <BottomNavigation
-          value="applications"
-          onChange={(_, value) =>
-            handleNavigation(value)
-          }
-          showLabels
-        >
-          <BottomNavigationAction
-            label="Home"
-            value="home"
-            icon={<HomeOutlinedIcon />}
-          />
 
-          <BottomNavigationAction
-            label="Applications"
-            value="applications"
-            icon={<DescriptionOutlinedIcon />}
-          />
-        </BottomNavigation>
-      </Paper>
     </Box>
   );
 }
