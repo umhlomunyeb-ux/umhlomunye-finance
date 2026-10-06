@@ -40,32 +40,60 @@ export default function MobileLogin() {
 
     async function initialize() {
       try {
-        const [{ data: sessionData, error: sessionError }, { data: brandingData, error: brandingError }] =
-          await Promise.all([
-            supabase.auth.getSession(),
-            (async () => {
-              let installationId = "";
-              try {
-                installationId =
-                  localStorage.getItem(INSTALLATION_ID_STORAGE_KEY) || "";
-              } catch {}
+        let deviceId = "";
+        let installationId = "";
 
-              if (!installationId) {
-                return { data: null, error: new Error("Mobile device is not paired.") };
-              }
+        try {
+          deviceId =
+            localStorage.getItem(DEVICE_ID_STORAGE_KEY) || "";
+          installationId =
+            localStorage.getItem(INSTALLATION_ID_STORAGE_KEY) || "";
+        } catch {}
 
-              return supabase.rpc("get_mobile_installation_settings", {
-                p_installation_id: installationId,
-              });
-            })(),
-          ]);
+        if (!deviceId || !installationId) {
+          throw new Error(
+            "This mobile device is not paired with an LMS installation."
+          );
+        }
+
+        const { data: deviceStatus, error: deviceError } =
+          await supabase.rpc("get_mobile_device_status", {
+            p_device_id: deviceId,
+          });
+
+        if (deviceError) throw deviceError;
+
+        if (
+          deviceStatus?.is_linked !== true ||
+          deviceStatus?.is_revoked === true ||
+          deviceStatus?.installation_id !== installationId
+        ) {
+          throw new Error(
+            "This mobile device is not authorized. Please pair it again."
+          );
+        }
+
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
 
         if (sessionError) throw sessionError;
 
         if (sessionData?.session?.user) {
-          navigate("/mobile/application-review", { replace: true });
+          navigate("/mobile/application-review", {
+            replace: true,
+          });
           return;
         }
+
+        const {
+          data: brandingData,
+          error: brandingError,
+        } = await supabase.rpc(
+          "get_mobile_installation_settings",
+          {
+            p_installation_id: installationId,
+          }
+        );
 
         if (brandingError) throw brandingError;
 
@@ -78,10 +106,18 @@ export default function MobileLogin() {
 
         if (!mounted) return;
 
-        setCompanyName(brandingData.company_name || "");
-        setCompanyLogoUrl(brandingData.company_logo_url || "");
+        setCompanyName(
+          brandingData.company_name || ""
+        );
+
+        setCompanyLogoUrl(
+          brandingData.company_logo_url || ""
+        );
       } catch (err) {
-        console.error("MOBILE LOGIN INITIALIZATION ERROR:", err);
+        console.error(
+          "MOBILE LOGIN INITIALIZATION ERROR:",
+          err
+        );
 
         if (!mounted) return;
 
@@ -107,7 +143,9 @@ export default function MobileLogin() {
     if (signingIn) return;
 
     if (!email.trim() || !password) {
-      setError("Please enter your email address and password.");
+      setError(
+        "Please enter your email address and password."
+      );
       return;
     }
 
@@ -120,9 +158,14 @@ export default function MobileLogin() {
 
       try {
         deviceId =
-          localStorage.getItem(DEVICE_ID_STORAGE_KEY) || "";
+          localStorage.getItem(
+            DEVICE_ID_STORAGE_KEY
+          ) || "";
+
         installationId =
-          localStorage.getItem(INSTALLATION_ID_STORAGE_KEY) || "";
+          localStorage.getItem(
+            INSTALLATION_ID_STORAGE_KEY
+          ) || "";
       } catch {}
 
       if (!deviceId || !installationId) {
@@ -131,24 +174,33 @@ export default function MobileLogin() {
         );
       }
 
-      const { data: deviceStatus, error: deviceError } =
-        await supabase.rpc("get_mobile_device_status", {
-          p_device_id: deviceId,
-        });
+      const {
+        data: deviceStatus,
+        error: deviceError,
+      } =
+        await supabase.rpc(
+          "get_mobile_device_status",
+          {
+            p_device_id: deviceId,
+          }
+        );
 
       if (deviceError) throw deviceError;
 
       if (
         deviceStatus?.is_linked !== true ||
         deviceStatus?.is_revoked === true ||
-        deviceStatus?.installation_id !== installationId
+        deviceStatus?.installation_id !==
+          installationId
       ) {
         throw new Error(
           "This mobile device is not authorized. Please pair it again."
         );
       }
 
-      const { error: authError } =
+      const {
+        error: authError,
+      } =
         await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
@@ -156,12 +208,22 @@ export default function MobileLogin() {
 
       if (authError) throw authError;
 
-      navigate("/mobile/application-review", {
-        replace: true,
-      });
+      navigate(
+        "/mobile/application-review",
+        {
+          replace: true,
+        }
+      );
     } catch (err) {
-      console.error("MOBILE LOGIN ERROR:", err);
-      setError(err?.message || "Unable to sign in.");
+      console.error(
+        "MOBILE LOGIN ERROR:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Unable to sign in."
+      );
     } finally {
       setSigningIn(false);
     }
@@ -180,7 +242,9 @@ export default function MobileLogin() {
           px: 2,
         }}
       >
-        <CircularProgress sx={{ color: "white" }} />
+        <CircularProgress
+          sx={{ color: "white" }}
+        />
       </Box>
     );
   }
@@ -204,18 +268,34 @@ export default function MobileLogin() {
           width: "100%",
           maxWidth: 420,
           borderRadius: 4,
-          backgroundColor: "rgba(255,255,255,0.98)",
-          boxShadow: "0 25px 70px rgba(0,0,0,0.25)",
+          backgroundColor:
+            "rgba(255,255,255,0.98)",
+          boxShadow:
+            "0 25px 70px rgba(0,0,0,0.25)",
         }}
       >
-        <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
+        <CardContent
+          sx={{
+            p: {
+              xs: 3,
+              sm: 4,
+            },
+          }}
+        >
           <Stack spacing={3}>
-            <Stack spacing={1} alignItems="center">
+            <Stack
+              spacing={1}
+              alignItems="center"
+            >
               {companyLogoUrl ? (
                 <Box
                   component="img"
                   src={companyLogoUrl}
-                  alt={companyName ? `${companyName} logo` : "Company logo"}
+                  alt={
+                    companyName
+                      ? `${companyName} logo`
+                      : "Company logo"
+                  }
                   sx={{
                     width: 88,
                     height: 88,
@@ -231,13 +311,16 @@ export default function MobileLogin() {
                     borderRadius: 3,
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
+                    justifyContent:
+                      "center",
                     background:
                       "linear-gradient(135deg, #0B3D91 0%, #1257A6 100%)",
                     color: "white",
                   }}
                 >
-                  <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 38 }} />
+                  <AccountBalanceWalletOutlinedIcon
+                    sx={{ fontSize: 38 }}
+                  />
                 </Box>
               )}
 
@@ -249,7 +332,8 @@ export default function MobileLogin() {
                   textAlign: "center",
                 }}
               >
-                {companyName || "Loan Management System"}
+                {companyName ||
+                  "Loan Management System"}
               </Typography>
 
               <Typography
@@ -263,21 +347,31 @@ export default function MobileLogin() {
               </Typography>
             </Stack>
 
-            {error && <Alert severity="error">{error}</Alert>}
+            {error && (
+              <Alert severity="error">
+                {error}
+              </Alert>
+            )}
 
             <TextField
               fullWidth
               type="email"
               label="Email address"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) =>
+                setEmail(event.target.value)
+              }
               autoComplete="email"
               disabled={signingIn}
               slotProps={{
                 input: {
                   startAdornment: (
                     <InputAdornment position="start">
-                      <EmailOutlinedIcon sx={{ color: "#64748B" }} />
+                      <EmailOutlinedIcon
+                        sx={{
+                          color: "#64748B",
+                        }}
+                      />
                     </InputAdornment>
                   ),
                 },
@@ -286,10 +380,16 @@ export default function MobileLogin() {
 
             <TextField
               fullWidth
-              type={showPassword ? "text" : "password"}
+              type={
+                showPassword
+                  ? "text"
+                  : "password"
+              }
               label="Password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
               autoComplete="current-password"
               disabled={signingIn}
               onKeyDown={(event) => {
@@ -301,7 +401,11 @@ export default function MobileLogin() {
                 input: {
                   startAdornment: (
                     <InputAdornment position="start">
-                      <LockOutlinedIcon sx={{ color: "#64748B" }} />
+                      <LockOutlinedIcon
+                        sx={{
+                          color: "#64748B",
+                        }}
+                      />
                     </InputAdornment>
                   ),
                   endAdornment: (
@@ -309,9 +413,14 @@ export default function MobileLogin() {
                       <IconButton
                         edge="end"
                         onClick={() =>
-                          setShowPassword((current) => !current)
+                          setShowPassword(
+                            (current) =>
+                              !current
+                          )
                         }
-                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseDown={(event) =>
+                          event.preventDefault()
+                        }
                         aria-label={
                           showPassword
                             ? "Hide password"
@@ -319,9 +428,19 @@ export default function MobileLogin() {
                         }
                       >
                         {showPassword ? (
-                          <VisibilityOffOutlinedIcon sx={{ color: "#64748B" }} />
+                          <VisibilityOffOutlinedIcon
+                            sx={{
+                              color:
+                                "#64748B",
+                            }}
+                          />
                         ) : (
-                          <VisibilityOutlinedIcon sx={{ color: "#64748B" }} />
+                          <VisibilityOutlinedIcon
+                            sx={{
+                              color:
+                                "#64748B",
+                            }}
+                          />
                         )}
                       </IconButton>
                     </InputAdornment>
@@ -344,7 +463,10 @@ export default function MobileLogin() {
               }}
             >
               {signingIn ? (
-                <CircularProgress size={22} color="inherit" />
+                <CircularProgress
+                  size={22}
+                  color="inherit"
+                />
               ) : (
                 "Login"
               )}
@@ -353,9 +475,12 @@ export default function MobileLogin() {
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ textAlign: "center" }}
+              sx={{
+                textAlign: "center",
+              }}
             >
-              This browser is paired to the LMS mobile review interface.
+              This browser is paired to the
+              LMS mobile review interface.
             </Typography>
           </Stack>
         </CardContent>
