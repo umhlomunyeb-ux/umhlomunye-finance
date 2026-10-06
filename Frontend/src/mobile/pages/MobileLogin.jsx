@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import {
   Alert,
   Box,
@@ -13,15 +14,15 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
-import { supabase } from "../../lib/supabase";
 
-const INSTALLATION_ID_STORAGE_KEY = "lms_companion_installation_id";
-const DEVICE_ID_STORAGE_KEY = "lms_companion_device_id";
+import { supabase } from "../../lib/supabase";
+import { getSystemSettings } from "../../services/settingsService";
 
 export default function MobileLogin() {
   const navigate = useNavigate();
@@ -40,82 +41,30 @@ export default function MobileLogin() {
 
     async function initialize() {
       try {
-        let deviceId = "";
-        let installationId = "";
-
-        try {
-          deviceId =
-            localStorage.getItem(DEVICE_ID_STORAGE_KEY) || "";
-          installationId =
-            localStorage.getItem(INSTALLATION_ID_STORAGE_KEY) || "";
-        } catch {}
-
-        if (!deviceId || !installationId) {
-          throw new Error(
-            "This mobile device is not paired with an LMS installation."
-          );
-        }
-
-        const { data, error: deviceError } =
-          await supabase.rpc("get_mobile_device_status", {
-            p_device_id: deviceId,
-          });
-
-        if (deviceError) throw deviceError;
-
-        const deviceStatus = Array.isArray(data)
-          ? data[0]
-          : data;
-
-        if (
-          deviceStatus?.is_linked !== true ||
-          deviceStatus?.is_revoked === true ||
-          deviceStatus?.installation_id !== installationId
-        ) {
-          throw new Error(
-            "This mobile device is not authorized. Please pair it again."
-          );
-        }
-
-        const { data: sessionData, error: sessionError } =
-          await supabase.auth.getSession();
+        const [{ data: sessionData, error: sessionError }, settings] =
+          await Promise.all([
+            supabase.auth.getSession(),
+            getSystemSettings(),
+          ]);
 
         if (sessionError) throw sessionError;
 
         if (sessionData?.session?.user) {
-          navigate("/mobile/dashboard", {
-            replace: true,
-          });
+          navigate("/mobile/dashboard", { replace: true });
           return;
-        }
-
-        const {
-          data: brandingData,
-          error: brandingError,
-        } = await supabase.rpc(
-          "get_mobile_installation_settings",
-          {
-            p_installation_id: installationId,
-          }
-        );
-
-        if (brandingError) throw brandingError;
-
-        if (!brandingData?.success) {
-          throw new Error(
-            brandingData?.message ||
-              "Unable to load the linked LMS installation."
-          );
         }
 
         if (!mounted) return;
 
         setCompanyName(
-          brandingData.company_name || ""
+          settings?.short_name ||
+            settings?.company_name ||
+            ""
         );
 
         setCompanyLogoUrl(
-          brandingData.company_logo_url || ""
+          settings?.company_logo_url ||
+            ""
         );
       } catch (err) {
         console.error(
@@ -123,12 +72,12 @@ export default function MobileLogin() {
           err
         );
 
-        if (!mounted) return;
-
-        setError(
-          err?.message ||
-            "Unable to open the mobile LMS login."
-        );
+        if (mounted) {
+          setError(
+            err?.message ||
+              "Unable to open the mobile LMS."
+          );
+        }
       } finally {
         if (mounted) {
           setLoading(false);
@@ -153,62 +102,11 @@ export default function MobileLogin() {
       return;
     }
 
-    setSigningIn(true);
-    setError("");
-
     try {
-      let deviceId = "";
-      let installationId = "";
+      setSigningIn(true);
+      setError("");
 
-      try {
-        deviceId =
-          localStorage.getItem(
-            DEVICE_ID_STORAGE_KEY
-          ) || "";
-
-        installationId =
-          localStorage.getItem(
-            INSTALLATION_ID_STORAGE_KEY
-          ) || "";
-      } catch {}
-
-      if (!deviceId || !installationId) {
-        throw new Error(
-          "This mobile device is not paired with an LMS installation."
-        );
-      }
-
-      const {
-        data,
-        error: deviceError,
-      } =
-        await supabase.rpc(
-          "get_mobile_device_status",
-          {
-            p_device_id: deviceId,
-          }
-        );
-
-      if (deviceError) throw deviceError;
-
-      const deviceStatus = Array.isArray(data)
-        ? data[0]
-        : data;
-
-      if (
-        deviceStatus?.is_linked !== true ||
-        deviceStatus?.is_revoked === true ||
-        deviceStatus?.installation_id !==
-          installationId
-      ) {
-        throw new Error(
-          "This mobile device is not authorized. Please pair it again."
-        );
-      }
-
-      const {
-        error: authError,
-      } =
+      const { error: authError } =
         await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
@@ -216,12 +114,9 @@ export default function MobileLogin() {
 
       if (authError) throw authError;
 
-      navigate(
-        "/mobile/dashboard",
-        {
-          replace: true,
-        }
-      );
+      navigate("/mobile/dashboard", {
+        replace: true,
+      });
     } catch (err) {
       console.error(
         "MOBILE LOGIN ERROR:",
@@ -247,12 +142,9 @@ export default function MobileLogin() {
           justifyContent: "center",
           background:
             "linear-gradient(135deg, #071A35 0%, #0B3D91 50%, #1257A6 100%)",
-          px: 2,
         }}
       >
-        <CircularProgress
-          sx={{ color: "white" }}
-        />
+        <CircularProgress sx={{ color: "white" }} />
       </Box>
     );
   }
@@ -282,14 +174,7 @@ export default function MobileLogin() {
             "0 25px 70px rgba(0,0,0,0.25)",
         }}
       >
-        <CardContent
-          sx={{
-            p: {
-              xs: 3,
-              sm: 4,
-            },
-          }}
-        >
+        <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
           <Stack spacing={3}>
             <Stack
               spacing={1}
@@ -301,7 +186,7 @@ export default function MobileLogin() {
                   src={companyLogoUrl}
                   alt={
                     companyName
-                      ? `${companyName} logo`
+                      ? companyName + " logo"
                       : "Company logo"
                   }
                   sx={{
@@ -319,16 +204,13 @@ export default function MobileLogin() {
                     borderRadius: 3,
                     display: "flex",
                     alignItems: "center",
-                    justifyContent:
-                      "center",
+                    justifyContent: "center",
                     background:
                       "linear-gradient(135deg, #0B3D91 0%, #1257A6 100%)",
                     color: "white",
                   }}
                 >
-                  <AccountBalanceWalletOutlinedIcon
-                    sx={{ fontSize: 38 }}
-                  />
+                  <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 38 }} />
                 </Box>
               )}
 
@@ -340,8 +222,7 @@ export default function MobileLogin() {
                   textAlign: "center",
                 }}
               >
-                {companyName ||
-                  "Loan Management System"}
+                {companyName || "Loan Management System"}
               </Typography>
 
               <Typography
@@ -351,7 +232,7 @@ export default function MobileLogin() {
                   textAlign: "center",
                 }}
               >
-                Mobile Application Review
+                Mobile Financial Dashboard
               </Typography>
             </Stack>
 
@@ -376,9 +257,7 @@ export default function MobileLogin() {
                   startAdornment: (
                     <InputAdornment position="start">
                       <EmailOutlinedIcon
-                        sx={{
-                          color: "#64748B",
-                        }}
+                        sx={{ color: "#64748B" }}
                       />
                     </InputAdornment>
                   ),
@@ -410,9 +289,7 @@ export default function MobileLogin() {
                   startAdornment: (
                     <InputAdornment position="start">
                       <LockOutlinedIcon
-                        sx={{
-                          color: "#64748B",
-                        }}
+                        sx={{ color: "#64748B" }}
                       />
                     </InputAdornment>
                   ),
@@ -437,17 +314,11 @@ export default function MobileLogin() {
                       >
                         {showPassword ? (
                           <VisibilityOffOutlinedIcon
-                            sx={{
-                              color:
-                                "#64748B",
-                            }}
+                            sx={{ color: "#64748B" }}
                           />
                         ) : (
                           <VisibilityOutlinedIcon
-                            sx={{
-                              color:
-                                "#64748B",
-                            }}
+                            sx={{ color: "#64748B" }}
                           />
                         )}
                       </IconButton>
@@ -479,17 +350,6 @@ export default function MobileLogin() {
                 "Login"
               )}
             </Button>
-
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{
-                textAlign: "center",
-              }}
-            >
-              This browser is paired to the
-              LMS mobile review interface.
-            </Typography>
           </Stack>
         </CardContent>
       </Card>
