@@ -25,18 +25,18 @@ jobs:
           - client: Umhlomunye
             worker: umhlomunye-finance2
             supabase_url_secret: UMHLOMUNYE_SUPABASE_URL
-            supabase_anon_secret: UMHLOMUNYE_SUPABASE_ANON_KEY
+            supabase_publishable_secret: UMHLOMUNYE_SUPABASE_PUBLISHABLE_KEY
             public_app_url_secret: UMHLOMUNYE_PUBLIC_APP_URL
 
           - client: Umthaniya
             worker: umthaniya-finance
             supabase_url_secret: UMTHANIYA_SUPABASE_URL
-            supabase_anon_secret: UMTHANIYA_SUPABASE_ANON_KEY
+            supabase_publishable_secret: UMTHANIYA_SUPABASE_PUBLISHABLE_KEY
             public_app_url_secret: UMTHANIYA_PUBLIC_APP_URL
 
     env:
       VITE_SUPABASE_URL: ${{ secrets[matrix.supabase_url_secret] }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets[matrix.supabase_anon_secret] }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets[matrix.supabase_publishable_secret] }}
       VITE_PUBLIC_APP_URL: ${{ secrets[matrix.public_app_url_secret] }}
 
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
