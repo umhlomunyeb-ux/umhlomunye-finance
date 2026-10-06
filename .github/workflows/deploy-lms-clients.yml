@@ -3,7 +3,7 @@ name: Deploy LMS Clients
 on:
   push:
     branches:
-      - online-lms
+      - master-template
   workflow_dispatch:
 
 permissions:
