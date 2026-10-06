@@ -25,6 +25,7 @@ import TestEmail from "./pages/TestEmail";
 import PendingApplications from "./pages/Applications/PendingApplications";
 import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
+import MobileLanding from "./mobile/pages/MobileLanding";
 
 export default function App() {
   return (
@@ -37,6 +38,11 @@ export default function App() {
           <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
           <Route path="/apply" element={<PublicApplication />} />
+
+          <Route
+            path="/mobile"
+            element={<MobileLanding />}
+          />
 
           <Route
             path="/sign-agreement/offline/:agreementId"
