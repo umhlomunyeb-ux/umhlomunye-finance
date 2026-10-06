@@ -18,7 +18,7 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
 
 const INSTALLATION_ID_STORAGE_KEY = "lms_companion_installation_id";
 const DEVICE_ID_STORAGE_KEY = "lms_companion_device_id";
