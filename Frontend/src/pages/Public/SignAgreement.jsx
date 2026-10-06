@@ -1152,16 +1152,26 @@ export default function SignAgreement() {
               );
             }
 
-            if (
-              agreementRow.status &&
+            const agreementStatus =
               String(
-                agreementRow.status
-              ).toLowerCase() !==
-                "pending"
+                agreementRow.status || ""
+              ).trim().toLowerCase();
+
+            const isSignedDocumentRecovery =
+              agreementStatus === "signed" &&
+              !agreementRow.document_path;
+
+            if (
+              agreementStatus !== "pending" &&
+              !isSignedDocumentRecovery
             ) {
               throw new Error(
                 "This agreement is no longer awaiting acceptance."
               );
+            }
+
+            if (isSignedDocumentRecovery) {
+              setAccepted(true);
             }
 
             if (
@@ -1341,6 +1351,12 @@ export default function SignAgreement() {
         const trimmedName =
           customerName.trim();
 
+        const isSignedDocumentRecovery =
+          String(
+            agreement?.status || ""
+          ).trim().toLowerCase() === "signed" &&
+          !agreement?.document_path;
+
         if (!trimmedName) {
           setError(
             "Please enter your full name."
@@ -1348,7 +1364,10 @@ export default function SignAgreement() {
           return;
         }
 
-        if (!accepted) {
+        if (
+          !isSignedDocumentRecovery &&
+          !accepted
+        ) {
           setError(
             "Please confirm that you have read, understood and agree to the terms and conditions."
           );
@@ -1373,73 +1392,92 @@ export default function SignAgreement() {
 
           /*
            * ACCEPTANCE RPC
+           *
+           * A previously signed agreement with no document path
+           * is allowed to recover the missing PDF without signing
+           * the agreement a second time.
            */
-          const {
-            error:
-              acceptanceError,
-          } =
-            await supabase.rpc(
-              "accept_loan_agreement",
-              {
-                p_signing_token:
-                  signingToken,
-
-                p_customer_name:
-                  trimmedName,
-
-                p_acceptance_text:
-                  acceptanceText,
-
-                p_ip_address:
-                  null,
-
-                p_user_agent:
-                  typeof navigator !==
-                  "undefined"
-                    ? navigator.userAgent
-                    : null,
-              }
-            );
-
           if (
-            acceptanceError
+            !isSignedDocumentRecovery
           ) {
-            throw acceptanceError;
+            const {
+              error:
+                acceptanceError,
+            } =
+              await supabase.rpc(
+                "accept_loan_agreement",
+                {
+                  p_signing_token:
+                    signingToken,
+
+                  p_customer_name:
+                    trimmedName,
+
+                  p_acceptance_text:
+                    acceptanceText,
+
+                  p_ip_address:
+                    null,
+
+                  p_user_agent:
+                    typeof navigator !==
+                    "undefined"
+                      ? navigator.userAgent
+                      : null,
+                }
+              );
+
+            if (
+              acceptanceError
+            ) {
+              throw acceptanceError;
+            }
           }
 
           /*
            * RELOAD SIGNED AGREEMENT
+           *
+           * get_agreement_for_signing() only exposes Pending/Sent
+           * agreements, so a signed-document recovery must use the
+           * agreement already loaded in this same-computer flow.
            */
           let signedAgreement =
             null;
 
-          const {
-            data,
-            error:
-              reloadError,
-          } =
-            await supabase.rpc(
-              "get_agreement_for_signing",
-              {
-                p_signing_token:
-                  signingToken,
-              }
-            );
-
           if (
-            reloadError
+            isSignedDocumentRecovery
           ) {
-            throw reloadError;
+            signedAgreement =
+              agreement;
+          } else {
+            const {
+              data,
+              error:
+                reloadError,
+            } =
+              await supabase.rpc(
+                "get_agreement_for_signing",
+                {
+                  p_signing_token:
+                    signingToken,
+                }
+              );
+
+            if (
+              reloadError
+            ) {
+              throw reloadError;
+            }
+
+            signedAgreement =
+              Array.isArray(data)
+                ? data[0]
+                : data;
+
+            signedAgreement =
+              signedAgreement ||
+              agreement;
           }
-
-          signedAgreement =
-            Array.isArray(data)
-              ? data[0]
-              : data;
-
-          signedAgreement =
-            signedAgreement ||
-            agreement;
 
           const agreementForPdf =
             {
