@@ -18,6 +18,9 @@ import {
 } from "@mui/material";
 
 
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+
 import { supabase } from "../../lib/supabase";
 
 export default function MobileApplicationReviews() {
@@ -371,7 +374,51 @@ export default function MobileApplicationReviews() {
         )}
       </Box>
 
+      <Paper
+        elevation={8}
+        sx={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 1,
+          p: 1,
+          borderTop: "1px solid",
+          borderColor: "divider",
+          bgcolor: "background.paper",
+        }}
+      >
+        <Button
+          fullWidth
+          variant="outlined"
+          startIcon={<HomeOutlinedIcon />}
+          onClick={() => navigate("/mobile/dashboard")}
+          sx={{
+            minHeight: 48,
+            fontWeight: 700,
+            textTransform: "none",
+          }}
+        >
+          Dashboard
+        </Button>
 
+        <Button
+          fullWidth
+          variant="contained"
+          startIcon={<DescriptionOutlinedIcon />}
+          onClick={() => navigate("/mobile/application-review")}
+          sx={{
+            minHeight: 48,
+            fontWeight: 700,
+            textTransform: "none",
+          }}
+        >
+          Loan Review
+        </Button>
+      </Paper>
     </Box>
   );
 }
