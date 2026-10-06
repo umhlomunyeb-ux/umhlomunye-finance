@@ -45,6 +45,24 @@ export default function App() {
           />
 
           <Route
+            path="/mobile/application-review"
+            element={
+              <ProtectedRoute>
+                <MobileApplicationReviews />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/mobile/application-review/:id"
+            element={
+              <ProtectedRoute>
+                <MobileApplicationReview />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/sign-agreement/offline/:agreementId"
             element={<SignAgreement />}
           />
@@ -126,17 +144,6 @@ export default function App() {
               path="/applications/:id"
               element={<ApplicationReview />}
             />
-
-            <Route
-              path="/mobile/application-review"
-              element={<MobileApplicationReviews />}
-            />
-
-            <Route
-              path="/mobile/application-review/:id"
-              element={<MobileApplicationReview />}
-            />
-
             <Route
               path="/loans/:id"
               element={<LoanProfile />}
