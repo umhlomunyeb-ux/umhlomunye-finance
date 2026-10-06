@@ -1,7 +1,8 @@
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Login from "./pages/Login/Login";
 import MobileLogin from "./mobile/pages/MobileLogin";
+import MobileDashboard from "./mobile/pages/MobileDashboard";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import Customers from "./pages/Customers/Customers";
 import Loans from "./pages/Loans/Loans";
@@ -26,7 +27,6 @@ import TestEmail from "./pages/TestEmail";
 import PendingApplications from "./pages/Applications/PendingApplications";
 import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
-import MobileLanding from "./mobile/pages/MobileLanding";
 
 const INSTALLATION_ID_STORAGE_KEY = "lms_companion_installation_id";
 const DEVICE_ID_STORAGE_KEY = "lms_companion_device_id";
@@ -69,7 +69,26 @@ export default function App() {
 
           <Route
             path="/mobile"
-            element={<MobileLanding />}
+            element={
+              <Navigate
+                to="/mobile/login"
+                replace
+              />
+            }
+          />
+
+          <Route
+            path="/mobile/login"
+            element={<MobileLogin />}
+          />
+
+          <Route
+            path="/mobile/dashboard"
+            element={
+              <ProtectedRoute>
+                <MobileDashboard />
+              </ProtectedRoute>
+            }
           />
 
           <Route
