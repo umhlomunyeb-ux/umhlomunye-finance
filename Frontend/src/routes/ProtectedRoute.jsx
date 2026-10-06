@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 import { CircularProgress, Box } from "@mui/material";
 import { AuthContext } from "../context/AuthContext";
 
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute({ children, redirectTo = "/" }) {
   const { user, loading } = useContext(AuthContext);
 
   if (loading) {
@@ -23,7 +23,7 @@ export default function ProtectedRoute({ children }) {
   }
 
   if (!user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={redirectTo} replace />;
   }
 
   return children;
