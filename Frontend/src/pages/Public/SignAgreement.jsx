@@ -1188,7 +1188,7 @@ export default function SignAgreement() {
                     "customers"
                   )
                   .select(
-                    "id, first_name, last_name, full_name, name"
+                    "id, first_name, last_name"
                   )
                   .eq(
                     "id",
