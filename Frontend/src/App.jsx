@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 
 import Login from "./pages/Login/Login";
+import MobileLogin from "./mobile/pages/MobileLogin";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import Customers from "./pages/Customers/Customers";
 import Loans from "./pages/Loans/Loans";
@@ -27,6 +28,33 @@ import MobileApplicationReviews from "./pages/Applications/MobileApplicationRevi
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
 import MobileLanding from "./mobile/pages/MobileLanding";
 
+const INSTALLATION_ID_STORAGE_KEY = "lms_companion_installation_id";
+const DEVICE_ID_STORAGE_KEY = "lms_companion_device_id";
+
+function LoginRoute() {
+  const location = useLocation();
+
+  let pairedMobileBrowser = Boolean(location.state?.fromMobile);
+
+  if (!pairedMobileBrowser) {
+    try {
+      pairedMobileBrowser =
+        Boolean(
+          localStorage.getItem(
+            INSTALLATION_ID_STORAGE_KEY
+          ) &&
+            localStorage.getItem(
+              DEVICE_ID_STORAGE_KEY
+            )
+        );
+    } catch {
+      pairedMobileBrowser = false;
+    }
+  }
+
+  return pairedMobileBrowser ? <MobileLogin /> : <Login />;
+}
+
 export default function App() {
   return (
     <>
@@ -36,7 +64,7 @@ export default function App() {
         <Routes>
           {/* PUBLIC */}
           <Route path="/" element={<Login />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<LoginRoute />} />
           <Route path="/apply" element={<PublicApplication />} />
 
           <Route
@@ -144,6 +172,7 @@ export default function App() {
               path="/applications/:id"
               element={<ApplicationReview />}
             />
+
             <Route
               path="/loans/:id"
               element={<LoanProfile />}
