@@ -16,6 +16,7 @@ import {
   DialogContent,
   DialogTitle,
   InputAdornment,
+  IconButton,
   Stack,
   TextField,
   Typography,
@@ -836,6 +837,35 @@ export default function Login() {
                       color: "#64748B",
                     }}
                   />
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    edge="end"
+                    onClick={() =>
+                      setShowPassword((current) => !current)
+                    }
+                    onMouseDown={(event) =>
+                      event.preventDefault()
+                    }
+                    aria-label={
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? (
+                      <VisibilityOffOutlinedIcon
+                        sx={{ color: "#64748B" }}
+                      />
+                    ) : (
+                      <VisibilityOutlinedIcon
+                        sx={{ color: "#64748B" }}
+                      />
+                    )}
+                  </IconButton>
                 </InputAdornment>
               ),
             },
