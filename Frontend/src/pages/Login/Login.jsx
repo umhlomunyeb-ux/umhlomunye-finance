@@ -466,7 +466,7 @@ export default function Login() {
     }
 
     if (fromMobile) {
-      navigate("/mobile/preview", {
+      navigate("/mobile/application-review", {
         replace: true,
       });
     } else {
