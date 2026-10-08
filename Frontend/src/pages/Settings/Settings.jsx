@@ -1784,6 +1784,268 @@ export default function Settings() {
       </Card>
 
       {/* =========================================================
+          LOAN RULES
+          ========================================================= */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight={700}>
+            Loan Rules
+          </Typography>
+
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mb: 3 }}
+          >
+            Configure the loan amounts, interest rates, repayment terms and
+            interest-cycle rules used by the LMS.
+          </Typography>
+
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Minimum Loan Amount"
+                value={settings.minimum_loan_amount ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "minimum_loan_amount",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 0, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Maximum Loan Amount"
+                value={settings.maximum_loan_amount ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "maximum_loan_amount",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 0, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Tier 1 Maximum Amount"
+                value={settings.tier_1_max_amount ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "tier_1_max_amount",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 0, step: "0.01" }}
+                helperText="Maximum amount eligible for Tier 1."
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Tier 1 Interest Rate (%)"
+                value={settings.tier_1_interest_rate ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "tier_1_interest_rate",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 0, max: 100, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Tier 2 Interest Rate (%)"
+                value={settings.tier_2_interest_rate ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "tier_2_interest_rate",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 0, max: 100, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Term 1 Maximum Amount"
+                value={settings.term_1_max_amount ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "term_1_max_amount",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 0, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Term 1 (Months)"
+                value={settings.term_1_months ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "term_1_months",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 1, step: 1 }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Term 2 Maximum Amount"
+                value={settings.term_2_max_amount ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "term_2_max_amount",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 0, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Term 2 (Months)"
+                value={settings.term_2_months ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "term_2_months",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 1, step: 1 }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Term 3 (Months)"
+                value={settings.term_3_months ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "term_3_months",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 1, step: 1 }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Maximum Loan Term (Months)"
+                value={settings.maximum_loan_term_months ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "maximum_loan_term_months",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                inputProps={{ min: 1, step: 1 }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={Boolean(settings.interest_cycle_enabled)}
+                    onChange={(e) =>
+                      handleChange(
+                        "interest_cycle_enabled",
+                        e.target.checked
+                      )
+                    }
+                    disabled={!isAdmin}
+                  />
+                }
+                label="Enable Interest Cycle"
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Interest Cycle (Days)"
+                value={settings.interest_cycle_days ?? ""}
+                onChange={(e) =>
+                  handleChange(
+                    "interest_cycle_days",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin || !settings.interest_cycle_enabled}
+                inputProps={{ min: 1, step: 1 }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField
+                fullWidth
+                type="time"
+                label="Interest Cycle Time"
+                value={(settings.interest_cycle_time || "").slice(0, 5)}
+                onChange={(e) =>
+                  handleChange(
+                    "interest_cycle_time",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin || !settings.interest_cycle_enabled}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      {/* =========================================================
           MOBILE ACCESS
           ========================================================= */}
       {isAdmin && (
