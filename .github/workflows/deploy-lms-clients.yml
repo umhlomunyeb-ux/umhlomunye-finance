@@ -115,3 +115,4 @@ jobs:
       - name: Run Playwright public E2E tests
         working-directory: Frontend
         run: npm run test:e2e -- --project=public
+
