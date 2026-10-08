@@ -1737,6 +1737,37 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* SETTINGS ACTIONS */}
+      {isAdmin && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              justifyContent="flex-end"
+              spacing={2}
+            >
+              <Button
+                variant="outlined"
+                startIcon={<RestartAltIcon />}
+                onClick={handleReset}
+                disabled={saving}
+              >
+                Reset
+              </Button>
+
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSave}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save Settings"}
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
+      )}
+
       {/* =========================================================
           MOBILE ACCESS
           ========================================================= */}
