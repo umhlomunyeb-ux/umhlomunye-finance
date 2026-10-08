@@ -657,8 +657,8 @@ export default function Settings() {
       return "Interest rate must be between 0% and 100%.";
     }
 
-    if (!Number.isFinite(termMonths) || termMonths <= 0) {
-      return "Term must be greater than zero months.";
+    if (!Number.isFinite(termMonths) || termMonths <= 0 || termMonths > 2) {
+      return "Term must be between 1 and 2 months.";
     }
 
     if (typeof cycleEnabled !== "boolean") {
@@ -1704,7 +1704,7 @@ export default function Settings() {
                 value={settings.maximum_loan_term_months ?? ""}
                 onChange={(e) => handleChange("maximum_loan_term_months", e.target.value)}
                 disabled={!isAdmin}
-                inputProps={{ min: 1, step: 1 }}
+                inputProps={{ min: 1, max: 2, step: 1 }}
               />
             </Grid>
 
