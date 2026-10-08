@@ -114,6 +114,6 @@ test.describe("Public application", () => {
   }) => {
     await page.goto("/mobile/application-review/test-id");
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/mobile\/login$/);
   });
 });
