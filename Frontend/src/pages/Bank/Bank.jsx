@@ -62,6 +62,8 @@ function getTransactionTypeLabel(type) {
     DEPOSIT: "Money Added",
     BORROWING: "Company Borrowing",
     DEBT_REPAYMENT: "Debt Repayment",
+    LOAN_DISBURSEMENT: "Loan Disbursement",
+    LOAN_REPAYMENT: "Loan Repayment",
     OTHER_INCOME: "Other Income",
     OTHER_EXPENSE: "Other Expense",
     VOID: "Voided",
