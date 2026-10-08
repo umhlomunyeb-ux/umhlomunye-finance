@@ -640,10 +640,41 @@ export default function Settings() {
       settings.maximum_loan_amount
     );
 
-    const interestRate = Number(settings.tier_1_interest_rate);
+    const tier1Max = Number(
+      settings.tier_1_max_amount
+    );
 
-    const termMonths = Number(settings.maximum_loan_term_months);
+    const tier1Rate = Number(
+      settings.tier_1_interest_rate
+    );
 
+    const tier2Rate = Number(
+      settings.tier_2_interest_rate
+    );
+
+    const term1Max = Number(
+      settings.term_1_max_amount
+    );
+
+    const term1Months = Number(
+      settings.term_1_months
+    );
+
+    const term2Max = Number(
+      settings.term_2_max_amount
+    );
+
+    const term2Months = Number(
+      settings.term_2_months
+    );
+
+    const term3Months = Number(
+      settings.term_3_months
+    );
+
+    const maxTerm = Number(
+      settings.maximum_loan_term_months
+    );
 
     const cycleDays = Number(
       settings.interest_cycle_days
@@ -678,12 +709,84 @@ export default function Settings() {
       return "Maximum loan amount must be greater than minimum loan amount.";
     }
 
-    if (!Number.isFinite(interestRate) || interestRate < 0 || interestRate > 100) {
-      return "Interest rate must be between 0% and 100%.";
+    if (
+      !Number.isFinite(tier1Max) ||
+      tier1Max < minimum ||
+      tier1Max > maximum
+    ) {
+      return "Tier 1 maximum must be between the minimum and maximum loan amounts.";
     }
 
-    if (!Number.isFinite(termMonths) || termMonths <= 0) {
-      return "Term must be greater than zero months.";
+    if (
+      !Number.isFinite(tier1Rate) ||
+      tier1Rate < 0 ||
+      tier1Rate > 100
+    ) {
+      return "Tier 1 interest rate must be between 0% and 100%.";
+    }
+
+    if (
+      !Number.isFinite(tier2Rate) ||
+      tier2Rate < 0 ||
+      tier2Rate > 100
+    ) {
+      return "Tier 2 interest rate must be between 0% and 100%.";
+    }
+
+    if (
+      !Number.isFinite(term1Max) ||
+      term1Max < minimum ||
+      term1Max > maximum
+    ) {
+      return "Term 1 maximum amount must be between the minimum and maximum loan amounts.";
+    }
+
+    if (
+      !Number.isFinite(term1Months) ||
+      term1Months <= 0
+    ) {
+      return "Term 1 must be greater than zero months.";
+    }
+
+    if (
+      !Number.isFinite(term2Max) ||
+      term2Max <= term1Max ||
+      term2Max > maximum
+    ) {
+      return "Term 2 maximum amount must be greater than Term 1 maximum and not exceed the maximum loan amount.";
+    }
+
+    if (
+      !Number.isFinite(term2Months) ||
+      term2Months <= term1Months
+    ) {
+      return "Term 2 must be greater than Term 1.";
+    }
+
+    if (
+      !Number.isFinite(term3Months) ||
+      term3Months < term2Months
+    ) {
+      return "Term 3 must be greater than or equal to Term 2.";
+    }
+
+    if (
+      !Number.isFinite(maxTerm) ||
+      maxTerm <= 0
+    ) {
+      return "Maximum loan term must be greater than zero.";
+    }
+
+    if (term1Months > maxTerm) {
+      return "Term 1 cannot exceed the maximum loan term.";
+    }
+
+    if (term2Months > maxTerm) {
+      return "Term 2 cannot exceed the maximum loan term.";
+    }
+
+    if (term3Months > maxTerm) {
+      return "Term 3 cannot exceed the maximum loan term.";
     }
 
     if (
@@ -1307,47 +1410,448 @@ export default function Settings() {
                 md: 6,
               }}
             >
-              
+              <TextField
+                fullWidth
+                label="Company Name"
+                value={
+                  settings.company_name ||
+                  ""
+                }
+                onChange={(e) =>
+                  handleChange(
+                    "company_name",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+              />
             </Grid>
 
-            
+            {/* SHORT NAME */}
+            <Grid
+              size={{
+                xs: 12,
+                md: 6,
+              }}
+            >
+              <TextField
+                fullWidth
+                label="Short Name"
+                value={
+                  settings.short_name ||
+                  ""
+                }
+                onChange={(e) =>
+                  handleChange(
+                    "short_name",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                helperText="Used only to generate the mobile app name as Short Name + LMS."
+              />
+            </Grid>
 
-            
+            {/* COMPANY ADDRESS */}
+            <Grid
+              size={{
+                xs: 12,
+              }}
+            >
+              <TextField
+                fullWidth
+                multiline
+                minRows={2}
+                label="Company Address"
+                value={
+                  settings.company_address ||
+                  ""
+                }
+                onChange={(e) =>
+                  handleChange(
+                    "company_address",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+                helperText="Used on company documents and official correspondence."
+              />
+            </Grid>
 
-            
+            {/* COMPANY LOGO */}
+            <Grid
+              size={{
+                xs: 12,
+              }}
+            >
+              <Card
+                variant="outlined"
+              >
+                <CardContent>
+                  <Stack
+                    direction={{
+                      xs: "column",
+                      sm: "row",
+                    }}
+                    spacing={2}
+                    alignItems={{
+                      xs: "stretch",
+                      sm: "center",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 150,
+                        height: 100,
+                        border: "1px dashed",
+                        borderColor:
+                          "divider",
+                        borderRadius: 2,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                        backgroundColor:
+                          "action.hover",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {logoPreview ? (
+                        <Box
+                          component="img"
+                          src={logoPreview}
+                          alt="Company logo preview"
+                          sx={{
+                            maxWidth: "100%",
+                            maxHeight: "100%",
+                            objectFit:
+                              "contain",
+                          }}
+                        />
+                      ) : (
+                        <Stack
+                          alignItems="center"
+                          spacing={0.5}
+                          color="text.secondary"
+                        >
+                          <ImageIcon />
+                          <Typography
+                            variant="caption"
+                          >
+                            No logo
+                          </Typography>
+                        </Stack>
+                      )}
+                    </Box>
 
-            
+                    <Box
+                      sx={{
+                        flex: 1,
+                      }}
+                    >
+                      <Typography
+                        variant="subtitle1"
+                        fontWeight={700}
+                      >
+                        Company Logo
+                      </Typography>
 
-            
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mb: 1.5 }}
+                      >
+                        Upload the company logo used for
+                        system branding and official documents.
+                        Maximum size: 5 MB.
+                      </Typography>
 
-            <Grid size={{ xs: 12, md: 3 }}>
+                      <Stack
+                        direction={{
+                          xs: "column",
+                          sm: "row",
+                        }}
+                        spacing={1}
+                      >
+                        <Button
+                          variant="outlined"
+                          component="label"
+                          startIcon={
+                            <CloudUploadIcon />
+                          }
+                          disabled={
+                            !isAdmin ||
+                            saving
+                          }
+                        >
+                          {logoFile
+                            ? "Choose Different Logo"
+                            : "Upload Logo"}
+
+                          <input
+                            hidden
+                            type="file"
+                            accept="image/*"
+                            onChange={
+                              handleLogoFileChange
+                            }
+                          />
+                        </Button>
+
+                        {(logoPreview ||
+                          settings.company_logo_url ||
+                          logoFile) && (
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={
+                              <DeleteIcon />
+                            }
+                            onClick={
+                              handleRemoveLogo
+                            }
+                            disabled={
+                              !isAdmin ||
+                              saving ||
+                              removingLogo
+                            }
+                          >
+                            Remove Logo
+                          </Button>
+                        )}
+                      </Stack>
+
+                      {logoFile && (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{
+                            display: "block",
+                            mt: 1,
+                          }}
+                        >
+                          Selected:{" "}
+                          {logoFile.name}
+                        </Typography>
+                      )}
+
+                      {removeLogoRequested && (
+                        <Alert
+                          severity="warning"
+                          sx={{ mt: 1.5 }}
+                        >
+                          The company logo will be removed when
+                          you click Save.
+                        </Alert>
+                      )}
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* FINANCIAL YEAR END */}
+            <Grid
+              size={{
+                xs: 12,
+                md: 6,
+              }}
+            >
+              <TextField
+                fullWidth
+                select
+                label="Financial Year End"
+                value={
+                  settings.financial_year_end ??
+                  ""
+                }
+                onChange={(e) =>
+                  handleChange(
+                    "financial_year_end",
+                    e.target.value
+                      ? Number(
+                          e.target.value
+                        )
+                      : null
+                  )
+                }
+                disabled={!isAdmin}
+                helperText="Select the month in which the company's financial year ends."
+              >
+                <MenuItem value="">
+                  Not configured
+                </MenuItem>
+
+                <MenuItem value={1}>
+                  January
+                </MenuItem>
+
+                <MenuItem value={2}>
+                  February
+                </MenuItem>
+
+                <MenuItem value={3}>
+                  March
+                </MenuItem>
+
+                <MenuItem value={4}>
+                  April
+                </MenuItem>
+
+                <MenuItem value={5}>
+                  May
+                </MenuItem>
+
+                <MenuItem value={6}>
+                  June
+                </MenuItem>
+
+                <MenuItem value={7}>
+                  July
+                </MenuItem>
+
+                <MenuItem value={8}>
+                  August
+                </MenuItem>
+
+                <MenuItem value={9}>
+                  September
+                </MenuItem>
+
+                <MenuItem value={10}>
+                  October
+                </MenuItem>
+
+                <MenuItem value={11}>
+                  November
+                </MenuItem>
+
+                <MenuItem value={12}>
+                  December
+                </MenuItem>
+              </TextField>
+            </Grid>
+
+            {/* CURRENCY */}
+            <Grid
+              size={{
+                xs: 12,
+                md: 3,
+              }}
+            >
+              <TextField
+                fullWidth
+                label="Currency"
+                value={
+                  settings.currency ||
+                  ""
+                }
+                onChange={(e) =>
+                  handleChange(
+                    "currency",
+                    e.target.value.toUpperCase()
+                  )
+                }
+                disabled={!isAdmin}
+              />
+            </Grid>
+
+            {/* TIMEZONE */}
+            <Grid
+              size={{
+                xs: 12,
+                md: 3,
+              }}
+            >
+              <TextField
+                fullWidth
+                label="Timezone"
+                value={
+                  settings.timezone ||
+                  ""
+                }
+                onChange={(e) =>
+                  handleChange(
+                    "timezone",
+                    e.target.value
+                  )
+                }
+                disabled={!isAdmin}
+              />
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      {/* =========================================================
+          LOAN RULES
+          ========================================================= */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight={700}>
+            Loan Rules
+          </Typography>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Configure the five loan rules used by the LMS: minimum amount,
+            maximum amount, interest rate, term and interest cycle.
+          </Typography>
+
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Minimum Amount"
+                value={settings.minimum_loan_amount ?? ""}
+                onChange={(e) => handleChange("minimum_loan_amount", e.target.value)}
+                disabled={!isAdmin}
+                inputProps={{ min: 0, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Maximum Amount"
+                value={settings.maximum_loan_amount ?? ""}
+                onChange={(e) => handleChange("maximum_loan_amount", e.target.value)}
+                disabled={!isAdmin}
+                inputProps={{ min: 0, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Interest Rate (%)"
+                value={settings.tier_1_interest_rate ?? ""}
+                onChange={(e) => handleChange("tier_1_interest_rate", e.target.value)}
+                disabled={!isAdmin}
+                inputProps={{ min: 0, max: 100, step: "0.01" }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField
                 fullWidth
                 type="number"
                 label="Term (Months)"
-                value={settings.loan_term_months ?? ""}
-                onChange={(e) =>
-                  handleChange(
-                    "maximum_loan_term_months",
-                    e.target.value
-                  )
-                }
+                value={settings.maximum_loan_term_months ?? ""}
+                onChange={(e) => handleChange("maximum_loan_term_months", e.target.value)}
                 disabled={!isAdmin}
                 inputProps={{ min: 1, step: 1 }}
               />
             </Grid>
 
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <FormControlLabel
                 control={
                   <Checkbox
                     checked={Boolean(settings.interest_cycle_enabled)}
-                    onChange={(e) =>
-                      handleChange(
-                        "interest_cycle_enabled",
-                        e.target.checked
-                      )
-                    }
+                    onChange={(e) => handleChange("interest_cycle_enabled", e.target.checked)}
                     disabled={!isAdmin}
                   />
                 }
@@ -1355,35 +1859,25 @@ export default function Settings() {
               />
             </Grid>
 
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField
                 fullWidth
                 type="number"
                 label="Interest Cycle (Days)"
                 value={settings.interest_cycle_days ?? ""}
-                onChange={(e) =>
-                  handleChange(
-                    "interest_cycle_days",
-                    e.target.value
-                  )
-                }
+                onChange={(e) => handleChange("interest_cycle_days", e.target.value)}
                 disabled={!isAdmin || !settings.interest_cycle_enabled}
                 inputProps={{ min: 1, step: 1 }}
               />
             </Grid>
 
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField
                 fullWidth
                 type="time"
                 label="Interest Cycle Time"
                 value={(settings.interest_cycle_time || "").slice(0, 5)}
-                onChange={(e) =>
-                  handleChange(
-                    "interest_cycle_time",
-                    e.target.value
-                  )
-                }
+                onChange={(e) => handleChange("interest_cycle_time", e.target.value)}
                 disabled={!isAdmin || !settings.interest_cycle_enabled}
                 InputLabelProps={{ shrink: true }}
               />
