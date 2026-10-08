@@ -160,9 +160,25 @@ Deno.serve(async (req)=>{
       const senderEmail =
         Deno.env.get("BREVO_SENDER_EMAIL");
 
+      const { data: systemSettings } =
+        await supabase
+          .from("system_settings")
+          .select("company_name, short_name")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+      const configuredCompanyName =
+        String(
+          systemSettings?.company_name ||
+          systemSettings?.short_name ||
+          ""
+        ).trim();
+
       const senderName =
         Deno.env.get("BREVO_SENDER_NAME") ||
-        "Umhlomunye Finance";
+        configuredCompanyName ||
+        "Loan Management System";
 
       if (!brevoApiKey || !senderEmail) {
         throw new Error(
@@ -220,7 +236,7 @@ Deno.serve(async (req)=>{
         <body style="font-family:Arial,Helvetica,sans-serif;color:#222;">
           <div style="max-width:650px;margin:30px auto;background:#fff;">
             <div style="background:#0b1f3a;padding:25px;color:#fff;text-align:center;">
-              <h1 style="margin:0;">Umhlomunye Finance</h1>
+              <h1 style="margin:0;">${configuredCompanyName || "Loan Management System"}</h1>
               <p style="margin:8px 0 0;">Loan Management</p>
             </div>
             <div style="padding:30px;">
@@ -236,7 +252,7 @@ Deno.serve(async (req)=>{
               </p>
               <hr style="border:0;border-top:1px solid #eee;margin:30px 0;">
               <p style="font-size:12px;color:#777;">
-                This is an automated message from Umhlomunye Finance.
+                This is an automated message from ${configuredCompanyName || "Loan Management System"}.
               </p>
             </div>
           </div>
