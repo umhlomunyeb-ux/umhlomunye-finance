@@ -1072,18 +1072,6 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* ENGINE INFORMATION */}
-      <Alert
-        severity="info"
-        sx={{
-          mt: 3,
-          borderRadius: 2,
-        }}
-      >
-        Loan balances and interest are calculated
-        by the Supabase loan engine. The dashboard
-        only displays the database values.
-      </Alert>
     </Box>
   );
 }
