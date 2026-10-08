@@ -20,7 +20,7 @@ export function getLoanTermForAmount(amount, settings) {
   if (!Number.isFinite(principal) || principal <= 0) throw new Error("Enter a valid loan amount.");
   const minimum = Number(settings.minimum_loan_amount);
   const maximum = Number(settings.maximum_loan_amount);
-  const termMonths = Number(settings.loan_term_months);
+  const termMonths = Number(settings.maximum_loan_term_months);
   if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || !Number.isFinite(termMonths) || termMonths <= 0) throw new Error("Loan term settings are incomplete or invalid.");
   if (principal < minimum) throw new Error("The minimum loan amount is R" + minimum + ".");
   if (principal > maximum) throw new Error("The maximum loan amount is R" + maximum + ".");
