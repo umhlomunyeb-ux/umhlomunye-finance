@@ -35,7 +35,6 @@ import {
   FolderOpen,
   History,
   OpenInNew,
-  Payment,
   PictureAsPdf,
   ReceiptLong,
   Verified,
@@ -45,7 +44,6 @@ import { getLoan } from "../../services/loanService.js";
 import { getLoanStatement } from "../../services/statementService";
 import { getLoanTransactions } from "../../services/transactionService";
 import { getSystemSettings } from "../../services/settingsService";
-import RecordPayment from "../Repayments/RecordPayment";
 
 const actionButtonSx = {
   minWidth: 180,
@@ -606,9 +604,6 @@ export default function LoanProfile() {
 
   const [tab, setTab] = useState(0);
 
-  const [paymentDialogOpen, setPaymentDialogOpen] =
-    useState(false);
-
   const currentLoanBalance = useMemo(() => {
     if (!loan) return 0;
 
@@ -959,17 +954,6 @@ export default function LoanProfile() {
   useEffect(() => {
     loadLoan();
   }, [loadLoan]);
-
-  const handlePaymentComplete =
-    async () => {
-      setPaymentDialogOpen(false);
-
-      try {
-        await loadLoan();
-      } catch (err) {
-        console.error(err);
-      }
-    };
 
   const getDocumentUrl =
     useCallback(
@@ -4067,45 +4051,6 @@ export default function LoanProfile() {
           </Paper>
         </Grid>
       </Grid>
-
-      {/* PAYMENT DIALOG */}
-      <Dialog
-        open={paymentDialogOpen}
-        onClose={() =>
-          setPaymentDialogOpen(false)
-        }
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>
-          Record Payment
-        </DialogTitle>
-
-        <DialogContent dividers>
-          <RecordPayment
-            loanId={loan.id}
-            onSuccess={
-              handlePaymentComplete
-            }
-            onCancel={() =>
-              setPaymentDialogOpen(false)
-            }
-          />
-        </DialogContent>
-
-        <DialogActions>
-          <Button
-            onClick={() =>
-              setPaymentDialogOpen(false)
-            }
-            sx={{
-              textTransform: "none",
-            }}
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
