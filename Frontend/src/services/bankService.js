@@ -27,13 +27,17 @@ function extractReturnedId(data, preferredKeys = []) {
   }
 
   if (typeof data === "object") {
-    for (const key of [
-      ...preferredKeys,
-      "id",
-      "borrowing_id",
-      "debt_repayment_id",
-      "repayment_id",
-    ]) {
+    for (const key of preferredKeys) {
+      if (data[key]) {
+        return data[key];
+      }
+    }
+
+    if (data.repayment && typeof data.repayment === "object" && data.repayment.id) {
+      return data.repayment.id;
+    }
+
+    for (const key of ["id", "debt_repayment_id", "repayment_id"]) {
       if (data[key]) {
         return data[key];
       }
