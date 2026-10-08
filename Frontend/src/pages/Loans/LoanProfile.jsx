@@ -2929,7 +2929,10 @@ export default function LoanProfile() {
                     <PictureAsPdf />
                   }
                   onClick={handleSettlementLetter}
-                  disabled={generatingSettlementLetter}
+                  disabled={
+                    currentLoanBalance <= 0 ||
+                    generatingSettlementLetter
+                  }
                   sx={actionButtonSx}
                 >
                   {generatingSettlementLetter
