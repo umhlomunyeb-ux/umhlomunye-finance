@@ -12545,7 +12545,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $$
+AS $function$
 DECLARE
   v_bank_account_id uuid;
   v_balance_after numeric(15,2);
@@ -12553,22 +12553,28 @@ DECLARE
   v_amount numeric(15,2);
   v_transaction_type text;
   v_reference text;
+  v_loan_number text;
 BEGIN
-  IF upper(coalesce(new.transaction_type, '')) = 'LOAN'
-     AND coalesce(new.debit, 0) > 0 THEN
+  SELECT loan_number
+  INTO v_loan_number
+  FROM public.loans
+  WHERE id = NEW.loan_id;
+
+  IF upper(coalesce(NEW.transaction_type, '')) = 'LOAN'
+     AND coalesce(NEW.debit, 0) > 0 THEN
     v_direction := 'OUT';
-    v_amount := round(new.debit, 2);
+    v_amount := round(NEW.debit, 2);
     v_transaction_type := 'LOAN_DISBURSEMENT';
-    v_reference := 'LOAN-TXN-' || new.id::text;
-  ELSIF upper(coalesce(new.transaction_type, '')) = 'PAYMENT'
-     AND coalesce(new.credit, 0) > 0 THEN
+  ELSIF upper(coalesce(NEW.transaction_type, '')) = 'PAYMENT'
+     AND coalesce(NEW.credit, 0) > 0 THEN
     v_direction := 'IN';
-    v_amount := round(new.credit, 2);
+    v_amount := round(NEW.credit, 2);
     v_transaction_type := 'LOAN_REPAYMENT';
-    v_reference := 'LOAN-TXN-' || new.id::text;
   ELSE
-    RETURN new;
+    RETURN NEW;
   END IF;
+
+  v_reference := coalesce(nullif(trim(v_loan_number), ''), 'LOAN-' || NEW.loan_id::text);
 
   SELECT id
   INTO v_bank_account_id
@@ -12580,15 +12586,6 @@ BEGIN
 
   IF v_bank_account_id IS NULL THEN
     RAISE EXCEPTION 'No active company bank account exists. Loan money movement cannot be posted to the bank ledger.';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.bank_transactions
-    WHERE reference = v_reference
-      AND is_void = false
-  ) THEN
-    RETURN new;
   END IF;
 
   SELECT coalesce(sum(
@@ -12618,10 +12615,10 @@ BEGIN
   )
   VALUES (
     v_bank_account_id,
-    coalesce(new.transaction_date::date, current_date),
+    coalesce(NEW.transaction_date::date, current_date),
     v_transaction_type,
     coalesce(
-      nullif(trim(new.description), ''),
+      nullif(trim(NEW.description), ''),
       CASE
         WHEN v_direction = 'OUT' THEN 'Loan disbursement'
         ELSE 'Loan repayment'
@@ -12631,12 +12628,15 @@ BEGIN
     v_direction,
     v_balance_after,
     v_reference,
-    new.created_by
+    NEW.created_by
   );
 
-  RETURN new;
+  RETURN NEW;
 END;
-$$;
+$function$;
+
+ALTER FUNCTION public.sync_loan_transaction_to_bank() SET search_path = '';
+REVOKE ALL ON FUNCTION public.sync_loan_transaction_to_bank() FROM public, anon, authenticated;
 
 DROP TRIGGER IF EXISTS trg_sync_loan_transaction_to_bank ON public.loan_transactions;
 
