@@ -1979,38 +1979,35 @@ export default function LoanProfile() {
             Math.max(0, currentLoanBalance);
 
           pdf.text(
-            ${formatDate(new Date())},
+            formatDate(new Date()),
             14,
             76
           );
 
           pdf.text(
-            ${safeLoanNumber},
+            safeLoanNumber,
             14,
             84
           );
 
           pdf.text(
-            ${customerName},
+            customerName,
             14,
             92
           );
 
           pdf.setFont("helvetica", "bold");
           pdf.text(
-            ${formatCurrency(
-              settlementAmount
-            )},
+            formatCurrency(settlementAmount),
             14,
             104
           );
 
           pdf.setFont("helvetica", "normal");
 
-          const body =
-            ${This letter confirms that the current outstanding balance on the above-mentioned loan account is ${formatCurrency(
-              settlementAmount
-            )}. This amount represents the current balance required to settle the loan account in full as at the date of this letter.};
+          const body = `This letter confirms that the current outstanding balance on the above-mentioned loan account is ${formatCurrency(
+            settlementAmount
+          )}. This amount represents the current balance required to settle the loan account in full as at the date of this letter.`;
 
           const wrappedBody =
             pdf.splitTextToSize(
@@ -2047,12 +2044,12 @@ export default function LoanProfile() {
               .replace(/[:.]/g, "-");
 
           const fileName =
-            ${safeLoanNumber}-settlement-letter-${timestamp}.pdf;
+            `${safeLoanNumber}-settlement-letter-${timestamp}.pdf`;
 
           const blob = pdf.output("blob");
 
           const path =
-            ${settlements/${loan.customer_id}/${loan.id}/${fileName}};
+            `settlements/${loan.customer_id}/${loan.id}/${fileName}`;
 
           const { error: uploadError } =
             await supabase.storage
