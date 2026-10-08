@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
   tier_1_interest_rate: 40,
 
   // Loan-term rule
-  maximum_loan_term_months: 6,
+  maximum_loan_term_months: 2,
 
   // Interest-cycle rules
   interest_cycle_enabled: true,
@@ -570,7 +570,7 @@ export function getLoanTermForAmount(amount, settings) {
   if (!settings) throw new Error("Loan settings could not be loaded.");
   const minimum = Number(settings.minimum_loan_amount);
   const maximum = Number(settings.maximum_loan_amount);
-  const termMonths = Number(settings.loan_term_months);
+  const termMonths = Number(settings.maximum_loan_term_months);
   if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || !Number.isFinite(termMonths) || termMonths <= 0) throw new Error("Loan term settings are incomplete or invalid.");
   if (value < minimum) throw new Error("Loan amount must be at least " + minimum + ".");
   if (value > maximum) throw new Error("Loan amount cannot exceed " + maximum + ".");
