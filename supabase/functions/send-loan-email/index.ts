@@ -230,6 +230,64 @@ function buildEmailContent(data, frontendAppUrl) {
     `;
   }
 
+  if (data.notificationType === "STATEMENT") {
+    subject = `Latest Loan Statement - ${loanNumber}`;
+    title = "Latest Loan Statement";
+
+    body = `
+      <p>Dear ${clientName},</p>
+      <p>Your latest loan statement is attached to this email.</p>
+      <table style="border-collapse:collapse;width:100%;margin:20px 0;">
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Loan Number</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${loanNumber}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Payment Recorded</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${formatCurrency(data.paymentAmount)}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Current Balance</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${formatCurrency(data.currentBalance)}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Next Payment Date</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(data.nextPaymentDate || "-")}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Next Interest Date</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(data.nextInterestDate || "-")}</td>
+        </tr>
+      </table>
+      <p>The attached statement reflects the latest recorded payment and the current loan balance.</p>
+    `;
+  }
+
+  if (data.notificationType === "PAID_UP") {
+    subject = `Loan Paid in Full - ${loanNumber}`;
+    title = "Loan Paid in Full";
+
+    body = `
+      <p>Dear ${clientName},</p>
+      <p>Congratulations. Your loan account has been paid in full.</p>
+      <table style="border-collapse:collapse;width:100%;margin:20px 0;">
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Loan Number</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${loanNumber}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Final Balance</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">R0.00</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>Payment Amount</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${formatCurrency(data.paymentAmount)}</td>
+        </tr>
+      </table>
+      <p>Your Paid-Up Letter is attached. No further statement is being issued for this payment.</p>
+    `;
+  }
+
   if (data.notificationType === "REJECTED") {
     subject = `Loan Application Update - ${applicationNumber}`;
     title = "Loan Application Update";
@@ -390,6 +448,39 @@ async function sendEmail(
     );
   }
 
+  let attachment = null;
+
+  if (data.attachmentPath) {
+    const attachmentBucket =
+      data.attachmentBucket || "documents";
+
+    const {
+      data: signedAttachment,
+      error: attachmentError,
+    } = await supabaseAdmin.storage
+      .from(attachmentBucket)
+      .createSignedUrl(
+        data.attachmentPath,
+        3600
+      );
+
+    if (attachmentError || !signedAttachment?.signedUrl) {
+      throw new Error(
+        `Unable to create email attachment URL: ${attachmentError?.message || "Unknown error"}`
+      );
+    }
+
+    attachment = [
+      {
+        url: signedAttachment.signedUrl,
+        name:
+          data.attachmentName ||
+          data.attachmentPath.split("/").pop() ||
+          "document.pdf",
+      },
+    ];
+  }
+
   const brevoResponse = await fetch(
     "https://api.brevo.com/v3/smtp/email",
     {
@@ -412,6 +503,7 @@ async function sendEmail(
         ],
         subject: email.subject,
         htmlContent: email.html,
+        ...(attachment ? { attachment } : {}),
       }),
     }
   );
