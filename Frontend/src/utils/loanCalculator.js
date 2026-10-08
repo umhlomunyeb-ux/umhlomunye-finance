@@ -1,38 +1,59 @@
 import { getInterestRateForAmount } from "../services/settingsService";
 
 /**
- * Get the maximum permitted term for a loan amount
- * using ONLY the rules stored in Settings.
+ * Return the single permitted loan term.
  *
- * Example configured rules:
- *
- * term_1_max_amount = 5000
- * term_1_months     = 1
- *
- * term_2_max_amount = 8000
- * term_2_months     = 3
- *
- * term_3_months     = 6
+ * All loans are one-month loans. The selected payment date is
+ * the date on which the full outstanding balance is expected.
  */
 export function getLoanTermForAmount(amount, settings) {
   const principal = Number(amount);
-  if (!settings) throw new Error("Loan settings could not be loaded.");
-  if (!Number.isFinite(principal) || principal <= 0) throw new Error("Enter a valid loan amount.");
+
+  if (!settings) {
+    throw new Error("Loan settings could not be loaded.");
+  }
+
+  if (!Number.isFinite(principal) || principal <= 0) {
+    throw new Error("Enter a valid loan amount.");
+  }
+
   const minimum = Number(settings.minimum_loan_amount);
   const maximum = Number(settings.maximum_loan_amount);
   const termMonths = Number(settings.maximum_loan_term_months);
-  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || !Number.isFinite(termMonths) || termMonths <= 0 || termMonths > 2) throw new Error("Loan term must be between 1 and 2 months.");
-  if (principal < minimum) throw new Error("The minimum loan amount is R" + minimum + ".");
-  if (principal > maximum) throw new Error("The maximum loan amount is R" + maximum + ".");
-  return termMonths;
-}
 
+  if (
+    !Number.isFinite(minimum) ||
+    !Number.isFinite(maximum) ||
+    termMonths !== 1
+  ) {
+    throw new Error("Loan term must be exactly 1 month.");
+  }
+
+  if (principal < minimum) {
+    throw new Error(
+      "The minimum loan amount is R" + minimum + "."
+    );
+  }
+
+  if (principal > maximum) {
+    throw new Error(
+      "The maximum loan amount is R" + maximum + "."
+    );
+  }
+
+  return 1;
+}
 
 /**
  * Calculate a new loan using the current system rules.
  *
- * Interest rate comes from Settings.
- * Loan term comes from Settings.
+ * Interest is charged once when the loan is approved.
+ * If the balance remains outstanding after the selected payment
+ * date, the database interest engine compounds interest on the
+ * outstanding balance according to the configured monthly cycle.
+ *
+ * monthlyRepayment is retained only as a legacy database field;
+ * it is equal to the full amount due because there are no instalments.
  */
 export function calculateLoan(amount, settings) {
   const principal = Number(amount);
@@ -56,19 +77,7 @@ export function calculateLoan(amount, settings) {
   const minimum = Number(settings.minimum_loan_amount);
   const maximum = Number(settings.maximum_loan_amount);
 
-  if (principal < minimum) {
-    return {
-      principalAmount: principal,
-      interestRate: 0,
-      interestAmount: 0,
-      totalRepayment: 0,
-      monthlyRepayment: 0,
-      balance: 0,
-      termMonths: 0,
-    };
-  }
-
-  if (principal > maximum) {
+  if (principal < minimum || principal > maximum) {
     return {
       principalAmount: principal,
       interestRate: 0,
@@ -89,11 +98,6 @@ export function calculateLoan(amount, settings) {
     settings
   );
 
-  /*
-   * Current loan pricing:
-   *
-   * principal × configured interest rate
-   */
   const interestAmount = Number(
     (
       principal *
@@ -108,23 +112,13 @@ export function calculateLoan(amount, settings) {
     ).toFixed(2)
   );
 
-  /*
-   * Equal monthly repayments.
-   *
-   * The final month absorbs any cent-rounding difference.
-   */
-  const monthlyRepayment = Number(
-    (
-      totalRepayment / termMonths
-    ).toFixed(2)
-  );
-
   return {
     principalAmount: principal,
     interestRate,
     interestAmount,
     totalRepayment,
-    monthlyRepayment,
+    // Legacy field: there are no instalments; the full balance is due.
+    monthlyRepayment: totalRepayment,
     balance: totalRepayment,
     termMonths,
   };
