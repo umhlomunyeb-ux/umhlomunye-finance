@@ -145,11 +145,217 @@ Deno.serve(async (req)=>{
         }
       });
     }
+    /*
+     * Email the signed agreement immediately after the official
+     * signed PDF has been stored. The PDF is attached directly so
+     * the customer receives the signed document, not just a link.
+     */
+    let emailSent = false;
+    let emailError = null;
+
+    try {
+      const brevoApiKey =
+        Deno.env.get("BREVO_API_KEY");
+
+      const senderEmail =
+        Deno.env.get("BREVO_SENDER_EMAIL");
+
+      const senderName =
+        Deno.env.get("BREVO_SENDER_NAME") ||
+        "Umhlomunye Finance";
+
+      if (!brevoApiKey || !senderEmail) {
+        throw new Error(
+          "Email sender configuration is not available."
+        );
+      }
+
+      const { data: customer, error: customerError } =
+        await supabase
+          .from("customers")
+          .select("first_name, last_name, email")
+          .eq("id", agreement.customer_id)
+          .single();
+
+      if (customerError) {
+        throw customerError;
+      }
+
+      const recipientEmail =
+        String(customer?.email || "").trim();
+
+      const recipientName =
+        `${customer?.first_name || ""} ${customer?.last_name || ""}`.trim() ||
+        "Customer";
+
+      if (!recipientEmail) {
+        throw new Error(
+          "The customer does not have an email address."
+        );
+      }
+
+      const { data: loan } =
+        await supabase
+          .from("loans")
+          .select("loan_number")
+          .eq("id", agreement.loan_id)
+          .maybeSingle();
+
+      const loanNumber =
+        loan?.loan_number || agreement.loan_id;
+
+      const binary = Array.from(pdfBytes, (byte) =>
+        String.fromCharCode(byte)
+      ).join("");
+
+      const attachmentContent =
+        btoa(binary);
+
+      const subject =
+        `Signed Loan Agreement - ${loanNumber}`;
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family:Arial,Helvetica,sans-serif;color:#222;">
+          <div style="max-width:650px;margin:30px auto;background:#fff;">
+            <div style="background:#0b1f3a;padding:25px;color:#fff;text-align:center;">
+              <h1 style="margin:0;">Umhlomunye Finance</h1>
+              <p style="margin:8px 0 0;">Loan Management</p>
+            </div>
+            <div style="padding:30px;">
+              <h2 style="color:#0b1f3a;">Signed Loan Agreement</h2>
+              <p>Dear ${recipientName},</p>
+              <p>Your loan agreement has been successfully signed and is now attached to this email.</p>
+              <p>
+                <strong>Loan Number:</strong>
+                ${loanNumber}
+              </p>
+              <p>
+                Please keep the attached signed agreement for your records.
+              </p>
+              <hr style="border:0;border-top:1px solid #eee;margin:30px 0;">
+              <p style="font-size:12px;color:#777;">
+                This is an automated message from Umhlomunye Finance.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const {
+        data: notification,
+        error: notificationInsertError,
+      } = await supabase
+        .from("email_notifications")
+        .insert({
+          application_id: null,
+          loan_id: agreement.loan_id,
+          recipient_email: recipientEmail,
+          recipient_name: recipientName,
+          notification_type: "SIGNED_AGREEMENT",
+          subject,
+          status: "PENDING",
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (notificationInsertError) {
+        console.error(
+          "SIGNED AGREEMENT NOTIFICATION LOG ERROR:",
+          notificationInsertError
+        );
+      }
+
+      const brevoResponse =
+        await fetch(
+          "https://api.brevo.com/v3/smtp/email",
+          {
+            method: "POST",
+            headers: {
+              accept: "application/json",
+              "api-key": brevoApiKey,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              sender: {
+                name: senderName,
+                email: senderEmail,
+              },
+              to: [
+                {
+                  email: recipientEmail,
+                  name: recipientName,
+                },
+              ],
+              subject,
+              htmlContent: html,
+              attachment: [
+                {
+                  content: attachmentContent,
+                  name:
+                    `${agreement.agreement_number || "signed-loan-agreement"}-signed.pdf`,
+                },
+              ],
+            }),
+          }
+        );
+
+      const responseText =
+        await brevoResponse.text();
+
+      if (!brevoResponse.ok) {
+        throw new Error(
+          `Brevo email failed: ${responseText}`
+        );
+      }
+
+      let brevoResult = {};
+
+      try {
+        brevoResult =
+          JSON.parse(responseText);
+      } catch {
+        // Ignore JSON parsing failure.
+      }
+
+      if (notification?.id) {
+        await supabase
+          .from("email_notifications")
+          .update({
+            status: "SENT",
+            brevo_message_id:
+              brevoResult.messageId || null,
+            sent_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "id",
+            notification.id
+          );
+      }
+
+      emailSent = true;
+    } catch (error) {
+      emailError =
+        error instanceof Error
+          ? error.message
+          : "Unknown email error.";
+
+      console.error(
+        "SIGNED AGREEMENT EMAIL ERROR:",
+        error
+      );
+    }
+
     return new Response(JSON.stringify({
       success: true,
       agreement_id: agreementId,
       document_id: documentId,
-      document_path: documentPath
+      document_path: documentPath,
+      email_sent: emailSent,
+      email_error: emailError
     }), {
       status: 200,
       headers: {
