@@ -632,191 +632,53 @@ export default function Settings() {
      ============================================================ */
 
   function validateSettings() {
-    const minimum = Number(
-      settings.minimum_loan_amount
-    );
+    const minimum = Number(settings.minimum_loan_amount);
+    const maximum = Number(settings.maximum_loan_amount);
+    const interestRate = Number(settings.tier_1_interest_rate);
+    const termMonths = Number(settings.maximum_loan_term_months);
+    const cycleDays = Number(settings.interest_cycle_days);
+    const cycleEnabled = settings.interest_cycle_enabled;
+    const cycleTime = settings.interest_cycle_time;
+    const timezone = settings.timezone;
 
-    const maximum = Number(
-      settings.maximum_loan_amount
-    );
-
-    const tier1Max = Number(
-      settings.tier_1_max_amount
-    );
-
-    const tier1Rate = Number(
-      settings.tier_1_interest_rate
-    );
-
-    const tier2Rate = Number(
-      settings.tier_2_interest_rate
-    );
-
-    const term1Max = Number(
-      settings.term_1_max_amount
-    );
-
-    const term1Months = Number(
-      settings.term_1_months
-    );
-
-    const term2Max = Number(
-      settings.term_2_max_amount
-    );
-
-    const term2Months = Number(
-      settings.term_2_months
-    );
-
-    const term3Months = Number(
-      settings.term_3_months
-    );
-
-    const maxTerm = Number(
-      settings.maximum_loan_term_months
-    );
-
-    const cycleDays = Number(
-      settings.interest_cycle_days
-    );
-
-    const cycleEnabled =
-      settings.interest_cycle_enabled;
-
-    const cycleTime =
-      settings.interest_cycle_time;
-
-    const timezone =
-      settings.timezone;
-
-    if (
-      !settings.company_name?.trim()
-    ) {
+    if (!settings.company_name?.trim()) {
       return "Company name is required.";
     }
 
-    if (
-      !Number.isFinite(minimum) ||
-      minimum <= 0
-    ) {
+    if (!Number.isFinite(minimum) || minimum <= 0) {
       return "Minimum loan amount must be greater than zero.";
     }
 
-    if (
-      !Number.isFinite(maximum) ||
-      maximum <= minimum
-    ) {
-      return "Maximum loan amount must be greater than minimum loan amount.";
+    if (!Number.isFinite(maximum) || maximum < minimum) {
+      return "Maximum loan amount must be greater than or equal to minimum loan amount.";
     }
 
-    if (
-      !Number.isFinite(tier1Max) ||
-      tier1Max < minimum ||
-      tier1Max > maximum
-    ) {
-      return "Tier 1 maximum must be between the minimum and maximum loan amounts.";
+    if (!Number.isFinite(interestRate) || interestRate < 0 || interestRate > 100) {
+      return "Interest rate must be between 0% and 100%.";
     }
 
-    if (
-      !Number.isFinite(tier1Rate) ||
-      tier1Rate < 0 ||
-      tier1Rate > 100
-    ) {
-      return "Tier 1 interest rate must be between 0% and 100%.";
+    if (!Number.isFinite(termMonths) || termMonths <= 0) {
+      return "Term must be greater than zero months.";
     }
 
-    if (
-      !Number.isFinite(tier2Rate) ||
-      tier2Rate < 0 ||
-      tier2Rate > 100
-    ) {
-      return "Tier 2 interest rate must be between 0% and 100%.";
-    }
-
-    if (
-      !Number.isFinite(term1Max) ||
-      term1Max < minimum ||
-      term1Max > maximum
-    ) {
-      return "Term 1 maximum amount must be between the minimum and maximum loan amounts.";
-    }
-
-    if (
-      !Number.isFinite(term1Months) ||
-      term1Months <= 0
-    ) {
-      return "Term 1 must be greater than zero months.";
-    }
-
-    if (
-      !Number.isFinite(term2Max) ||
-      term2Max <= term1Max ||
-      term2Max > maximum
-    ) {
-      return "Term 2 maximum amount must be greater than Term 1 maximum and not exceed the maximum loan amount.";
-    }
-
-    if (
-      !Number.isFinite(term2Months) ||
-      term2Months <= term1Months
-    ) {
-      return "Term 2 must be greater than Term 1.";
-    }
-
-    if (
-      !Number.isFinite(term3Months) ||
-      term3Months < term2Months
-    ) {
-      return "Term 3 must be greater than or equal to Term 2.";
-    }
-
-    if (
-      !Number.isFinite(maxTerm) ||
-      maxTerm <= 0
-    ) {
-      return "Maximum loan term must be greater than zero.";
-    }
-
-    if (term1Months > maxTerm) {
-      return "Term 1 cannot exceed the maximum loan term.";
-    }
-
-    if (term2Months > maxTerm) {
-      return "Term 2 cannot exceed the maximum loan term.";
-    }
-
-    if (term3Months > maxTerm) {
-      return "Term 3 cannot exceed the maximum loan term.";
-    }
-
-    if (
-      typeof cycleEnabled !== "boolean"
-    ) {
+    if (typeof cycleEnabled !== "boolean") {
       return "Interest cycle enabled setting is invalid.";
     }
 
     if (cycleEnabled) {
-      if (
-        !Number.isFinite(cycleDays) ||
-        cycleDays <= 0
-      ) {
+      if (!Number.isFinite(cycleDays) || cycleDays <= 0) {
         return "Interest cycle must be greater than zero days.";
       }
 
       if (
         typeof cycleTime !== "string" ||
-        !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(
-          cycleTime
-        )
+        !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(cycleTime)
       ) {
         return "Interest cycle time must be a valid time in HH:MM format.";
       }
     }
 
-    if (
-      typeof timezone !== "string" ||
-      !timezone.trim()
-    ) {
+    if (typeof timezone !== "string" || !timezone.trim()) {
       return "Timezone must be configured.";
     }
 
