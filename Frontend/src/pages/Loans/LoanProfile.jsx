@@ -2626,18 +2626,6 @@ export default function LoanProfile() {
                   minWidth: 0,
                 }}
               >
-                <Button
-                  variant="contained"
-                  startIcon={<Payment />}
-                  onClick={() =>
-                    setPaymentDialogOpen(
-                      true
-                    )
-                  }
-                  sx={actionButtonSx}
-                >
-                  Record Payment
-                </Button>
 
                 <Button
                   variant="outlined"
