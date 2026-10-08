@@ -1,0 +1,48 @@
+name: Deploy LMS Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    strategy:
+      matrix:
+        include:
+          - worker: umhlomunye-finance2
+            url_secret: UMHLOMUNYE_DB_URL
+            key_secret: UMHLOMUNYE_DB_CLIENT
+            app_secret: UMHLOMUNYE_APP_URL
+          - worker: umthaniya-finance
+            url_secret: UMTHANIYA_DB_URL
+            key_secret: UMTHANIYA_DB_CLIENT
+            app_secret: UMTHANIYA_APP_URL
+          - worker: tloube-finance
+            url_secret: TLOUBE_DB_URL
+            key_secret: TLOUBE_DB_CLIENT
+            app_secret: TLOUBE_APP_URL
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend
+    env:
+      VITE_SUPABASE_URL: ${{ secrets[matrix.url_secret] }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets[matrix.key_secret] }}
+      VITE_PUBLIC_APP_URL: ${{ secrets[matrix.app_secret] }}
+      VITE_APP_MODE: online
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npx wrangler deploy --name "${{ matrix.worker }}"
