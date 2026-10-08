@@ -526,6 +526,13 @@ export default function PublicApplication() {
       return;
     }
 
+    if (!form.email.trim()) {
+      setError(
+        "Email address is required."
+      );
+      return;
+    }
+
     if (!form.amount_requested) {
       setError(
         "Please enter the amount you want to borrow."
@@ -608,7 +615,7 @@ export default function PublicApplication() {
             form.cellphone.trim(),
 
           email:
-            form.email.trim() || null,
+            form.email.trim(),
 
           physical_address:
             form.physical_address.trim() ||
