@@ -34,6 +34,12 @@ jobs:
             supabase_publishable_secret: UMTHANIYA_SUPABASE_PUBLISHABLE_KEY
             public_app_url_secret: UMTHANIYA_PUBLIC_APP_URL
 
+          - client: Tloube
+            worker: tloube-finance
+            supabase_url_secret: TLOUBE_SUPABASE_URL
+            supabase_publishable_secret: TLOUBE_SUPABASE_PUBLISHABLE_KEY
+            public_app_url_secret: TLOUBE_PUBLIC_APP_URL
+
     env:
       VITE_SUPABASE_URL: ${{ secrets[matrix.supabase_url_secret] }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets[matrix.supabase_publishable_secret] }}
