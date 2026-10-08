@@ -464,43 +464,63 @@ export default function Dashboard() {
     [transactions]
   );
 
-  const repaymentTransactions = useMemo(
-    () =>
-      transactions
-        .filter(
-          (transaction) =>
-            String(
-              transaction.transaction_type ||
-                ""
-            ).toLowerCase() ===
-            "payment"
-        )
-        .slice(0, 10),
-    [transactions]
-  );
-
-  const upcomingInterest = useMemo(() => {
-    const now = new Date();
+  const arrearsLoans = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     return activeLoans
       .filter((loan) => {
-        if (!loan.next_interest_date) {
+        if (!loan.next_payment_date) {
           return false;
         }
 
-        const interestDate = new Date(
-          loan.next_interest_date
+        const dueDate = new Date(
+          loan.next_payment_date + "T00:00:00"
         );
 
-        return interestDate >= now;
+        return (
+          dueDate < today &&
+          Number(loan.current_balance || 0) > 0
+        );
       })
       .sort(
         (a, b) =>
           new Date(
-            a.next_interest_date
+            a.next_payment_date + "T00:00:00"
           ) -
           new Date(
-            b.next_interest_date
+            b.next_payment_date + "T00:00:00"
+          )
+      )
+      .slice(0, 10);
+  }, [activeLoans]);
+
+  const upcomingInterest = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+
+    return activeLoans
+      .filter((loan) => {
+        if (!loan.next_payment_date) {
+          return false;
+        }
+
+        const dueDate = new Date(
+          loan.next_payment_date + "T00:00:00"
+        );
+
+        return dueDate >= start && dueDate <= end;
+      })
+      .sort(
+        (a, b) =>
+          new Date(
+            a.next_payment_date + "T00:00:00"
+          ) -
+          new Date(
+            b.next_payment_date + "T00:00:00"
           )
       )
       .slice(0, 10);
@@ -875,8 +895,8 @@ export default function Dashboard() {
                 variant="body2"
                 color="text.secondary"
               >
-                Loans scheduled for the next
-                interest calculation
+                Payments due within the next
+                7 days
               </Typography>
             </Box>
 
@@ -906,7 +926,7 @@ export default function Dashboard() {
                     </TableCell>
 
                     <TableCell>
-                      <strong>Interest Date</strong>
+                      <strong>Payment Due</strong>
                     </TableCell>
 
                     <TableCell align="right">
@@ -943,7 +963,7 @@ export default function Dashboard() {
 
                         <TableCell>
                           {formatDateTime(
-                            loan.next_interest_date
+                            loan.next_payment_date
                           )}
                         </TableCell>
 
@@ -962,7 +982,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* RECENT REPAYMENTS */}
+      {/* LOAN ACCOUNTS IN ARREARS */}
       <Card
         elevation={2}
         sx={{ borderRadius: 3 }}
@@ -980,18 +1000,18 @@ export default function Dashboard() {
               variant="body2"
               color="text.secondary"
             >
-              Latest payment transactions
+              Loan accounts in arrears where the full amount was not paid by the payment date
             </Typography>
           </Box>
 
           <Divider sx={{ mb: 2 }} />
 
-          {repaymentTransactions.length === 0 ? (
+          {arrearsLoans.length === 0 ? (
             <Typography
               color="text.secondary"
               sx={{ py: 3 }}
             >
-              No recent repayments.
+              No loan accounts are currently in arrears.
             </Typography>
           ) : (
             <TableContainer>
@@ -999,7 +1019,7 @@ export default function Dashboard() {
                 <TableHead>
                   <TableRow>
                     <TableCell>
-                      <strong>Date</strong>
+                      <strong>Payment Date</strong>
                     </TableCell>
 
                     <TableCell>
@@ -1007,83 +1027,44 @@ export default function Dashboard() {
                     </TableCell>
 
                     <TableCell>
-                      <strong>Description</strong>
+                      <strong>Customer</strong>
                     </TableCell>
 
                     <TableCell align="right">
-                      <strong>Amount</strong>
-                    </TableCell>
-
-                    <TableCell align="right">
-                      <strong>Balance</strong>
+                      <strong>Outstanding</strong>
                     </TableCell>
                   </TableRow>
                 </TableHead>
 
                 <TableBody>
-                  {repaymentTransactions.map(
-                    (transaction) => {
-                      const loan =
-                        loans.find(
-                          (item) =>
-                            item.id ===
-                            transaction.loan_id
-                        );
+                  {arrearsLoans.map((loan) => (
+                    <TableRow
+                      key={loan.id}
+                      hover
+                      sx={{ cursor: "pointer" }}
+                      onClick={() =>
+                        navigate(`/loans/${loan.id}`)
+                      }
+                    >
+                      <TableCell>
+                        {formatDate(loan.next_payment_date)}
+                      </TableCell>
 
-                      return (
-                        <TableRow
-                          key={transaction.id}
-                          hover
-                          sx={{
-                            cursor: loan
-                              ? "pointer"
-                              : "default",
-                          }}
-                          onClick={() => {
-                            if (loan) {
-                              navigate(
-                                `/loans/${loan.id}`
-                              );
-                            }
-                          }}
-                        >
-                          <TableCell>
-                            {formatDateTime(
-                              transaction.transaction_date
-                            )}
-                          </TableCell>
+                      <TableCell>
+                        <Typography fontWeight={600}>
+                          {loan.loan_number || "-"}
+                        </Typography>
+                      </TableCell>
 
-                          <TableCell>
-                            <Typography fontWeight={600}>
-                              {loan?.loan_number ||
-                                transaction.loan_id?.slice(
-                                  0,
-                                  8
-                                ) ||
-                                "-"}
-                            </Typography>
-                          </TableCell>
+                      <TableCell>
+                        {getCustomerName(loan)}
+                      </TableCell>
 
-                          <TableCell>
-                            {transaction.description ||
-                              "Payment"}
-                          </TableCell>
-
-                          <TableCell align="right">
-                            {money(
-                              transaction.credit
-                            )}
-                          </TableCell>
-
-                          <TableCell align="right">
-                            {money(
-                              transaction.balance
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
-                  )}
+                      <TableCell align="right">
+                        {money(loan.current_balance)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </TableContainer>
