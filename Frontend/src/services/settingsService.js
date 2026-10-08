@@ -23,10 +23,10 @@ const DEFAULT_SETTINGS = {
   maximum_loan_amount: 15000,
 
   // Interest-rate rule
-  interest_rate: 40,
+  tier_1_interest_rate: 40,
 
   // Loan-term rule
-  loan_term_months: 6,
+  maximum_loan_term_months: 6,
 
   // Interest-cycle rules
   interest_cycle_enabled: true,
@@ -279,39 +279,11 @@ export async function updateSystemSettings(settings) {
     // Interest-rate settings
     // ----------------------------------------------------------
 
-    interest_rate:
-      Number(settings.interest_rate),
-
-    loan_term_months:
-      Number(settings.loan_term_months),
-
-    // ----------------------------------------------------------
-    // Loan-term settings
-    // ----------------------------------------------------------
-
-    term_1_max_amount:
-      Number(settings.term_1_max_amount),
-
-    term_1_months:
-      Number(settings.term_1_months),
-
-    term_2_max_amount:
-      Number(settings.term_2_max_amount),
-
-    term_2_months:
-      Number(settings.term_2_months),
-
-    term_3_months:
-      Number(settings.term_3_months),
-
-    // ----------------------------------------------------------
-    // Global loan-term safety limit
-    // ----------------------------------------------------------
+    tier_1_interest_rate:
+      Number(settings.tier_1_interest_rate),
 
     maximum_loan_term_months:
-      Number(
-        settings.maximum_loan_term_months
-      ),
+      Number(settings.maximum_loan_term_months),
 
     // ----------------------------------------------------------
     // Interest-cycle settings
