@@ -16,91 +16,14 @@ import { getInterestRateForAmount } from "../services/settingsService";
  */
 export function getLoanTermForAmount(amount, settings) {
   const principal = Number(amount);
-
-  if (!settings) {
-    throw new Error("Loan settings could not be loaded.");
-  }
-
-  if (!Number.isFinite(principal) || principal <= 0) {
-    throw new Error("Enter a valid loan amount.");
-  }
-
+  if (!settings) throw new Error("Loan settings could not be loaded.");
+  if (!Number.isFinite(principal) || principal <= 0) throw new Error("Enter a valid loan amount.");
   const minimum = Number(settings.minimum_loan_amount);
   const maximum = Number(settings.maximum_loan_amount);
-
-  const term1Max = Number(settings.term_1_max_amount);
-  const term1Months = Number(settings.term_1_months);
-
-  const term2Max = Number(settings.term_2_max_amount);
-  const term2Months = Number(settings.term_2_months);
-
-  const term3Months = Number(settings.term_3_months);
-
-  const configuredMaximumTerm = Number(
-    settings.maximum_loan_term_months
-  );
-
-  if (
-    !Number.isFinite(minimum) ||
-    !Number.isFinite(maximum) ||
-    !Number.isFinite(term1Max) ||
-    !Number.isFinite(term1Months) ||
-    !Number.isFinite(term2Max) ||
-    !Number.isFinite(term2Months) ||
-    !Number.isFinite(term3Months)
-  ) {
-    throw new Error(
-      "Loan term settings are incomplete or invalid."
-    );
-  }
-
-  if (principal < minimum) {
-    throw new Error(
-      `The minimum loan amount is R${minimum.toLocaleString(
-        "en-ZA",
-        {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }
-      )}.`
-    );
-  }
-
-  if (principal > maximum) {
-    throw new Error(
-      `The maximum loan amount is R${maximum.toLocaleString(
-        "en-ZA",
-        {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }
-      )}.`
-    );
-  }
-
-  let termMonths;
-
-  if (principal <= term1Max) {
-    termMonths = term1Months;
-  } else if (principal <= term2Max) {
-    termMonths = term2Months;
-  } else {
-    termMonths = term3Months;
-  }
-
-  /*
-   * The global maximum term remains a final safety limit.
-   */
-  if (
-    Number.isFinite(configuredMaximumTerm) &&
-    configuredMaximumTerm > 0 &&
-    termMonths > configuredMaximumTerm
-  ) {
-    throw new Error(
-      `The calculated loan term of ${termMonths} months exceeds the maximum configured term of ${configuredMaximumTerm} months.`
-    );
-  }
-
+  const termMonths = Number(settings.loan_term_months);
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || !Number.isFinite(termMonths) || termMonths <= 0) throw new Error("Loan term settings are incomplete or invalid.");
+  if (principal < minimum) throw new Error("The minimum loan amount is R" + minimum + ".");
+  if (principal > maximum) throw new Error("The maximum loan amount is R" + maximum + ".");
   return termMonths;
 }
 
