@@ -25,7 +25,6 @@ const DEFAULT_SETTINGS = {
   // Interest-rate rules
   tier_1_max_amount: 2000,
   tier_1_interest_rate: 40,
-  tier_2_interest_rate: 30,
 
   // Loan-term rules
   term_1_max_amount: 5000,
@@ -295,9 +294,6 @@ export async function updateSystemSettings(settings) {
 
     tier_1_interest_rate:
       Number(settings.tier_1_interest_rate),
-
-    tier_2_interest_rate:
-      Number(settings.tier_2_interest_rate),
 
     // ----------------------------------------------------------
     // Loan-term settings
@@ -612,28 +608,16 @@ export function getInterestRateForAmount(
     );
   }
 
-  const tierLimit =
-    Number(settings.tier_1_max_amount);
-
-  const tier1Rate =
+  const interestRate =
     Number(settings.tier_1_interest_rate);
 
-  const tier2Rate =
-    Number(settings.tier_2_interest_rate);
-
-  if (
-    !Number.isFinite(tierLimit) ||
-    !Number.isFinite(tier1Rate) ||
-    !Number.isFinite(tier2Rate)
-  ) {
+  if (!Number.isFinite(interestRate)) {
     throw new Error(
       "Interest-rate settings are incomplete or invalid."
     );
   }
 
-  return value <= tierLimit
-    ? tier1Rate
-    : tier2Rate;
+  return interestRate;
 }
 
 
