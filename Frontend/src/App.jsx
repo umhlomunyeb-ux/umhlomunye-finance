@@ -70,6 +70,11 @@ export default function App() {
           />
 
           <Route
+            path="/sign-agreement/offline/:agreementId"
+            element={<SignAgreement />}
+          />
+
+          <Route
             path="/verify-statement/:token"
             element={<VerifyStatement />}
           />
