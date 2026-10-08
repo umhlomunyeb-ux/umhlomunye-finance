@@ -22,6 +22,11 @@ import {
   Typography,
 } from "@mui/material";
 
+import Download from "@mui/icons-material/Download";
+import PictureAsPdf from "@mui/icons-material/PictureAsPdf";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
 import {
   addBankMoney,
   createCompanyBorrowing,
@@ -82,6 +87,7 @@ export default function Bank() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState(0);
+  const [transactionFilter, setTransactionFilter] = useState("");
 
   const [initialDialog, setInitialDialog] = useState(false);
   const [moneyDialog, setMoneyDialog] = useState(false);
@@ -440,6 +446,136 @@ export default function Bank() {
     ? Number(selectedBorrowing.last_repayment_number || 0) + 1
     : null;
 
+  const filteredTransactions = useMemo(() => {
+    const transactions = summary?.transactions || [];
+    const query = transactionFilter.trim().toLowerCase();
+
+    if (!query) {
+      return transactions;
+    }
+
+    return transactions.filter((transaction) =>
+      [
+        transaction.transaction_date,
+        getTransactionTypeLabel(transaction.transaction_type),
+        transaction.transaction_type,
+        transaction.description,
+        transaction.reference,
+        transaction.direction,
+        transaction.amount,
+        transaction.balance_after,
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .some((value) => value.includes(query))
+    );
+  }, [summary?.transactions, transactionFilter]);
+
+  function downloadTransactionsCsv() {
+    if (!filteredTransactions.length) {
+      setError("There are no transactions matching the current filter.");
+      return;
+    }
+
+    const escapeCsv = (value) => {
+      const text = String(value ?? "");
+      return /[",\\n]/.test(text)
+        ? `"${text.replace(/"/g, '""')}"`
+        : text;
+    };
+
+    const headers = [
+      "Date",
+      "Type",
+      "Description",
+      "Reference",
+      "Money In",
+      "Money Out",
+      "Balance After",
+    ];
+
+    const rows = filteredTransactions.map((transaction) => [
+      formatDate(transaction.transaction_date),
+      getTransactionTypeLabel(transaction.transaction_type),
+      transaction.description || "",
+      transaction.reference || "",
+      transaction.direction === "IN" ? transaction.amount : "",
+      transaction.direction === "OUT" ? transaction.amount : "",
+      transaction.balance_after,
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCsv).join(","))
+      .join("\\n");
+
+    const blob = new Blob(["\\ufeff" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `bank-transactions-${today()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadTransactionsPdf() {
+    if (!filteredTransactions.length) {
+      setError("There are no transactions matching the current filter.");
+      return;
+    }
+
+    const pdf = new jsPDF("landscape", "mm", "a4");
+
+    pdf.setFontSize(16);
+    pdf.text("Bank Transactions", 14, 16);
+
+    pdf.setFontSize(9);
+    pdf.text(
+      transactionFilter.trim()
+        ? `Filter: ${transactionFilter.trim()}`
+        : "All transactions",
+      14,
+      23
+    );
+
+    autoTable(pdf, {
+      startY: 28,
+      head: [[
+        "Date",
+        "Type",
+        "Description",
+        "Reference",
+        "Money In",
+        "Money Out",
+        "Balance After",
+      ]],
+      body: filteredTransactions.map((transaction) => [
+        formatDate(transaction.transaction_date),
+        getTransactionTypeLabel(transaction.transaction_type),
+        transaction.description || "-",
+        transaction.reference || "-",
+        transaction.direction === "IN"
+          ? formatCurrency(transaction.amount)
+          : "-",
+        transaction.direction === "OUT"
+          ? formatCurrency(transaction.amount)
+          : "-",
+        formatCurrency(transaction.balance_after),
+      ]),
+      styles: {
+        fontSize: 7,
+        cellPadding: 2,
+      },
+      headStyles: {
+        fontSize: 7,
+      },
+    });
+
+    pdf.save(`bank-transactions-${today()}.pdf`);
+  }
+
   if (loading) {
     return (
       <Box
@@ -621,9 +757,52 @@ export default function Bank() {
       {tab === 0 && (
         <Card>
           <CardContent>
-            <Typography variant="h6" fontWeight={700} mb={2}>
-              Bank Transactions
-            </Typography>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={1}
+              justifyContent="space-between"
+              alignItems={{ xs: "stretch", md: "center" }}
+              mb={2}
+            >
+              <Typography variant="h6" fontWeight={700}>
+                Bank Transactions
+              </Typography>
+
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1}
+                sx={{ width: { xs: "100%", md: "auto" } }}
+              >
+                <TextField
+                  size="small"
+                  value={transactionFilter}
+                  onChange={(event) =>
+                    setTransactionFilter(event.target.value)
+                  }
+                  placeholder="Filter transactions..."
+                  label="Filter"
+                  sx={{ minWidth: { sm: 240 } }}
+                />
+
+                <Button
+                  variant="outlined"
+                  startIcon={<Download />}
+                  onClick={downloadTransactionsCsv}
+                  disabled={!filteredTransactions.length}
+                >
+                  Download CSV
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={<PictureAsPdf />}
+                  onClick={downloadTransactionsPdf}
+                  disabled={!filteredTransactions.length}
+                >
+                  Download PDF
+                </Button>
+              </Stack>
+            </Stack>
 
             {!summary?.transactions?.length ? (
               <Alert severity="info">
@@ -665,7 +844,7 @@ export default function Bank() {
                   </thead>
 
                   <tbody>
-                    {summary.transactions.map((transaction) => (
+                    {filteredTransactions.map((transaction) => (
                       <tr key={transaction.id}>
                         <td style={{ padding: "12px" }}>
                           {formatDate(transaction.transaction_date)}
