@@ -640,37 +640,10 @@ export default function Settings() {
       settings.maximum_loan_amount
     );
 
-    const tier1Max = Number(
-      settings.tier_1_max_amount
-    );
+    const interestRate = Number(settings.interest_rate);
 
-    const tier1Rate = Number(
-      settings.tier_1_interest_rate
-    );
+    const termMonths = Number(settings.loan_term_months);
 
-    const term1Max = Number(
-      settings.term_1_max_amount
-    );
-
-    const term1Months = Number(
-      settings.term_1_months
-    );
-
-    const term2Max = Number(
-      settings.term_2_max_amount
-    );
-
-    const term2Months = Number(
-      settings.term_2_months
-    );
-
-    const term3Months = Number(
-      settings.term_3_months
-    );
-
-    const maxTerm = Number(
-      settings.maximum_loan_term_months
-    );
 
     const cycleDays = Number(
       settings.interest_cycle_days
@@ -705,76 +678,12 @@ export default function Settings() {
       return "Maximum loan amount must be greater than minimum loan amount.";
     }
 
-    if (
-      !Number.isFinite(tier1Max) ||
-      tier1Max < minimum ||
-      tier1Max > maximum
-    ) {
-      return "Tier 1 maximum must be between the minimum and maximum loan amounts.";
+    if (!Number.isFinite(interestRate) || interestRate < 0 || interestRate > 100) {
+      return "Interest rate must be between 0% and 100%.";
     }
 
-    if (
-      !Number.isFinite(tier1Rate) ||
-      tier1Rate < 0 ||
-      tier1Rate > 100
-    ) {
-      return "Tier 1 interest rate must be between 0% and 100%.";
-    }
-
-    if (
-      !Number.isFinite(term1Max) ||
-      term1Max < minimum ||
-      term1Max > maximum
-    ) {
-      return "Term 1 maximum amount must be between the minimum and maximum loan amounts.";
-    }
-
-    if (
-      !Number.isFinite(term1Months) ||
-      term1Months <= 0
-    ) {
-      return "Term 1 must be greater than zero months.";
-    }
-
-    if (
-      !Number.isFinite(term2Max) ||
-      term2Max <= term1Max ||
-      term2Max > maximum
-    ) {
-      return "Term 2 maximum amount must be greater than Term 1 maximum and not exceed the maximum loan amount.";
-    }
-
-    if (
-      !Number.isFinite(term2Months) ||
-      term2Months <= term1Months
-    ) {
-      return "Term 2 must be greater than Term 1.";
-    }
-
-    if (
-      !Number.isFinite(term3Months) ||
-      term3Months < term2Months
-    ) {
-      return "Term 3 must be greater than or equal to Term 2.";
-    }
-
-    if (
-      !Number.isFinite(maxTerm) ||
-      maxTerm <= 0
-    ) {
-      return "Maximum loan term must be greater than zero.";
-    }
-
-    if (term1Months > maxTerm) {
-      return "Term 1 cannot exceed the maximum loan term.";
-    }
-
-    if (term2Months > maxTerm) {
-      return "Term 2 cannot exceed the maximum loan term.";
-    }
-
-    if (term3Months > maxTerm) {
-      return "Term 3 cannot exceed the maximum loan term.";
+    if (!Number.isFinite(termMonths) || termMonths <= 0) {
+      return "Term must be greater than zero months.";
     }
 
     if (
@@ -1401,97 +1310,22 @@ export default function Settings() {
               
             </Grid>
 
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Term 1 Maximum Amount"
-                value={settings.term_1_max_amount ?? ""}
-                onChange={(e) =>
-                  handleChange(
-                    "term_1_max_amount",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                inputProps={{ min: 0, step: "0.01" }}
-              />
-            </Grid>
+            
+
+            
+
+            
+
+            
+
+            
 
             <Grid size={{ xs: 12, md: 3 }}>
               <TextField
                 fullWidth
                 type="number"
-                label="Term 1 (Months)"
-                value={settings.term_1_months ?? ""}
-                onChange={(e) =>
-                  handleChange(
-                    "term_1_months",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                inputProps={{ min: 1, step: 1 }}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Term 2 Maximum Amount"
-                value={settings.term_2_max_amount ?? ""}
-                onChange={(e) =>
-                  handleChange(
-                    "term_2_max_amount",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                inputProps={{ min: 0, step: "0.01" }}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Term 2 (Months)"
-                value={settings.term_2_months ?? ""}
-                onChange={(e) =>
-                  handleChange(
-                    "term_2_months",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                inputProps={{ min: 1, step: 1 }}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Term 3 (Months)"
-                value={settings.term_3_months ?? ""}
-                onChange={(e) =>
-                  handleChange(
-                    "term_3_months",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                inputProps={{ min: 1, step: 1 }}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Maximum Loan Term (Months)"
-                value={settings.maximum_loan_term_months ?? ""}
+                label="Term (Months)"
+                value={settings.loan_term_months ?? ""}
                 onChange={(e) =>
                   handleChange(
                     "maximum_loan_term_months",
