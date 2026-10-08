@@ -7179,7 +7179,7 @@ $$;
 CREATE FUNCTION public.record_company_debt_repayment(p_borrowing_id uuid, p_amount numeric, p_repayment_date date, p_description text DEFAULT NULL::text, p_proof_of_payment_path text DEFAULT NULL::text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$
+    AS $function$
 declare
   v_borrowing public.company_borrowings%rowtype;
   v_bank_account_id uuid;
@@ -7235,16 +7235,13 @@ begin
 
   v_reference := trim(v_borrowing.reference) || '-repayment';
 
-  select coalesce(max(repayment_number), 0) + 1
+  select count(*) + 1
     into v_repayment_number
   from public.company_debt_repayments
   where borrowing_id = p_borrowing_id;
 
-  v_new_amount_repaid :=
-    coalesce(v_borrowing.amount_repaid, 0) + p_amount;
-
-  v_new_outstanding :=
-    greatest(coalesce(v_borrowing.outstanding_amount, 0) - p_amount, 0);
+  v_new_amount_repaid := coalesce(v_borrowing.amount_repaid, 0) + p_amount;
+  v_new_outstanding := greatest(coalesce(v_borrowing.outstanding_amount, 0) - p_amount, 0);
 
   if v_new_outstanding = 0 then
     v_status := 'Paid';
@@ -7254,7 +7251,6 @@ begin
 
   insert into public.company_debt_repayments (
     borrowing_id,
-    repayment_number,
     amount,
     repayment_date,
     description,
@@ -7264,7 +7260,6 @@ begin
   )
   values (
     p_borrowing_id,
-    v_repayment_number,
     p_amount,
     p_repayment_date,
     p_description,
@@ -7291,9 +7286,7 @@ begin
     raise exception 'No active company bank account was found.';
   end if;
 
-  select coalesce(sum(
-    case when direction = 'IN' then amount else -amount end
-  ), 0)
+  select coalesce(sum(case when direction = 'IN' then amount else -amount end), 0)
     into v_balance_after
   from public.bank_transactions
   where is_void = false;
@@ -7317,10 +7310,7 @@ begin
     'DEBT_REPAYMENT',
     'OUT',
     p_amount,
-    coalesce(
-      p_description,
-      'Company debt repayment ' || v_repayment_number
-    ),
+    coalesce(p_description, 'Company debt repayment ' || v_repayment_number),
     v_reference,
     false,
     v_balance_after
@@ -7336,8 +7326,7 @@ begin
     'status', v_status
   );
 end;
-$$;
-
+$function$;
 
 --
 -- Name: document_history; Type: TABLE; Schema: public; Owner: -
