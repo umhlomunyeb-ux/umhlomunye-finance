@@ -600,6 +600,9 @@ export default function LoanProfile() {
   const [generatingPaidUpLetter, setGeneratingPaidUpLetter] =
     useState(false);
 
+  const [generatingSettlementLetter, setGeneratingSettlementLetter] =
+    useState(false);
+
   const [error, setError] = useState("");
 
   const [tab, setTab] = useState(0);
@@ -1926,6 +1929,203 @@ export default function LoanProfile() {
       ]
     );
 
+  const handleSettlementLetter =
+    useCallback(
+      async () => {
+        if (!loan) return;
+
+        setGeneratingSettlementLetter(true);
+
+        try {
+          const pdf = new jsPDF();
+
+          const pageWidth =
+            pdf.internal.pageSize.getWidth();
+
+          const verificationUrl =
+            loan.statement_verification_token
+              ? ${window.location.origin}/verify-statement/${loan.statement_verification_token}
+              : null;
+
+          const { contentStartY } =
+            await import(
+              "../../services/pdfBrandingService"
+            ).then(
+              (module) =>
+                module.drawPdfCompanyHeader(
+                  pdf,
+                  verificationUrl
+                )
+            );
+
+          pdf.setFontSize(17);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(
+            "SETTLEMENT LETTER",
+            14,
+            contentStartY
+          );
+
+          pdf.setFontSize(11);
+          pdf.setFont("helvetica", "normal");
+
+          const customerName =
+            loan.customer?.full_name ||
+            customer?.full_name ||
+            customer?.name ||
+            "Customer";
+
+          const settlementAmount =
+            Math.max(0, currentLoanBalance);
+
+          pdf.text(
+            ${formatDate(new Date())},
+            14,
+            76
+          );
+
+          pdf.text(
+            ${safeLoanNumber},
+            14,
+            84
+          );
+
+          pdf.text(
+            ${customerName},
+            14,
+            92
+          );
+
+          pdf.setFont("helvetica", "bold");
+          pdf.text(
+            ${formatCurrency(
+              settlementAmount
+            )},
+            14,
+            104
+          );
+
+          pdf.setFont("helvetica", "normal");
+
+          const body =
+            ${This letter confirms that the current outstanding balance on the above-mentioned loan account is ${formatCurrency(
+              settlementAmount
+            )}. This amount represents the current balance required to settle the loan account in full as at the date of this letter.};
+
+          const wrappedBody =
+            pdf.splitTextToSize(
+              body,
+              pageWidth - 28
+            );
+
+          pdf.text(
+            wrappedBody,
+            14,
+            118
+          );
+
+          const nextY =
+            118 +
+            wrappedBody.length * 7 +
+            15;
+
+          pdf.text(
+            "The settlement amount is subject to any transactions or charges recorded after the date of this letter.",
+            14,
+            nextY
+          );
+
+          pdf.text(
+            "Authorised Representative",
+            14,
+            nextY + 37
+          );
+
+          const timestamp =
+            new Date()
+              .toISOString()
+              .replace(/[:.]/g, "-");
+
+          const fileName =
+            ${safeLoanNumber}-settlement-letter-${timestamp}.pdf;
+
+          const blob = pdf.output("blob");
+
+          const path =
+            ${settlements/${loan.customer_id}/${loan.id}/${fileName}};
+
+          const { error: uploadError } =
+            await supabase.storage
+              .from("loan-documents")
+              .upload(path, blob, {
+                contentType: "application/pdf",
+                upsert: false,
+              });
+
+          if (uploadError) {
+            throw uploadError;
+          }
+
+          const { data: userData } =
+            await supabase.auth.getUser();
+
+          const { error: documentError } =
+            await supabase
+              .from("documents")
+              .insert({
+                customer_id: loan.customer_id,
+                loan_id: loan.id,
+                agreement_id: agreement?.id || null,
+                document_type: "Settlement Letter",
+                document_category: "LOAN",
+                document_name: fileName,
+                document_path: path,
+                created_by: userData?.user?.id || null,
+                mime_type: "application/pdf",
+                file_size_bytes: blob.size,
+                source_type: "SYSTEM_GENERATED",
+                retention_policy: "LOAN_DOCUMENT",
+                retention_status: "ACTIVE",
+                verification_status: "VERIFIED",
+                is_archived: false,
+                version_number: 1,
+              });
+
+          if (documentError) {
+            throw documentError;
+          }
+
+          await loadDocuments(
+            id,
+            loan.customer_id
+          );
+
+          pdf.save(fileName);
+        } catch (err) {
+          console.error(
+            "SETTLEMENT LETTER ERROR:",
+            err
+          );
+
+          window.alert(
+            err?.message ||
+              "Unable to generate settlement letter."
+          );
+        } finally {
+          setGeneratingSettlementLetter(false);
+        }
+      },
+      [
+        agreement,
+        currentLoanBalance,
+        customer,
+        id,
+        loadDocuments,
+        loan,
+        safeLoanNumber,
+      ]
+    );
+
   const handleDownloadDocument =
     useCallback(
       async (document) => {
@@ -2721,6 +2921,20 @@ export default function LoanProfile() {
                   {generatingPaidUpLetter
                     ? "Generating..."
                     : "Paid-Up Letter"}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={
+                    <PictureAsPdf />
+                  }
+                  onClick={handleSettlementLetter}
+                  disabled={generatingSettlementLetter}
+                  sx={actionButtonSx}
+                >
+                  {generatingSettlementLetter
+                    ? "Generating..."
+                    : "Settlement Letter"}
                 </Button>
 
                 <Button
