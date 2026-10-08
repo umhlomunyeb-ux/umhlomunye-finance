@@ -41,7 +41,7 @@ import {
   Verified,
 } from "@mui/icons-material";
 
-import { getLoan } from "../../services/LoanService";
+import { getLoan } from "../../services/loanService.js";
 import { getLoanStatement } from "../../services/statementService";
 import { getLoanTransactions } from "../../services/transactionService";
 import { getSystemSettings } from "../../services/settingsService";
