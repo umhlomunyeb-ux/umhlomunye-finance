@@ -70,3 +70,48 @@ jobs:
       - name: Deploy Cloudflare Worker
         working-directory: Frontend
         run: npx wrangler deploy --name "${{ matrix.worker }}"
+  playwright-e2e:
+    name: Playwright E2E ${{ matrix.client }}
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - client: Umhlomunye
+            public_app_url_secret: UMHLOMUNYE_PUBLIC_APP_URL
+
+          - client: Umthaniya
+            public_app_url_secret: UMTHANIYA_PUBLIC_APP_URL
+
+          - client: Tloube
+            public_app_url_secret: TLOUBE_PUBLIC_APP_URL
+
+    env:
+      PLAYWRIGHT_BASE_URL: ${{ secrets[matrix.public_app_url_secret] }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: master-template
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: Frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: Frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright public E2E tests
+        working-directory: Frontend
+        run: npm run test:e2e -- --project=public
