@@ -640,9 +640,9 @@ export default function Settings() {
       settings.maximum_loan_amount
     );
 
-    const interestRate = Number(settings.interest_rate);
+    const interestRate = Number(settings.tier_1_interest_rate);
 
-    const termMonths = Number(settings.loan_term_months);
+    const termMonths = Number(settings.maximum_loan_term_months);
 
 
     const cycleDays = Number(
