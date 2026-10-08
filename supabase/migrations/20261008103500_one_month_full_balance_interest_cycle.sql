@@ -539,8 +539,8 @@ declare
   v_next_payment_date date;
   v_due_payment_date date;
   v_transaction_id uuid;
-  v_settings record;
   v_cycle_days integer;
+  v_interest_cycle_enabled boolean;
   v_company_timezone text;
   v_interest_time time;
 begin
@@ -591,7 +591,7 @@ begin
     coalesce(interest_cycle_time, time '00:01:00')
   into
     v_cycle_days,
-    v_settings.interest_cycle_enabled,
+    v_interest_cycle_enabled,
     v_company_timezone,
     v_interest_time
   from public.system_settings
@@ -636,7 +636,7 @@ begin
       v_due_payment_date + interval '1 month'
     )::date;
 
-    if v_settings.interest_cycle_enabled then
+    if coalesce(v_interest_cycle_enabled, true) then
       v_next_interest_date := (
         (
           v_next_payment_date
@@ -649,7 +649,6 @@ begin
     end if;
   else
     v_next_payment_date := v_loan.next_payment_date;
-
     v_next_interest_date := v_loan.next_interest_date;
   end if;
 
