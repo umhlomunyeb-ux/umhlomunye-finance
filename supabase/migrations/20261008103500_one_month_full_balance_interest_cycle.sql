@@ -630,6 +630,9 @@ begin
     v_next_payment_date := null;
     v_next_interest_date := null;
   elsif p_payment_date >= v_due_payment_date then
+    -- The payment day advances one month, but the interest date for
+    -- the current outstanding balance is still N days after the
+    -- payment that was just recorded.
     v_next_payment_date := (
       v_due_payment_date + interval '1 month'
     )::date;
@@ -637,7 +640,7 @@ begin
     if coalesce(v_interest_cycle_enabled, true) then
       v_next_interest_date := (
         (
-          v_next_payment_date
+          p_payment_date
           + (v_cycle_days * interval '1 day')
         )::date
         + v_interest_time
