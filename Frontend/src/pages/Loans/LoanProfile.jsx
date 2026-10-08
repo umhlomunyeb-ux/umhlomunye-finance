@@ -1051,11 +1051,25 @@ export default function LoanProfile() {
               document
             );
 
-          window.open(
+          const isMobileDevice =
+            /Android|iPhone|iPad|iPod|Mobile/i.test(
+              navigator.userAgent || ""
+            );
+
+          if (isMobileDevice) {
+            window.location.assign(url);
+            return;
+          }
+
+          const openedWindow = window.open(
             url,
             "_blank",
             "noopener,noreferrer"
           );
+
+          if (!openedWindow) {
+            window.location.assign(url);
+          }
         } catch (err) {
           console.error(
             "OPEN DOCUMENT ERROR:",
