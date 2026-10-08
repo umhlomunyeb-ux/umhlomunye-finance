@@ -11,7 +11,7 @@ test.describe("Public application", () => {
     ).toBeVisible();
 
     await expect(
-      page.getByLabel(/password/i)
+      page.getByLabel("Password", { exact: true })
     ).toBeVisible();
 
     await expect(
@@ -90,7 +90,7 @@ test.describe("Public application", () => {
 
     await expect(page.locator("body")).toBeVisible();
 
-    await expect(page).toHaveURL(/\/mobile$/);
+    await expect(page).toHaveURL(/\/mobile\/login$/);
   });
 
   test("mobile preview route loads", async ({ page }) => {
@@ -106,7 +106,7 @@ test.describe("Public application", () => {
   }) => {
     await page.goto("/mobile/application-review");
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/mobile\/login$/);
   });
 
   test("protected mobile review detail redirects when unauthenticated", async ({
