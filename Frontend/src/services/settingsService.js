@@ -22,21 +22,11 @@ const DEFAULT_SETTINGS = {
   minimum_loan_amount: 100,
   maximum_loan_amount: 15000,
 
-  // Interest-rate rules
-  tier_1_max_amount: 2000,
-  tier_1_interest_rate: 40,
+  // Interest-rate rule
+  interest_rate: 40,
 
-  // Loan-term rules
-  term_1_max_amount: 5000,
-  term_1_months: 1,
-
-  term_2_max_amount: 8000,
-  term_2_months: 3,
-
-  term_3_months: 6,
-
-  // Global loan-term safety limit
-  maximum_loan_term_months: 6,
+  // Loan-term rule
+  loan_term_months: 6,
 
   // Interest-cycle rules
   interest_cycle_enabled: true,
@@ -289,11 +279,11 @@ export async function updateSystemSettings(settings) {
     // Interest-rate settings
     // ----------------------------------------------------------
 
-    tier_1_max_amount:
-      Number(settings.tier_1_max_amount),
+    interest_rate:
+      Number(settings.interest_rate),
 
-    tier_1_interest_rate:
-      Number(settings.tier_1_interest_rate),
+    loan_term_months:
+      Number(settings.loan_term_months),
 
     // ----------------------------------------------------------
     // Loan-term settings
@@ -589,34 +579,12 @@ export async function revokeAllMobileDevices() {
  *
  * The threshold and rates come entirely from Settings.
  */
-export function getInterestRateForAmount(
-  amount,
-  settings
-) {
+export function getInterestRateForAmount(amount, settings) {
   const value = Number(amount);
-
-  if (
-    !Number.isFinite(value) ||
-    value <= 0
-  ) {
-    return 0;
-  }
-
-  if (!settings) {
-    throw new Error(
-      "Loan settings could not be loaded."
-    );
-  }
-
-  const interestRate =
-    Number(settings.tier_1_interest_rate);
-
-  if (!Number.isFinite(interestRate)) {
-    throw new Error(
-      "Interest-rate settings are incomplete or invalid."
-    );
-  }
-
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (!settings) throw new Error("Loan settings could not be loaded.");
+  const interestRate = Number(settings.interest_rate);
+  if (!Number.isFinite(interestRate)) throw new Error("Interest-rate settings are incomplete or invalid.");
   return interestRate;
 }
 
@@ -624,109 +592,16 @@ export function getInterestRateForAmount(
 /**
  * Determine the applicable loan term from Settings.
  */
-export function getLoanTermForAmount(
-  amount,
-  settings
-) {
+export function getLoanTermForAmount(amount, settings) {
   const value = Number(amount);
-
-  if (
-    !Number.isFinite(value) ||
-    value <= 0
-  ) {
-    throw new Error(
-      "Enter a valid loan amount."
-    );
-  }
-
-  if (!settings) {
-    throw new Error(
-      "Loan settings could not be loaded."
-    );
-  }
-
-  const minimum =
-    Number(settings.minimum_loan_amount);
-
-  const maximum =
-    Number(settings.maximum_loan_amount);
-
-  const term1Max =
-    Number(settings.term_1_max_amount);
-
-  const term1Months =
-    Number(settings.term_1_months);
-
-  const term2Max =
-    Number(settings.term_2_max_amount);
-
-  const term2Months =
-    Number(settings.term_2_months);
-
-  const term3Months =
-    Number(settings.term_3_months);
-
-  const maximumTerm =
-    Number(
-      settings.maximum_loan_term_months
-    );
-
-  if (
-    !Number.isFinite(minimum) ||
-    !Number.isFinite(maximum) ||
-    !Number.isFinite(term1Max) ||
-    !Number.isFinite(term1Months) ||
-    !Number.isFinite(term2Max) ||
-    !Number.isFinite(term2Months) ||
-    !Number.isFinite(term3Months) ||
-    !Number.isFinite(maximumTerm)
-  ) {
-    throw new Error(
-      "Loan term settings are incomplete or invalid."
-    );
-  }
-
-  if (value < minimum) {
-    throw new Error(
-      `Loan amount must be at least ${minimum}.`
-    );
-  }
-
-  if (value > maximum) {
-    throw new Error(
-      `Loan amount cannot exceed ${maximum}.`
-    );
-  }
-
-  if (
-    term1Max < minimum ||
-    term2Max < term1Max ||
-    term3Months <= 0 ||
-    term1Months <= 0 ||
-    term2Months <= 0 ||
-    maximumTerm <= 0
-  ) {
-    throw new Error(
-      "Loan term settings are invalid."
-    );
-  }
-
-  let termMonths;
-
-  if (value <= term1Max) {
-    termMonths = term1Months;
-  } else if (value <= term2Max) {
-    termMonths = term2Months;
-  } else {
-    termMonths = term3Months;
-  }
-
-  if (termMonths > maximumTerm) {
-    throw new Error(
-      "The configured loan term exceeds the maximum permitted loan term."
-    );
-  }
-
+  if (!Number.isFinite(value) || value <= 0) throw new Error("Enter a valid loan amount.");
+  if (!settings) throw new Error("Loan settings could not be loaded.");
+  const minimum = Number(settings.minimum_loan_amount);
+  const maximum = Number(settings.maximum_loan_amount);
+  const termMonths = Number(settings.loan_term_months);
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || !Number.isFinite(termMonths) || termMonths <= 0) throw new Error("Loan term settings are incomplete or invalid.");
+  if (value < minimum) throw new Error("Loan amount must be at least " + minimum + ".");
+  if (value > maximum) throw new Error("Loan amount cannot exceed " + maximum + ".");
   return termMonths;
 }
 
