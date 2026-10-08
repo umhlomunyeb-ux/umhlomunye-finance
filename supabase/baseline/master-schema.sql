@@ -7318,6 +7318,7 @@ begin
 
   return jsonb_build_object(
     'repayment', to_jsonb(v_repayment),
+    'debt_repayment_id', v_repayment.id,
     'repayment_number', v_repayment_number,
     'reference', v_reference,
     'borrowing_id', p_borrowing_id,
