@@ -1005,7 +1005,7 @@ export async function getCompanyBorrowings() {
   } = await supabase
     .from("company_debt_repayments")
     .select(
-      "id, borrowing_id, repayment_number"
+      "id, borrowing_id"
     )
     .in(
       "borrowing_id",
@@ -1045,20 +1045,7 @@ export async function getCompanyBorrowings() {
           borrowingRepayments.length,
 
         last_repayment_number:
-          borrowingRepayments.reduce(
-            (
-              max,
-              repayment
-            ) =>
-              Math.max(
-                max,
-                Number(
-                  repayment.repayment_number ||
-                    0
-                )
-              ),
-            0
-          ),
+          borrowingRepayments.length,
       };
     }
   );
