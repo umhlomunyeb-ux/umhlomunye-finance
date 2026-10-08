@@ -805,7 +805,7 @@ export default function LoanForm({
                     variant="caption"
                     color="text.secondary"
                   >
-                    Monthly Repayment
+                    Full Balance Due
                   </Typography>
 
                   <Typography
@@ -844,6 +844,13 @@ export default function LoanForm({
             Repayment Term
           </Typography>
 
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            The full outstanding balance is due on the selected payment date.
+            If it is not fully paid, interest is added after the configured
+            interest-cycle days and the payment date moves to the same day in
+            the following month.
+          </Typography>
+
           <Box
             sx={{
               display: "grid",
@@ -871,7 +878,7 @@ export default function LoanForm({
             />
 
             <TextField
-              label="Monthly Repayment"
+              label="Full Balance Due"
               value={
                 loan.monthly_repayment
                   ? `${settings?.currency || "R"} ${Number(
