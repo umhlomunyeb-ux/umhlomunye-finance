@@ -943,7 +943,7 @@ export async function createOrUpdateLoanStatement(
       "application/pdf",
 
     source_type:
-      "SYSTEM",
+      "SYSTEM_GENERATED",
 
     document_category:
       "LOAN",
