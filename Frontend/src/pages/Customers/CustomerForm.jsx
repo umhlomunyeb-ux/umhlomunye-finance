@@ -111,6 +111,11 @@ async function loadCustomerNumber() {
         return;
       }
 
+      if (!customer.email.trim()) {
+        toast.error("Email is required.");
+        return;
+      }
+
       const exists = await customerExists(customer.id_number);
 
       if (exists) {
@@ -253,6 +258,7 @@ async function loadCustomerNumber() {
               name="email"
               value={customer.email}
               onChange={handleChange}
+              required
             />
           </Grid>
 
