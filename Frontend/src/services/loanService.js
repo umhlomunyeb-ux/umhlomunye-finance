@@ -1,5 +1,7 @@
 import { supabase } from "../lib/supabase";
 import { createOrUpdateLoanStatement } from "./statementService";
+import { sendLoanEmail } from "./emailService";
+import { generateAndStorePaidUpLetter } from "./paidUpLetterService";
 
 /* =========================================================
    HELPERS
@@ -583,22 +585,175 @@ export async function addRepayment({
     );
   }
 
-  /* ---------------------------------------------------------
-     UPDATE AUTOMATIC STATEMENT
-  --------------------------------------------------------- */
+  /*
+   * Refresh the loan after the payment so the email workflow uses
+   * the authoritative balance and the newly configured next-cycle
+   * payment / interest dates.
+   */
+  let latestLoan = null;
 
   try {
-    await createOrUpdateLoanStatement(
-      loanId
+    const {
+      data: refreshedLoan,
+      error: refreshError,
+    } = await supabase
+      .from("loans")
+      .select(`
+        id,
+        loan_number,
+        customer_id,
+        current_balance,
+        loan_status,
+        next_payment_date,
+        next_interest_date,
+        customers (
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .eq("id", loanId)
+      .single();
+
+    if (refreshError) {
+      throw refreshError;
+    }
+
+    latestLoan = refreshedLoan;
+  } catch (refreshError) {
+    console.error(
+      "REFRESH REPAYMENT LOAN ERROR:",
+      refreshError
     );
-  } catch (statementError) {
+
+    return data;
+  }
+
+  const recipientEmail =
+    String(
+      latestLoan?.customers?.email || ""
+    ).trim();
+
+  const recipientName =
+    `${latestLoan?.customers?.first_name || ""} ${latestLoan?.customers?.last_name || ""}`.trim();
+
+  /*
+   * A zero balance is the settlement event.
+   * Generate and email the Paid-Up Letter immediately.
+   * Do NOT generate or send a statement for this payment.
+   */
+  if (
+    toNumber(
+      latestLoan?.current_balance
+    ) <= 0
+  ) {
+    if (!recipientEmail) {
+      console.error(
+        "PAID-UP EMAIL SKIPPED: customer has no email address."
+      );
+      return data;
+    }
+
+    try {
+      const paidUp =
+        await generateAndStorePaidUpLetter(
+          loanId
+        );
+
+      await sendLoanEmail({
+        notificationType: "PAID_UP",
+        loanId,
+        loanNumber:
+          latestLoan.loan_number,
+        clientName:
+          recipientName,
+        recipientEmail,
+        recipientName,
+        paymentAmount:
+          data.payment_amount,
+        currentBalance: 0,
+        attachmentPath:
+          paidUp.documentPath,
+        attachmentBucket:
+          "loan-documents",
+        attachmentName:
+          paidUp.document?.document_name
+            ? `${paidUp.document.document_name}.pdf`
+            : `${latestLoan.loan_number || "loan"}-paid-up-letter.pdf`,
+      });
+    } catch (paidUpError) {
+      /*
+       * Payment completion must never be rolled back because
+       * document generation or email delivery failed.
+       */
+      console.error(
+        "PAID-UP EMAIL WORKFLOW ERROR:",
+        paidUpError
+      );
+    }
+
+    return data;
+  }
+
+  /*
+   * For an outstanding balance, regenerate the latest statement
+   * after the payment has updated the balance and next configured
+   * interest/payment cycle.
+   */
+  try {
+    const statement =
+      await createOrUpdateLoanStatement(
+        loanId
+      );
+
+    if (!recipientEmail) {
+      console.error(
+        "STATEMENT EMAIL SKIPPED: customer has no email address."
+      );
+      return data;
+    }
+
+    await sendLoanEmail({
+      notificationType: "STATEMENT",
+      loanId,
+      loanNumber:
+        latestLoan.loan_number,
+      clientName:
+        recipientName,
+      recipientEmail,
+      recipientName,
+      paymentAmount:
+        data.payment_amount,
+      currentBalance:
+        latestLoan.current_balance,
+      nextPaymentDate:
+        latestLoan.next_payment_date
+          ? new Date(
+              latestLoan.next_payment_date
+            ).toLocaleDateString("en-ZA")
+          : "-",
+      nextInterestDate:
+        latestLoan.next_interest_date
+          ? new Date(
+              latestLoan.next_interest_date
+            ).toLocaleString("en-ZA")
+          : "-",
+      attachmentPath:
+        statement?.document_path,
+      attachmentBucket:
+        "documents",
+      attachmentName:
+        statement?.document_name ||
+        `${latestLoan.loan_number || "loan"}-statement.pdf`,
+    });
+  } catch (statementEmailError) {
     /*
-     * Statement generation must not cause a
-     * successful repayment to fail.
+     * The repayment and database balance are authoritative.
+     * Email/document failure must not undo a successful payment.
      */
     console.error(
-      "UPDATE REPAYMENT STATEMENT ERROR:",
-      statementError
+      "STATEMENT EMAIL WORKFLOW ERROR:",
+      statementEmailError
     );
   }
 
