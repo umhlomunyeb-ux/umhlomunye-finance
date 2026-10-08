@@ -1010,37 +1010,6 @@ export default function LoanForm({
         </Paper>
 
         {/* =====================================================
-            RULE PREVIEW
-        ====================================================== */}
-
-        {settings && (
-          <Alert
-            severity="info"
-            sx={{ mb: 3 }}
-          >
-            <Typography
-              variant="body2"
-              fontWeight="bold"
-            >
-              Loan rules from Settings
-            </Typography>
-
-            <Typography variant="body2">
-              Interest pricing and repayment terms
-              are calculated using the current
-              Settings configuration.
-            </Typography>
-
-            <Typography variant="body2">
-              Interest cycle:{" "}
-              {settings.interest_cycle_enabled
-                ? `${settings.interest_cycle_days} days at ${settings.interest_cycle_time} (${settings.timezone})`
-                : "Disabled"}
-            </Typography>
-          </Alert>
-        )}
-
-        {/* =====================================================
             DOCUMENT CHECK STATUS
         ====================================================== */}
 
