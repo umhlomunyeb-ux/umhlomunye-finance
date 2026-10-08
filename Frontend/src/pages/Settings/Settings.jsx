@@ -1733,17 +1733,6 @@ export default function Settings() {
               />
             </Grid>
 
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField
-                fullWidth
-                type="time"
-                label="Interest Cycle Time"
-                value={(settings.interest_cycle_time || "").slice(0, 5)}
-                onChange={(e) => handleChange("interest_cycle_time", e.target.value)}
-                disabled={!isAdmin || !settings.interest_cycle_enabled}
-                InputLabelProps={{ shrink: true }}
-              />
-            </Grid>
           </Grid>
         </CardContent>
       </Card>
