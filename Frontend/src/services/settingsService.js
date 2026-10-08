@@ -204,9 +204,85 @@ export async function updateSystemSettings(settings) {
   const current = await getSystemSettings();
 
   if (!current?.id) {
-    throw new Error(
-      "System settings record was not found."
-    );
+    const {
+      data: userData,
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      throw userError;
+    }
+
+    const userId = userData?.user?.id || null;
+
+    const companyName =
+      settings.company_name?.trim() || "";
+
+    const shortName =
+      settings.short_name?.trim() || "";
+
+    const financialYearEnd =
+      normalizeFinancialYearEnd(
+        settings.financial_year_end
+      );
+
+    const initialPayload = {
+      company_name: companyName,
+      short_name: shortName || null,
+      financial_year_end: financialYearEnd,
+      company_address:
+        settings.company_address?.trim() || null,
+      company_logo_url:
+        settings.company_logo_url || null,
+      company_phone:
+        settings.company_phone?.trim() || null,
+      company_whatsapp:
+        settings.company_whatsapp?.trim() || null,
+      company_email:
+        settings.company_email?.trim() || null,
+      minimum_loan_amount:
+        Number(settings.minimum_loan_amount),
+      maximum_loan_amount:
+        Number(settings.maximum_loan_amount),
+      tier_1_interest_rate:
+        Number(settings.tier_1_interest_rate),
+      maximum_loan_term_months:
+        Number(settings.maximum_loan_term_months),
+      interest_cycle_enabled:
+        Boolean(settings.interest_cycle_enabled),
+      interest_cycle_days:
+        Number(settings.interest_cycle_days),
+      interest_cycle_time:
+        settings.interest_cycle_time || null,
+      currency:
+        settings.currency || "ZAR",
+      timezone:
+        settings.timezone ||
+        "Africa/Johannesburg",
+      updated_at:
+        new Date().toISOString(),
+      updated_by:
+        userId,
+    };
+
+    const {
+      data: created,
+      error: createError,
+    } = await supabase
+      .from("system_settings")
+      .insert(initialPayload)
+      .select()
+      .single();
+
+    if (createError) {
+      console.error(
+        "createSystemSettings:",
+        createError
+      );
+      throw createError;
+    }
+
+    return created;
   }
 
   const {
