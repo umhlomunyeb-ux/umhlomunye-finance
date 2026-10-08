@@ -993,7 +993,7 @@ export default function Dashboard() {
               variant="h6"
               fontWeight={700}
             >
-              Recent Repayments
+              Loan Accounts in Arrears
             </Typography>
 
             <Typography
