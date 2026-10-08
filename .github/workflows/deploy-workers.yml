@@ -14,24 +14,24 @@ jobs:
       matrix:
         include:
           - worker: umhlomunye-finance2
-            url_secret: UMHLOMUNYE_DB_URL
-            key_secret: UMHLOMUNYE_DB_CLIENT
-            app_secret: UMHLOMUNYE_APP_URL
+            url_secret: UMHLOMUNYE_SUPABASE_URL
+            key_secret: UMHLOMUNYE_SUPABASE_PUBLISHABLE_KEY
+            app_secret: UMHLOMUNYE_PUBLIC_APP_URL
           - worker: umthaniya-finance
-            url_secret: UMTHANIYA_DB_URL
-            key_secret: UMTHANIYA_DB_CLIENT
-            app_secret: UMTHANIYA_APP_URL
+            url_secret: UMTHANIYA_SUPABASE_URL
+            key_secret: UMTHANIYA_SUPABASE_PUBLISHABLE_KEY
+            app_secret: UMTHANIYA_PUBLIC_APP_URL
           - worker: tloube-finance
-            url_secret: TLOUBE_DB_URL
-            key_secret: TLOUBE_DB_CLIENT
-            app_secret: TLOUBE_APP_URL
+            url_secret: TLOUBE_SUPABASE_URL
+            key_secret: TLOUBE_SUPABASE_PUBLISHABLE_KEY
+            app_secret: TLOUBE_PUBLIC_APP_URL
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: Frontend
     env:
       VITE_SUPABASE_URL: ${{ secrets[matrix.url_secret] }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets[matrix.key_secret] }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets[matrix.key_secret] }}
       VITE_PUBLIC_APP_URL: ${{ secrets[matrix.app_secret] }}
       VITE_APP_MODE: online
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
