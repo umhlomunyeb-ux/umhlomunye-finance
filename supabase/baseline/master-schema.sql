@@ -12544,7 +12544,7 @@ CREATE OR REPLACE FUNCTION public.sync_loan_transaction_to_bank()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
 DECLARE
   v_bank_account_id uuid;
@@ -12644,6 +12644,10 @@ CREATE TRIGGER trg_sync_loan_transaction_to_bank
 AFTER INSERT ON public.loan_transactions
 FOR EACH ROW
 EXECUTE FUNCTION public.sync_loan_transaction_to_bank();
+
+REVOKE ALL ON FUNCTION public.sync_loan_transaction_to_bank() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.sync_loan_transaction_to_bank() FROM anon;
+REVOKE ALL ON FUNCTION public.sync_loan_transaction_to_bank() FROM authenticated;
 
 \unrestrict BjX34gydFcftzGonVECoIrVc7c32MahbSRQSaTiAIpj7OUAL2nlvZjGzw0ILelN
 
