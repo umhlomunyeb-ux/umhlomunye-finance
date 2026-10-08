@@ -1944,7 +1944,7 @@ export default function LoanProfile() {
 
           const verificationUrl =
             loan.statement_verification_token
-              ? ${window.location.origin}/verify-statement/${loan.statement_verification_token}
+              ? `${window.location.origin}/verify-statement/${loan.statement_verification_token}`
               : null;
 
           const { contentStartY } =
