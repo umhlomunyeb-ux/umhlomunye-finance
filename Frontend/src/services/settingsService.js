@@ -547,15 +547,15 @@ export async function revokeAllMobileDevices() {
 
 
 /**
- * Determine the applicable interest rate for a loan amount.
+ * Determine the configured interest rate for a loan amount.
  *
- * The threshold and rates come entirely from Settings.
+ * A single interest rate applies to every loan within the configured range.
  */
 export function getInterestRateForAmount(amount, settings) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) return 0;
   if (!settings) throw new Error("Loan settings could not be loaded.");
-  const interestRate = Number(settings.interest_rate);
+  const interestRate = Number(settings.tier_1_interest_rate);
   if (!Number.isFinite(interestRate)) throw new Error("Interest-rate settings are incomplete or invalid.");
   return interestRate;
 }
