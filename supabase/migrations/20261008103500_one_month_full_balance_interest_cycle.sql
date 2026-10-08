@@ -16,7 +16,7 @@ AS $function$
 declare
   loan_record record;
   interest_date timestamp without time zone;
-  next_payment_date date;
+  v_next_payment_date date;
   working_balance numeric;
   interest_amount numeric;
   new_balance numeric;
@@ -65,7 +65,7 @@ begin
 
     working_balance := round(coalesce(loan_record.current_balance, 0), 2);
     interest_date := loan_record.next_interest_date;
-    next_payment_date := loan_record.next_payment_date;
+    v_next_payment_date := loan_record.next_payment_date;
 
     while interest_date <= p_as_of and working_balance > 0
     loop
@@ -110,18 +110,16 @@ begin
 
       working_balance := new_balance;
 
-      -- After interest, the full outstanding balance remains due
-      -- on the same payment day in the following month.
-      next_payment_date := (
+      v_next_payment_date := (
         coalesce(
-          next_payment_date,
+          v_next_payment_date,
           interest_date::date
         ) + interval '1 month'
       )::date;
 
       interest_date := (
         (
-          next_payment_date
+          v_next_payment_date
           + (interest_cycle_days * interval '1 day')
         )::date
         + interest_time
@@ -132,7 +130,7 @@ begin
     set
       current_balance = working_balance,
       next_payment_date = case
-        when working_balance > 0 then next_payment_date
+        when working_balance > 0 then v_next_payment_date
         else null
       end,
       next_interest_date = case
