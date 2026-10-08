@@ -841,10 +841,10 @@ export default function Login() {
               ),
               endAdornment: (
                 <InputAdornment position="end">
-                  <IconButton
-                    edge="end"
+                  <button
+                    type="button"
                     onClick={() =>
-                      setShowPassword((current) => !current)
+                      setShowPassword((visible) => !visible)
                     }
                     onMouseDown={(event) =>
                       event.preventDefault()
@@ -855,17 +855,73 @@ export default function Login() {
                         : "Show password"
                     }
                     aria-pressed={showPassword}
+                    style={{
+                      border: 0,
+                      background: "transparent",
+                      padding: 6,
+                      margin: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      color: "#64748B",
+                    }}
                   >
                     {showPassword ? (
-                      <VisibilityOffOutlinedIcon
-                        sx={{ color: "#64748B" }}
-                      />
+                      <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r="2.5"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        />
+                      </svg>
                     ) : (
-                      <VisibilityOutlinedIcon
-                        sx={{ color: "#64748B" }}
-                      />
+                      <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M3 3l18 18"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M10.6 5.2A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.1 3.8M6.2 6.2C3.4 8.1 2 12 2 12s3.5 7 10 7c1.5 0 2.8-.3 4-.8"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M9.9 9.9a3 3 0 0 0 4.2 4.2"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
                     )}
-                  </IconButton>
+                  </button>
                 </InputAdornment>
               ),
             },
