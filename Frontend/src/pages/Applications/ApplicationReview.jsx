@@ -1550,7 +1550,7 @@ export default function ApplicationReview() {
           variant="h6"
           fontWeight="bold"
         >
-          Supporting Documents
+          Supporting Documents (Optional)
         </Typography>
 
         <Divider sx={{ my: 2 }} />
@@ -1583,8 +1583,7 @@ export default function ApplicationReview() {
           !documentsError &&
           documents.length === 0 && (
             <Typography color="text.secondary">
-              No supporting documents were uploaded
-              with this application.
+              No supporting documents were uploaded with this application. This does not prevent the application from being reviewed or approved.
             </Typography>
           )}
 
