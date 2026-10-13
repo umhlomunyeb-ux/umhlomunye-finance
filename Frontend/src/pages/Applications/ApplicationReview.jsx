@@ -1355,7 +1355,7 @@ export default function ApplicationReview() {
           variant="h6"
           fontWeight="bold"
         >
-          Supporting Documents
+          Supporting Documents (Optional)
         </Typography>
 
         <Divider sx={{ my: 2 }} />
