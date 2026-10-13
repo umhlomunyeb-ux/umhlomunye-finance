@@ -1938,7 +1938,7 @@ export default function PublicApplication() {
                 sx={{ mb: 1 }}
                 fontWeight="bold"
               >
-                Supporting Documents
+                Supporting Documents (Optional)
               </Typography>
 
               <Alert
