@@ -1428,8 +1428,7 @@ export default function Loans() {
               checkingDocuments ||
               Boolean(uploadingDocument) ||
               creatingCustomer ||
-              !verifiedCustomer ||
-
+              !verifiedCustomer
             }
           >
             Continue
