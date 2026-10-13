@@ -877,8 +877,9 @@ export default function Loans() {
               Enter the customer's ID number before
               opening the loan form. The system will
               verify the customer and may check available
-              documents, but document uploads are optional.
-              all required customer documents.
+              documents. Document uploads are optional;
+              missing documents will not prevent you from
+              continuing to the loan form.
             </Typography>
 
             {idCheckError && (
@@ -1094,10 +1095,10 @@ export default function Loans() {
                     mt: -0.5,
                   }}
                 >
-                  When selected, the system will
-                  not check or require ID Document,
-                  Bank Statement, Payslip, or Proof
-                  of Residence for this loan.
+                  Customer document uploads are optional.
+                  Checking may show existing documents, but
+                  missing documents will not prevent you
+                  from continuing with this loan.
                 </Typography>
 
                 {/* =================================================
@@ -1353,9 +1354,9 @@ export default function Loans() {
                       severity="success"
                       sx={{ mt: 2 }}
                     >
-                      All required customer documents
-                      are valid. The documents will be
-                      used for this loan application.
+                      All checked customer documents
+                      are valid. Document checks are
+                      informational and uploads are optional.
                     </Alert>
                   )}
                 </Box>
