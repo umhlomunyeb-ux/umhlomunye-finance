@@ -756,77 +756,11 @@ export default function Loans() {
     }
 
     /*
-     * SKIP DOCUMENT CHECK
+     * Supporting documents are optional. Keep the customer
+     * verification and busy-state checks above, but do not
+     * block loan creation when documents are missing.
      */
-    if (skipDocumentCheck) {
-      setIdCheckOpen(false);
-      setOpen(true);
-      return;
-    }
-
-    /*
-     * NORMAL DOCUMENT VALIDATION
-     */
-    if (!documentStatus) {
-      setDocumentCheckError(
-        "Please complete the customer document check first."
-      );
-
-      return;
-    }
-
-    const missingDocuments = [];
-
-    /*
-     * ID DOCUMENT IS MANDATORY.
-     */
-    if (!documentStatus.idDocument) {
-      missingDocuments.push(
-        "ID Document"
-      );
-    }
-
-    if (!documentStatus.bankStatement) {
-      missingDocuments.push(
-        "Bank Statement"
-      );
-    }
-
-    if (!documentStatus.payslip) {
-      missingDocuments.push(
-        "Payslip"
-      );
-    }
-
-    /*
-     * Proof of Residence is required unless
-     * the Bank Statement checkbox is selected.
-     */
-    const proofOfResidenceSatisfied =
-      Boolean(
-        documentStatus.proofOfResidence
-      ) ||
-      Boolean(
-        useBankStatementAsProofOfResidence &&
-          documentStatus.bankStatement
-      );
-
-    if (!proofOfResidenceSatisfied) {
-      missingDocuments.push(
-        "Proof of Residence"
-      );
-    }
-
-    if (missingDocuments.length > 0) {
-      setDocumentCheckError(
-        `The following customer documents are missing or expired: ${missingDocuments.join(
-          ", "
-        )}. Upload the required documents before continuing.`
-      );
-
-      return;
-    }
-
+    setDocumentCheckError("");
     setIdCheckOpen(false);
     setOpen(true);
   }
@@ -941,9 +875,10 @@ export default function Loans() {
             >
               Enter the customer's ID number before
               opening the loan form. The system will
-              verify the customer and, unless document
-              checking is skipped, automatically check
-              all required customer documents.
+              verify the customer and may check available
+              documents. Supporting document uploads are
+              optional; missing documents will not prevent
+              you from continuing to the loan form.
             </Typography>
 
             {idCheckError && (
@@ -1418,9 +1353,9 @@ export default function Loans() {
                       severity="success"
                       sx={{ mt: 2 }}
                     >
-                      All required customer documents
-                      are valid. The documents will be
-                      used for this loan application.
+                      All checked customer documents
+                      are valid. Document checks are
+                      informational and uploads are optional.
                     </Alert>
                   )}
                 </Box>
@@ -1494,8 +1429,7 @@ export default function Loans() {
               Boolean(uploadingDocument) ||
               creatingCustomer ||
               !verifiedCustomer ||
-              (!skipDocumentCheck &&
-                !allDocumentsValid)
+
             }
           >
             Continue
@@ -1918,7 +1852,7 @@ function DocumentStatusRow({
           label={
             document
               ? "Valid"
-              : "Required"
+              : "Optional"
           }
           color={
             document
