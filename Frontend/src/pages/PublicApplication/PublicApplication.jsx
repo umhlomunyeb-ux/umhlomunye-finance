@@ -1949,10 +1949,7 @@ export default function PublicApplication() {
                 }
                 sx={{ mb: 2 }}
               >
-                Upload supporting documents
-                such as your ID, bank
-                statement, payslip or proof of
-                residence. PDF, JPG and PNG
+                Supporting documents are optional. You may upload documents such as your ID, bank statement, payslip or proof of residence, but you can submit your application without uploading any files. PDF, JPG and PNG
                 files are accepted. Maximum{" "}
                 {MAX_FILES} files, 10 MB per
                 file.
