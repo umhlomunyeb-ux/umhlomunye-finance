@@ -679,9 +679,15 @@ export default function PublicApplication() {
       const token =
         result?.upload_token;
 
-      if (!id || !token) {
+      if (!id) {
         throw new Error(
-          "The application was submitted, but the secure document upload session could not be created."
+          "The application could not be submitted because the server did not return an application reference."
+        );
+      }
+
+      if (documents.length > 0 && !token) {
+        throw new Error(
+          "The application was submitted, but the secure document upload session could not be created for the selected documents."
         );
       }
 
@@ -1635,18 +1641,14 @@ export default function PublicApplication() {
                 sx={{ mb: 1 }}
                 fontWeight="bold"
               >
-                Supporting Documents
+                Supporting Documents (Optional)
               </Typography>
 
               <Alert
                 severity="info"
                 sx={{ mb: 2 }}
               >
-                Upload supporting documents
-                such as your ID, bank
-                statement, payslip or proof of
-                residence. PDF, JPG and PNG
-                files are accepted. Maximum{" "}
+                Supporting documents are optional. You can submit your application without uploading files. If you choose to upload documents such as your ID, bank statement, payslip or proof of residence, PDF, JPG and PNG files are accepted. Maximum{" "}
                 {MAX_FILES} files, 10 MB per
                 file.
               </Alert>
