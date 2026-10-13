@@ -734,10 +734,9 @@ export default function MobileApplicationReview() {
 
         {/* DOCUMENTS */}
 
-        <Section title="Supporting Documents">
+        <Section title="Supporting Documents (Optional)">
           <Alert severity="info">
-            Supporting document collection is currently
-            unavailable.
+            Supporting document collection is currently unavailable. Missing documents do not prevent application review or approval.
           </Alert>
         </Section>
 
