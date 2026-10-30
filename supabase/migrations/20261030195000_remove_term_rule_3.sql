@@ -14,6 +14,7 @@ ALTER TABLE public.system_settings
     AND term_2_max_amount > term_1_max_amount
     AND term_1_months > 0
     AND term_2_months > term_1_months
+    AND term_2_months <= maximum_loan_term_months
   );
 
 CREATE OR REPLACE FUNCTION public.approve_loan_application (
