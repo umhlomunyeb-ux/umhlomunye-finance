@@ -200,3 +200,39 @@ export async function findCustomerByDetails({
 
   return null;
 }
+
+export async function blacklistCustomer(id, reason = "") {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error("You must be signed in to blacklist a customer.");
+
+  const { data, error } = await supabase
+    .from("customers")
+    .update({
+      is_blacklisted: true,
+      blacklist_reason: reason.trim() || null,
+      blacklisted_at: new Date().toISOString(),
+      blacklisted_by: user.id,
+    })
+    .eq("id", id)
+    .select();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function unblacklistCustomer(id) {
+  const { data, error } = await supabase
+    .from("customers")
+    .update({
+      is_blacklisted: false,
+      blacklist_reason: null,
+      blacklisted_at: null,
+      blacklisted_by: null,
+    })
+    .eq("id", id)
+    .select();
+
+  if (error) throw error;
+  return data;
+}
