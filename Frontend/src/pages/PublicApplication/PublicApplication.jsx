@@ -917,6 +917,7 @@ export default function PublicApplication() {
   }
 
   return (
+    <>
     <Box
       sx={{
         minHeight: "100vh",
@@ -1929,5 +1930,6 @@ export default function PublicApplication() {
         </Button>
       </DialogActions>
     </Dialog>
+    </>
   );
 }
