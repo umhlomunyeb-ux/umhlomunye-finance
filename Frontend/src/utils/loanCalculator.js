@@ -6,13 +6,11 @@ import { getInterestRateForAmount } from "../services/settingsService";
  *
  * Example configured rules:
  *
- * term_1_max_amount = 5000
+ * term_1_max_amount = 4999.99
  * term_1_months     = 1
  *
- * term_2_max_amount = 8000
- * term_2_months     = 3
- *
- * term_3_months     = 6
+ * term_2_max_amount = 6000
+ * term_2_months     = 2
  */
 export function getLoanTermForAmount(amount, settings) {
   const principal = Number(amount);
@@ -34,8 +32,6 @@ export function getLoanTermForAmount(amount, settings) {
   const term2Max = Number(settings.term_2_max_amount);
   const term2Months = Number(settings.term_2_months);
 
-  const term3Months = Number(settings.term_3_months);
-
   const configuredMaximumTerm = Number(
     settings.maximum_loan_term_months
   );
@@ -46,8 +42,7 @@ export function getLoanTermForAmount(amount, settings) {
     !Number.isFinite(term1Max) ||
     !Number.isFinite(term1Months) ||
     !Number.isFinite(term2Max) ||
-    !Number.isFinite(term2Months) ||
-    !Number.isFinite(term3Months)
+    !Number.isFinite(term2Months)
   ) {
     throw new Error(
       "Loan term settings are incomplete or invalid."
@@ -85,7 +80,7 @@ export function getLoanTermForAmount(amount, settings) {
   } else if (principal <= term2Max) {
     termMonths = term2Months;
   } else {
-    termMonths = term3Months;
+    throw new Error("The loan amount exceeds the configured repayment-term rules.");
   }
 
   /*
