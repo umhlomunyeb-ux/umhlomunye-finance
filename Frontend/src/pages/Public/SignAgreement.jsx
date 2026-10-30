@@ -1512,6 +1512,7 @@ export default function SignAgreement() {
             "agreement_id",
             String(
               agreementForPdf.id ||
+                agreementForPdf.agreement_id ||
                 agreementId ||
                 ""
             )
