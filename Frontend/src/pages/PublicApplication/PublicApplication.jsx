@@ -23,6 +23,10 @@ import {
   InputLabel,
   CircularProgress,
   Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -74,6 +78,8 @@ export default function PublicApplication() {
   const [idNumber, setIdNumber] = useState("");
 
   const [checkingId, setCheckingId] = useState(false);
+  const [blacklistDialogOpen, setBlacklistDialogOpen] = useState(false);
+  const [blacklistReason, setBlacklistReason] = useState("");
   const [idChecked, setIdChecked] = useState(false);
   const [existingCustomer, setExistingCustomer] =
     useState(false);
@@ -156,6 +162,8 @@ export default function PublicApplication() {
     setIdNumber(value);
 
     setIdChecked(false);
+    setBlacklistDialogOpen(false);
+    setBlacklistReason("");
     setExistingCustomer(false);
     setCustomerNumber("");
     setIdMessage("");
@@ -183,6 +191,27 @@ export default function PublicApplication() {
 
     try {
       setCheckingId(true);
+
+      const { data: blacklistData, error: blacklistLookupError } =
+        await supabase.rpc("lookup_public_customer_blacklist_by_id_number", {
+          p_id_number: normalizedId,
+        });
+
+      if (blacklistLookupError) throw blacklistLookupError;
+
+      const blacklistRecord = Array.isArray(blacklistData)
+        ? blacklistData[0] || null
+        : blacklistData || null;
+
+      if (blacklistRecord?.is_blacklisted) {
+        setIdChecked(false);
+        setExistingCustomer(false);
+        setCustomerNumber("");
+        setBlacklistReason(blacklistRecord.blacklist_reason || "");
+        setBlacklistDialogOpen(true);
+        setForm({ ...EMPTY_FORM, id_number: normalizedId });
+        return;
+      }
 
       const {
         data,
@@ -1870,5 +1899,35 @@ export default function PublicApplication() {
         </Paper>
       </Box>
     </Box>
+
+    <Dialog
+      open={blacklistDialogOpen}
+      onClose={() => setBlacklistDialogOpen(false)}
+      aria-labelledby="blacklisted-dialog-title"
+    >
+      <DialogTitle id="blacklisted-dialog-title" sx={{ textAlign: "center", pt: 3 }}>
+        <Typography component="span" sx={{ color: "error.main", fontWeight: 900, fontSize: "1.8rem" }}>
+          BLACKLISTED
+        </Typography>
+      </DialogTitle>
+      <DialogContent>
+        <Typography sx={{ textAlign: "center", mb: 1 }}>
+          This ID number is registered as a blacklisted customer.
+        </Typography>
+        {blacklistReason && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            <strong>Reason:</strong> {blacklistReason}
+          </Alert>
+        )}
+        <Typography color="text.secondary" variant="body2" sx={{ textAlign: "center", mt: 2 }}>
+          You cannot continue with this loan application. Please contact the company for assistance.
+        </Typography>
+      </DialogContent>
+      <DialogActions sx={{ justifyContent: "center", pb: 2 }}>
+        <Button color="error" variant="contained" onClick={() => setBlacklistDialogOpen(false)}>
+          Close
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
