@@ -1484,10 +1484,19 @@ export default function SignAgreement() {
               agreement;
           }
 
+          // Keep the agreement's primary key separate from the loan ID.
+          // The signing RPC returns agreement_id; loan data may contain its own id.
+          const resolvedAgreementId =
+            agreement?.agreement_id ||
+            agreementId ||
+            agreement?.id;
+
           const agreementForPdf =
             {
               ...agreement,
               ...signedAgreement,
+              id: resolvedAgreementId,
+              agreement_id: resolvedAgreementId,
               customer_name:
                 signedAgreement?.customer_name ||
                 trimmedName,
@@ -1516,9 +1525,8 @@ export default function SignAgreement() {
           formData.append(
             "agreement_id",
             String(
-              agreementForPdf.id ||
-                agreementForPdf.agreement_id ||
-                agreementId ||
+              agreementForPdf.agreement_id ||
+                agreementForPdf.id ||
                 ""
             )
           );
