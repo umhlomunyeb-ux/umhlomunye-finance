@@ -1251,6 +1251,11 @@ export default function SignAgreement() {
             agreementData = {
               ...agreementRow,
               ...(loanData || {}),
+
+              // Preserve the loan agreement ID; loanData.id must not overwrite it.
+              id: agreementRow.id,
+              agreement_id: agreementRow.id,
+
               customer:
                 customerData,
               customer_name:
