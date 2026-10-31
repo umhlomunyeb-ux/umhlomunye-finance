@@ -333,6 +333,74 @@ export async function addBankMoney({
 
 
 /* =========================================================
+   OTHER COMPANY EXPENSES
+========================================================= */
+
+export async function createOtherExpense({
+  amount,
+  transactionDate,
+  description,
+  reference = "",
+}) {
+  const numericAmount = toNumber(amount);
+
+  if (numericAmount <= 0) {
+    throw new Error("Expense amount must be greater than zero.");
+  }
+
+  if (!description?.trim()) {
+    throw new Error("Please describe what the money was used for.");
+  }
+
+  const {
+    data: bankAccount,
+    error: accountError,
+  } = await supabase
+    .from("bank_accounts")
+    .select("id")
+    .eq("is_active", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (accountError) {
+    throw new Error(getErrorMessage(accountError, "Unable to load the active bank account."));
+  }
+
+  if (!bankAccount?.id) {
+    throw new Error("No active company bank account was found.");
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data, error } = await supabase
+    .from("bank_transactions")
+    .insert([{
+      bank_account_id: bankAccount.id,
+      transaction_type: "OTHER_EXPENSE",
+      direction: "OUT",
+      amount: numericAmount,
+      transaction_date: transactionDate,
+      description: description.trim(),
+      reference: reference?.trim() || null,
+      created_by: user?.id || null,
+      is_void: false,
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error("CREATE OTHER EXPENSE ERROR:", error);
+    throw new Error(getErrorMessage(error, "Unable to record the other expense."));
+  }
+
+  return data;
+}
+
+
+/* =========================================================
    COMPANY BORROWING
 ========================================================= */
 
@@ -1462,6 +1530,7 @@ const bankService = {
   getCompanyBorrowings,
 
   createBankFees,
+  createOtherExpense,
   getBankFeesForPeriod,
 
   getBankSummary,

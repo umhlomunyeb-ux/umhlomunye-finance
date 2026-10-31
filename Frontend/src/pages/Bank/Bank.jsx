@@ -34,6 +34,7 @@ import {
   getBankSummary,
   getCompanyBorrowings,
   repayCompanyDebt,
+  createOtherExpense,
   subscribeToBankTransactions,
   removeBankSubscription,
 } from "../../services/bankService";
@@ -93,8 +94,15 @@ export default function Bank() {
   const [moneyDialog, setMoneyDialog] = useState(false);
   const [borrowingDialog, setBorrowingDialog] = useState(false);
   const [repaymentDialog, setRepaymentDialog] = useState(false);
+  const [otherExpenseDialog, setOtherExpenseDialog] = useState(false);
 
   const [selectedBorrowing, setSelectedBorrowing] = useState(null);
+  const [otherExpenseForm, setOtherExpenseForm] = useState({
+    amount: "",
+    transactionDate: today(),
+    description: "",
+    reference: "",
+  });
 
   const [initialForm, setInitialForm] = useState({
     accountName: "Company Bank Account",
@@ -168,6 +176,7 @@ export default function Bank() {
     setMoneyDialog(false);
     setBorrowingDialog(false);
     setRepaymentDialog(false);
+    setOtherExpenseDialog(false);
     setSelectedBorrowing(null);
 
     setRepaymentForm({
@@ -325,6 +334,48 @@ export default function Bank() {
     } catch (err) {
       console.error(err);
       setError(err.message || "Unable to add money.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleOtherExpense(event) {
+    event.preventDefault();
+
+    if (Number(otherExpenseForm.amount) <= 0) {
+      setError("Enter an expense amount greater than zero.");
+      return;
+    }
+
+    if (!otherExpenseForm.description.trim()) {
+      setError("Please describe what the money was used for.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await createOtherExpense({
+        amount: otherExpenseForm.amount,
+        transactionDate: otherExpenseForm.transactionDate,
+        description: otherExpenseForm.description,
+        reference: otherExpenseForm.reference,
+      });
+
+      closeDialogs();
+      setOtherExpenseForm({
+        amount: "",
+        transactionDate: today(),
+        description: "",
+        reference: "",
+      });
+
+      showSuccess("Other company expense recorded successfully.");
+      await loadBankData();
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Unable to record the other expense.");
     } finally {
       setSaving(false);
     }
@@ -609,7 +660,7 @@ export default function Bank() {
               gridTemplateColumns: {
                 xs: "1fr",
                 sm: "repeat(2, 1fr)",
-                md: "repeat(4, 1fr)",
+                md: "repeat(5, 1fr)",
               },
               gap: 1,
               width: "100%",
@@ -653,6 +704,20 @@ export default function Bank() {
               }}
             >
               Record Borrowing
+            </Button>
+
+            <Button
+              variant="contained"
+              color="error"
+              onClick={() => setOtherExpenseDialog(true)}
+              sx={{
+                height: 32,
+                minHeight: 32,
+                fontSize: "0.8rem",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Record Other Expense
             </Button>
 
             <Button
@@ -1209,6 +1274,98 @@ export default function Bank() {
 
             <Button type="submit" variant="contained" disabled={saving}>
               {saving ? "Saving..." : "Add Money"}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      {/* OTHER COMPANY EXPENSE DIALOG */}
+      <Dialog
+        open={otherExpenseDialog}
+        onClose={closeDialogs}
+        fullWidth
+        maxWidth="sm"
+      >
+        <Box component="form" onSubmit={handleOtherExpense}>
+          <DialogTitle>Record Other Company Expense</DialogTitle>
+
+          <DialogContent>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Use this for company money spent on items unrelated to customer
+              loans, such as rent, fuel, stationery, equipment or other
+              operating costs. This will be recorded as money out.
+            </Alert>
+
+            <Stack spacing={2} mt={1}>
+              <TextField
+                label="Amount"
+                type="number"
+                value={otherExpenseForm.amount}
+                onChange={(event) =>
+                  setOtherExpenseForm({
+                    ...otherExpenseForm,
+                    amount: event.target.value,
+                  })
+                }
+                inputProps={{ min: 0.01, step: "0.01" }}
+                fullWidth
+                required
+              />
+
+              <TextField
+                label="Date"
+                type="date"
+                value={otherExpenseForm.transactionDate}
+                onChange={(event) =>
+                  setOtherExpenseForm({
+                    ...otherExpenseForm,
+                    transactionDate: event.target.value,
+                  })
+                }
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+                required
+              />
+
+              <TextField
+                label="What was the money used for?"
+                value={otherExpenseForm.description}
+                onChange={(event) =>
+                  setOtherExpenseForm({
+                    ...otherExpenseForm,
+                    description: event.target.value,
+                  })
+                }
+                placeholder="Example: Office rent, fuel, stationery"
+                fullWidth
+                required
+                multiline
+                minRows={2}
+              />
+
+              <TextField
+                label="Reference (optional)"
+                value={otherExpenseForm.reference}
+                onChange={(event) =>
+                  setOtherExpenseForm({
+                    ...otherExpenseForm,
+                    reference: event.target.value,
+                  })
+                }
+                fullWidth
+              />
+            </Stack>
+          </DialogContent>
+
+          <DialogActions>
+            <Button onClick={closeDialogs}>Cancel</Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="error"
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Record Expense"}
             </Button>
           </DialogActions>
         </Box>
