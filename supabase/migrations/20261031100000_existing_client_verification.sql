@@ -96,6 +96,10 @@ BEGIN
     WHERE c.id = v_customer_id
       AND coalesce(c.is_deleted, false) = false
       AND coalesce(c.is_active, true) = true;
+
+    IF NOT FOUND THEN
+      v_customer_id := NULL;
+    END IF;
   END IF;
 
   IF v_customer_id IS NULL THEN
