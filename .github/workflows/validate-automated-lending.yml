@@ -1,6 +1,8 @@
 name: Validate Automated Lending Workflow
 
 on:
+  push:
+    branches: [feature/automated-lending-workflow-20261031]
   pull_request:
     branches: [main]
     paths:
