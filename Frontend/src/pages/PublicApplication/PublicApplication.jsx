@@ -84,6 +84,10 @@ export default function PublicApplication() {
   const [existingCustomer, setExistingCustomer] =
     useState(false);
 
+  const [borrowerPolicy, setBorrowerPolicy] = useState(null);
+  const [restrictionDialogOpen, setRestrictionDialogOpen] = useState(false);
+  const [restrictionAmount, setRestrictionAmount] = useState(0);
+
   const [customerNumber, setCustomerNumber] =
     useState("");
 
@@ -165,6 +169,8 @@ export default function PublicApplication() {
     setBlacklistDialogOpen(false);
     setBlacklistReason("");
     setExistingCustomer(false);
+    setBorrowerPolicy(null);
+    setRestrictionDialogOpen(false);
     setCustomerNumber("");
     setIdMessage("");
     setError("");
@@ -231,6 +237,23 @@ export default function PublicApplication() {
         Array.isArray(data)
           ? data[0] || null
           : data || null;
+
+      const {
+        data: borrowerPolicyData,
+        error: borrowerPolicyError,
+      } = await supabase.rpc("get_public_borrower_loan_policy", {
+        p_id_number: normalizedId,
+      });
+
+      if (borrowerPolicyError) {
+        throw borrowerPolicyError;
+      }
+
+      const policy = Array.isArray(borrowerPolicyData)
+        ? borrowerPolicyData[0] || null
+        : borrowerPolicyData || null;
+
+      setBorrowerPolicy(policy);
 
       setIdChecked(true);
 
@@ -526,7 +549,7 @@ export default function PublicApplication() {
     };
   }
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event, acceptFirstTimeLimit = false) {
     event.preventDefault();
 
     setError("");
@@ -562,17 +585,28 @@ export default function PublicApplication() {
       return;
     }
 
-    const amount = Number(
+    const requestedAmount = Number(
       form.amount_requested
     );
+    const amount = acceptFirstTimeLimit ? 1500 : requestedAmount;
 
     if (
-      !Number.isFinite(amount) ||
-      amount <= 0
+      !Number.isFinite(requestedAmount) ||
+      requestedAmount <= 0
     ) {
       setError(
         "Loan amount must be greater than zero."
       );
+      return;
+    }
+
+    if (
+      borrowerPolicy?.is_first_time_borrower &&
+      requestedAmount > 1500 &&
+      !acceptFirstTimeLimit
+    ) {
+      setRestrictionAmount(requestedAmount);
+      setRestrictionDialogOpen(true);
       return;
     }
 
@@ -1900,6 +1934,51 @@ export default function PublicApplication() {
         </Paper>
       </Box>
     </Box>
+
+    <Dialog
+      open={restrictionDialogOpen}
+      onClose={() => setRestrictionDialogOpen(false)}
+      aria-labelledby="first-time-limit-title"
+    >
+      <DialogTitle id="first-time-limit-title">
+        First-time applicant restriction
+      </DialogTitle>
+      <DialogContent>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Your first loan is limited to R1,500 and must be repaid within one month.
+        </Alert>
+        <Typography sx={{ mb: 1 }}>
+          You requested R{restrictionAmount.toLocaleString("en-ZA", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}.
+        </Typography>
+        <Typography color="text.secondary">
+          Would you like to continue with R1,500 instead? If you choose No, your application will not be submitted.
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button
+          onClick={() => setRestrictionDialogOpen(false)}
+          color="inherit"
+        >
+          No, cancel
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => {
+            setRestrictionDialogOpen(false);
+            setForm((previous) => ({
+              ...previous,
+              amount_requested: "1500",
+            }));
+            handleSubmit({ preventDefault() {} }, true);
+          }}
+        >
+          Yes, continue with R1,500
+        </Button>
+      </DialogActions>
+    </Dialog>
 
     <Dialog
       open={blacklistDialogOpen}
