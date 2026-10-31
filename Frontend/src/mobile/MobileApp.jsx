@@ -79,12 +79,15 @@ export default function MobileApp() {
             element={<MobileLanding />}
           />
 
-          {/* MOBILE PREVIEW - TEMPORARY */}
+          {/* MOBILE DASHBOARD - AUTHENTICATED */}
           <Route
             path="/mobile/preview"
-            element={<MobilePreview />}
+            element={
+              <ProtectedRoute>
+                <MobilePreview />
+              </ProtectedRoute>
+            }
           />
-
           {/* MOBILE LOGIN */}
           <Route
             path="/login"
