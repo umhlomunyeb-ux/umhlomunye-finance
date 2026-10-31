@@ -32,6 +32,8 @@ BEGIN
     RAISE EXCEPTION 'Verification note cannot exceed 500 characters.';
   END IF;
 
+  PERFORM set_config('app.verify_existing_customer', 'true', true);
+
   UPDATE public.customers
   SET
     first_time_borrower_rule_applicable = false,
@@ -117,3 +119,74 @@ $$;
 
 REVOKE ALL ON FUNCTION public.is_first_time_borrower(uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.is_first_time_borrower(uuid, text) TO authenticated;
+
+
+-- Verification metadata can only be changed through the administrator RPC.
+CREATE OR REPLACE FUNCTION public.guard_existing_client_verification_fields()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.first_time_borrower_rule_applicable IS DISTINCT FROM OLD.first_time_borrower_rule_applicable
+     OR NEW.existing_client_verified_at IS DISTINCT FROM OLD.existing_client_verified_at
+     OR NEW.existing_client_verified_by IS DISTINCT FROM OLD.existing_client_verified_by
+     OR NEW.existing_client_verification_note IS DISTINCT FROM OLD.existing_client_verification_note
+  THEN
+    IF current_setting('app.verify_existing_customer', true) IS DISTINCT FROM 'true'
+       OR NOT public.current_user_is_active_admin()
+    THEN
+      RAISE EXCEPTION 'Existing-client verification can only be changed by an active Administrator using the verification process.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_existing_client_verification_fields ON public.customers;
+CREATE TRIGGER trg_guard_existing_client_verification_fields
+BEFORE UPDATE ON public.customers
+FOR EACH ROW
+EXECUTE FUNCTION public.guard_existing_client_verification_fields();
+
+REVOKE ALL ON FUNCTION public.guard_existing_client_verification_fields() FROM PUBLIC, anon, authenticated;
+
+-- Enforce borrower-specific limits at the database boundary for every new or
+-- amended application, regardless of which screen or API submits it.
+CREATE OR REPLACE FUNCTION public.enforce_borrower_loan_limits()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_first_time boolean;
+BEGIN
+  IF NEW.amount_requested IS NULL OR NEW.amount_requested <= 0 THEN
+    RETURN NEW;
+  END IF;
+
+  v_first_time := public.is_first_time_borrower(NEW.customer_id, NEW.id_number);
+
+  IF v_first_time AND NEW.amount_requested > 1500 THEN
+    RAISE EXCEPTION 'FIRST_TIME_BORROWER_LIMIT: First-time applicants may request no more than R1,500.';
+  END IF;
+
+  IF NOT v_first_time AND NEW.amount_requested > 6000 THEN
+    RAISE EXCEPTION 'EXISTING_CLIENT_LIMIT: Verified or returning clients may request no more than R6,000.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_borrower_loan_limits ON public.loan_applications;
+CREATE TRIGGER trg_enforce_borrower_loan_limits
+BEFORE INSERT OR UPDATE OF amount_requested, customer_id, id_number
+ON public.loan_applications
+FOR EACH ROW
+EXECUTE FUNCTION public.enforce_borrower_loan_limits();
+
+REVOKE ALL ON FUNCTION public.enforce_borrower_loan_limits() FROM PUBLIC, anon, authenticated;
