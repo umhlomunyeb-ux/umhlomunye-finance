@@ -49,6 +49,7 @@ BEGIN
     existing_client_verified_by = coalesce(existing_client_verified_by, v_admin_id),
     existing_client_verification_note = nullif(trim(p_verification_note), '')
   WHERE id = p_customer_id
+    AND coalesce(is_active, true) = true
     AND coalesce(is_deleted, false) = false
   RETURNING * INTO v_customer;
 
@@ -146,10 +147,23 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  IF NEW.first_time_borrower_rule_applicable IS DISTINCT FROM OLD.first_time_borrower_rule_applicable
-     OR NEW.existing_client_verified_at IS DISTINCT FROM OLD.existing_client_verified_at
-     OR NEW.existing_client_verified_by IS DISTINCT FROM OLD.existing_client_verified_by
-     OR NEW.existing_client_verification_note IS DISTINCT FROM OLD.existing_client_verification_note
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.first_time_borrower_rule_applicable IS DISTINCT FROM true
+       OR NEW.existing_client_verified_at IS NOT NULL
+       OR NEW.existing_client_verified_by IS NOT NULL
+       OR NEW.existing_client_verification_note IS NOT NULL
+    THEN
+      IF current_setting('app.verify_existing_customer', true) IS DISTINCT FROM 'true'
+         OR NOT public.current_user_is_active_admin()
+      THEN
+        RAISE EXCEPTION 'New customers must start as unverified. Only an active Administrator can verify an existing client.';
+      END IF;
+    END IF;
+  ELSIF
+    NEW.first_time_borrower_rule_applicable IS DISTINCT FROM OLD.first_time_borrower_rule_applicable
+    OR NEW.existing_client_verified_at IS DISTINCT FROM OLD.existing_client_verified_at
+    OR NEW.existing_client_verified_by IS DISTINCT FROM OLD.existing_client_verified_by
+    OR NEW.existing_client_verification_note IS DISTINCT FROM OLD.existing_client_verification_note
   THEN
     IF current_setting('app.verify_existing_customer', true) IS DISTINCT FROM 'true'
        OR NOT public.current_user_is_active_admin()
@@ -164,7 +178,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_guard_existing_client_verification_fields ON public.customers;
 CREATE TRIGGER trg_guard_existing_client_verification_fields
-BEFORE UPDATE ON public.customers
+BEFORE INSERT OR UPDATE ON public.customers
 FOR EACH ROW
 EXECUTE FUNCTION public.guard_existing_client_verification_fields();
 
