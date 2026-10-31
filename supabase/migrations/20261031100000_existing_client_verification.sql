@@ -221,3 +221,18 @@ FOR EACH ROW
 EXECUTE FUNCTION public.enforce_borrower_loan_limits();
 
 REVOKE ALL ON FUNCTION public.enforce_borrower_loan_limits() FROM PUBLIC, anon, authenticated;
+
+
+-- Align persisted Umhlomunye Finance loan settings with the confirmed rules.
+-- Term 1 covers every amount below R5,000; Term 2 covers R5,000 through R6,000.
+UPDATE public.system_settings
+SET
+  maximum_loan_amount = 6000,
+  tier_1_max_amount = 6000,
+  term_1_max_amount = 4999.99,
+  term_1_months = 1,
+  term_2_max_amount = 6000,
+  term_2_months = 2,
+  term_3_months = 2,
+  maximum_loan_term_months = 2,
+  updated_at = now();
