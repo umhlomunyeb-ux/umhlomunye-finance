@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   addLoanApplication,
@@ -96,6 +96,15 @@ export default function PublicApplication() {
 
   const [pendingSync, setPendingSync] = useState(false);
 
+  const [affordabilityAssessment, setAffordabilityAssessment] = useState(null);
+  const [fundingBookingComplete, setFundingBookingComplete] = useState(false);
+  const [fundingBookingMessage, setFundingBookingMessage] = useState("");
+  const [preferredFundingDate, setPreferredFundingDate] = useState("");
+  const [publicOffer, setPublicOffer] = useState(null);
+  const [acceptanceChecked, setAcceptanceChecked] = useState(false);
+  const [offerFinalizing, setOfferFinalizing] = useState(false);
+  const [agreementUrl, setAgreementUrl] = useState("");
+
   const [loading, setLoading] = useState(false);
 
   const [uploading, setUploading] =
@@ -117,6 +126,32 @@ export default function PublicApplication() {
 
   const [form, setForm] =
     useState(EMPTY_FORM);
+
+  const [expenses, setExpenses] = useState([
+    { category: "Housing", description: "", monthly_amount: "" },
+  ]);
+
+  const monthlyExpenseTotal = expenses.reduce(
+    (total, item) => total + Math.max(0, Number(item.monthly_amount) || 0),
+    0
+  );
+
+  function updateExpense(index, field, value) {
+    setExpenses((current) => current.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, [field]: value } : item
+    ));
+  }
+
+  function addExpense() {
+    setExpenses((current) => current.length >= 40 ? current : [
+      ...current,
+      { category: "Other", description: "", monthly_amount: "" },
+    ]);
+  }
+
+  function removeExpense(index) {
+    setExpenses((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
 
   function normalizeId(value) {
     return String(value || "")
@@ -767,6 +802,14 @@ export default function PublicApplication() {
 
           id_number:
             normalizedFormId,
+
+          monthly_expenses: expenses
+            .filter((item) => Number(item.monthly_amount) > 0)
+            .map((item) => ({
+              category: item.category,
+              description: item.description,
+              monthly_amount: Number(item.monthly_amount),
+            })),
         });
 
       const result =
@@ -792,6 +835,10 @@ export default function PublicApplication() {
        */
       const number =
         result?.application_number;
+
+      setAffordabilityAssessment(
+        result?.affordability_assessment || null
+      );
 
       /*
        * Real server application ID.
@@ -964,6 +1011,116 @@ export default function PublicApplication() {
         err?.message ||
           "Unable to submit application. Please try again."
       );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!applicationId || !uploadToken || pendingSync) return undefined;
+    let active = true;
+    const checkOffer = async () => {
+      const { data, error: offerError } = await supabase.rpc("get_public_application_offer", {
+        p_application_id: applicationId,
+        p_upload_token: uploadToken,
+      });
+      if (!active || offerError || !data) return;
+      setPublicOffer(data);
+    };
+    checkOffer();
+    const timer = window.setInterval(checkOffer, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [applicationId, uploadToken, pendingSync]);
+
+  async function handleAcceptPublicOffer() {
+    try {
+      setOfferFinalizing(true);
+      setError("");
+      if (publicOffer?.offer_status !== "ACCEPTED") {
+        const { error: acceptError } = await supabase.rpc("accept_public_loan_offer", {
+          p_application_id: applicationId,
+          p_upload_token: uploadToken,
+          p_accept: true,
+          p_acceptance_ip: null,
+        });
+        if (acceptError) throw acceptError;
+      }
+      const { data, error: finalizeError } = await supabase.functions.invoke("finalize-public-loan-offer", {
+        body: { applicationId, uploadToken },
+      });
+      if (finalizeError) throw finalizeError;
+      if (!data?.success || !data?.signingUrl) throw new Error(data?.error || "The final agreement could not be prepared.");
+      setAgreementUrl(data.signingUrl);
+      setPublicOffer((current) => ({ ...current, offer_status: "FINALIZED" }));
+    } catch (err) {
+      setError(err?.message || "Unable to finalize the accepted quotation. Please retry.");
+    } finally {
+      setOfferFinalizing(false);
+    }
+  }
+
+  async function handleDeclinePublicOffer() {
+    try {
+      setOfferFinalizing(true);
+      const { error: declineError } = await supabase.rpc("accept_public_loan_offer", {
+        p_application_id: applicationId,
+        p_upload_token: uploadToken,
+        p_accept: false,
+        p_acceptance_ip: null,
+      });
+      if (declineError) throw declineError;
+      setPublicOffer((current) => ({ ...current, offer_status: "DECLINED", status: "CANCELLED" }));
+      setFundingBookingComplete(true);
+      setFundingBookingMessage("You declined the quotation. Your application has been cancelled and reserved company funds have been released.");
+    } catch (err) {
+      setError(err?.message || "Unable to decline this quotation.");
+    } finally {
+      setOfferFinalizing(false);
+    }
+  }
+
+  async function handleFundingBooking(choice) {
+    try {
+      setLoading(true);
+      setError("");
+      const { data, error: bookingError } = await supabase.rpc(
+        "create_public_funding_booking",
+        {
+          p_application_id: applicationId,
+          p_upload_token: uploadToken,
+          p_choice: choice,
+          p_preferred_funding_date: choice === "BOOK" ? preferredFundingDate : null,
+        }
+      );
+      if (bookingError) throw bookingError;
+      setFundingBookingComplete(true);
+      setFundingBookingMessage(
+        choice === "BOOK"
+          ? `Your preferred funding date has been recorded. Queue position: ${data?.queue_position || "pending"}.`
+          : `Your request has been added to the funding queue. Queue position: ${data?.queue_position || "pending"}.`
+      );
+    } catch (err) {
+      setError(err?.message || "Unable to save your funding preference.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCancelFundingRequest() {
+    try {
+      setLoading(true);
+      const { error: cancelError } = await supabase.rpc(
+        "cancel_public_funding_booking",
+        {
+          p_application_id: applicationId,
+          p_upload_token: uploadToken,
+        }
+      );
+      if (cancelError) throw cancelError;
+      setFundingBookingComplete(true);
+      setFundingBookingMessage("Your funding request has been cancelled.");
+    } catch (err) {
+      setError(err?.message || "Unable to cancel the funding request.");
     } finally {
       setLoading(false);
     }
@@ -1150,6 +1307,77 @@ export default function PublicApplication() {
                       )}
                     </>
                   )}
+              </Box>
+            )}
+
+            {["ISSUED", "ACCEPTED"].includes(publicOffer?.offer_status) && !publicOffer?.signing_token && (
+              <Paper variant="outlined" sx={{ mt: 3, p: 2, textAlign: "left" }}>
+                <Typography variant="h6" fontWeight="bold">Pre-Agreement Statement and Loan Quotation</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Review the proposed loan costs and repayment obligations before accepting. This is a quotation, not yet the final signed agreement.</Typography>
+                <Divider sx={{ mb: 2 }} />
+                <Typography><strong>Application:</strong> {publicOffer.application_number}</Typography>
+                <Typography><strong>Loan amount:</strong> R {Number(publicOffer.offer_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>Interest rate:</strong> {Number(publicOffer.interest_rate || 0).toLocaleString("en-ZA", { maximumFractionDigits: 2 })}%</Typography>
+                <Typography><strong>Interest:</strong> R {Number(publicOffer.offer_interest_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>First payment date:</strong> {publicOffer.preferred_payment_date ? new Date(`${publicOffer.preferred_payment_date}T00:00:00`).toLocaleDateString("en-ZA") : "To be confirmed"}</Typography>
+                <Typography><strong>Total repayment:</strong> R {Number(publicOffer.offer_total_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>Term:</strong> {publicOffer.offer_term_months} month(s)</Typography>
+                <Typography><strong>Monthly instalment:</strong> R {Number(publicOffer.offer_monthly_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography variant="caption" color="text.secondary">Quotation expires: {publicOffer.offer_expires_at ? new Date(publicOffer.offer_expires_at).toLocaleString("en-ZA") : "Not specified"}</Typography>
+                <Divider sx={{ my: 2 }} />
+                <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <input type="checkbox" checked={acceptanceChecked} onChange={(event) => setAcceptanceChecked(event.target.checked)} />
+                  <span>I have read and accept the Pre-Agreement Statement and Loan Quotation, including the amount, interest, total repayment and instalment schedule.</span>
+                </label>
+                <Button fullWidth variant="contained" sx={{ mt: 2 }} disabled={(!acceptanceChecked && publicOffer?.offer_status !== "ACCEPTED") || offerFinalizing} onClick={handleAcceptPublicOffer}>
+                  {offerFinalizing ? "Preparing final agreement..." : publicOffer?.offer_status === "ACCEPTED" ? "Continue to Final Agreement" : "Accept Quotation and Prepare Agreement"}
+                </Button>
+                <Button fullWidth color="error" sx={{ mt: 1 }} disabled={offerFinalizing} onClick={handleDeclinePublicOffer}>Decline Quotation and Cancel</Button>
+              </Paper>
+            )}
+            {(agreementUrl || publicOffer?.signing_token) && (
+              <Alert severity="success" sx={{ mt: 2 }}>
+                Your loan has been created and the final agreement is ready. <a href={agreementUrl || `/sign-agreement/${publicOffer.signing_token}`}>Open and sign your loan agreement</a>.
+              </Alert>
+            )}
+            {affordabilityAssessment && (
+              <Box sx={{ mt: 3, textAlign: "left" }}>
+                <Alert severity={affordabilityAssessment.status === "AFFORDABLE" ? "success" : "error"}>
+                  <strong>Automatic affordability assessment: {affordabilityAssessment.status === "AFFORDABLE" ? "Passed" : "Not passed"}</strong>
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    Monthly expenses: R {Number(affordabilityAssessment.monthly_expenses || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                    <br />
+                    Disposable income: R {Number(affordabilityAssessment.disposable_income || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                    <br />
+                    Proposed monthly instalment: R {Number(affordabilityAssessment.monthly_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                  </Typography>
+                  {affordabilityAssessment.status !== "AFFORDABLE" && (
+                    <Typography variant="body2" sx={{ mt: 1 }}>
+                      {affordabilityAssessment.reason || "The proposed repayment is not affordable based on the income and expenses supplied."}
+                    </Typography>
+                  )}
+                </Alert>
+                {affordabilityAssessment.status === "AFFORDABLE" && applicationId && uploadToken && !fundingBookingComplete && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography fontWeight="bold" sx={{ mb: 1 }}>Funding is subject to available company funds.</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      You may wait for funds to become available or select a future date. No money is reserved until the company bank balance is verified and sufficient funds are available.
+                    </Typography>
+                    <Button variant="contained" fullWidth sx={{ mb: 1 }} disabled={loading}
+                      onClick={() => handleFundingBooking("WAIT")}>Wait for Funds</Button>
+                    <TextField fullWidth type="date" label="Preferred Funding Date" InputLabelProps={{ shrink: true }}
+                      value={preferredFundingDate} onChange={(event) => setPreferredFundingDate(event.target.value)}
+                      sx={{ mb: 1 }} />
+                    <Button variant="outlined" fullWidth disabled={loading || !preferredFundingDate}
+                      onClick={() => handleFundingBooking("BOOK")}>Book a Future Date</Button>
+                    <Button color="error" fullWidth disabled={loading} onClick={handleCancelFundingRequest} sx={{ mt: 1 }}>
+                      Cancel Application
+                    </Button>
+                  </Box>
+                )}
+                {fundingBookingComplete && (
+                  <Alert severity="info" sx={{ mt: 2 }}>{fundingBookingMessage}</Alert>
+                )}
               </Box>
             )}
 
@@ -1604,62 +1832,65 @@ export default function PublicApplication() {
                       </TextField>
                     </Grid>
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                    >
-                      <TextField
-                        fullWidth
-                        type="number"
-                        label="Monthly Income"
-                        name="monthly_income"
-                        value={
-                          form.monthly_income
-                        }
-                        onChange={
-                          handleChange
-                        }
-                        inputProps={{
-                          min: 0,
-                          step: "0.01",
-                        }}
-                        InputProps={{
-                          startAdornment:
-                            "R ",
-                        }}
-                      />
-                    </Grid>
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                    >
-                      <TextField
-                        fullWidth
-                        type="number"
-                        label="Other Income"
-                        name="other_income"
-                        value={
-                          form.other_income
-                        }
-                        onChange={
-                          handleChange
-                        }
-                        inputProps={{
-                          min: 0,
-                          step: "0.01",
-                        }}
-                        InputProps={{
-                          startAdornment:
-                            "R ",
-                        }}
-                      />
-                    </Grid>
                   </Grid>
                 </>
               )}
+
+              <Divider sx={{ my: 4 }} />
+
+              {/* =================================================
+                  MONTHLY INCOME AND EXPENSES
+              ================================================= */}
+              <Typography variant="h6" sx={{ mb: 2 }} fontWeight="bold">
+                Monthly Income and Expenses
+              </Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Please provide your monthly income and regular expenses. These figures are used to calculate your disposable income and assess whether the proposed instalment is affordable. Supporting documents are optional.
+              </Alert>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth required type="number" label="Monthly Income" name="monthly_income"
+                    value={form.monthly_income} onChange={handleChange}
+                    inputProps={{ min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth type="number" label="Other Monthly Income" name="other_income"
+                    value={form.other_income} onChange={handleChange}
+                    inputProps={{ min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
+                </Grid>
+              </Grid>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mt: 3, mb: 1 }}>
+                Monthly Expenses
+              </Typography>
+              {expenses.map((item, index) => (
+                <Grid container spacing={1} key={index} sx={{ mb: 1 }} alignItems="center">
+                  <Grid item xs={12} sm={3}>
+                    <TextField fullWidth label="Category" value={item.category}
+                      onChange={(event) => updateExpense(index, "category", event.target.value)} />
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <TextField fullWidth label="Description (optional)" value={item.description}
+                      onChange={(event) => updateExpense(index, "description", event.target.value)} />
+                  </Grid>
+                  <Grid item xs={10} sm={4}>
+                    <TextField fullWidth type="number" label="Monthly Amount" value={item.monthly_amount}
+                      onChange={(event) => updateExpense(index, "monthly_amount", event.target.value)}
+                      inputProps={{ min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
+                  </Grid>
+                  <Grid item xs={2} sm={1}>
+                    <Button color="error" disabled={expenses.length === 1}
+                      onClick={() => removeExpense(index)}>Remove</Button>
+                  </Grid>
+                </Grid>
+              ))}
+              <Button variant="outlined" onClick={addExpense} disabled={expenses.length >= 40}>
+                Add Expense
+              </Button>
+              <Box sx={{ mt: 2, p: 2, bgcolor: "grey.100", borderRadius: 1 }}>
+                <Typography variant="body2">Total Monthly Expenses: <strong>R {monthlyExpenseTotal.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></Typography>
+                <Typography variant="body2">Estimated Disposable Income: <strong>R {(Number(form.monthly_income || 0) + Number(form.other_income || 0) - monthlyExpenseTotal).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></Typography>
+              </Box>
 
               <Divider sx={{ my: 4 }} />
 

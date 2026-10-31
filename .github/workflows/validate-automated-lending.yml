@@ -1,0 +1,35 @@
+name: Validate Automated Lending Workflow
+
+on:
+  push:
+    branches: [feature/automated-lending-workflow-20261031]
+  pull_request:
+    branches: [main]
+    paths:
+      - "Frontend/**"
+      - "supabase/**"
+      - ".github/workflows/validate-automated-lending.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.UMHLOMUNYE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.UMHLOMUNYE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_APP_MODE: online
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
