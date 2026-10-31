@@ -96,6 +96,11 @@ export default function PublicApplication() {
 
   const [pendingSync, setPendingSync] = useState(false);
 
+  const [affordabilityAssessment, setAffordabilityAssessment] = useState(null);
+  const [fundingBookingComplete, setFundingBookingComplete] = useState(false);
+  const [fundingBookingMessage, setFundingBookingMessage] = useState("");
+  const [preferredFundingDate, setPreferredFundingDate] = useState("");
+
   const [loading, setLoading] = useState(false);
 
   const [uploading, setUploading] =
@@ -827,6 +832,10 @@ export default function PublicApplication() {
       const number =
         result?.application_number;
 
+      setAffordabilityAssessment(
+        result?.affordability_assessment || null
+      );
+
       /*
        * Real server application ID.
        */
@@ -998,6 +1007,53 @@ export default function PublicApplication() {
         err?.message ||
           "Unable to submit application. Please try again."
       );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFundingBooking(choice) {
+    try {
+      setLoading(true);
+      setError("");
+      const { data, error: bookingError } = await supabase.rpc(
+        "create_public_funding_booking",
+        {
+          p_application_id: applicationId,
+          p_upload_token: uploadToken,
+          p_choice: choice,
+          p_preferred_funding_date: choice === "BOOK" ? preferredFundingDate : null,
+        }
+      );
+      if (bookingError) throw bookingError;
+      setFundingBookingComplete(true);
+      setFundingBookingMessage(
+        choice === "BOOK"
+          ? `Your preferred funding date has been recorded. Queue position: ${data?.queue_position || "pending"}.`
+          : `Your request has been added to the funding queue. Queue position: ${data?.queue_position || "pending"}.`
+      );
+    } catch (err) {
+      setError(err?.message || "Unable to save your funding preference.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCancelFundingRequest() {
+    try {
+      setLoading(true);
+      const { error: cancelError } = await supabase.rpc(
+        "cancel_public_funding_booking",
+        {
+          p_application_id: applicationId,
+          p_upload_token: uploadToken,
+        }
+      );
+      if (cancelError) throw cancelError;
+      setFundingBookingComplete(true);
+      setFundingBookingMessage("Your funding request has been cancelled.");
+    } catch (err) {
+      setError(err?.message || "Unable to cancel the funding request.");
     } finally {
       setLoading(false);
     }
@@ -1184,6 +1240,47 @@ export default function PublicApplication() {
                       )}
                     </>
                   )}
+              </Box>
+            )}
+
+            {affordabilityAssessment && (
+              <Box sx={{ mt: 3, textAlign: "left" }}>
+                <Alert severity={affordabilityAssessment.status === "AFFORDABLE" ? "success" : "error"}>
+                  <strong>Automatic affordability assessment: {affordabilityAssessment.status === "AFFORDABLE" ? "Passed" : "Not passed"}</strong>
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    Monthly expenses: R {Number(affordabilityAssessment.monthly_expenses || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                    <br />
+                    Disposable income: R {Number(affordabilityAssessment.disposable_income || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                    <br />
+                    Proposed monthly instalment: R {Number(affordabilityAssessment.monthly_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                  </Typography>
+                  {affordabilityAssessment.status !== "AFFORDABLE" && (
+                    <Typography variant="body2" sx={{ mt: 1 }}>
+                      {affordabilityAssessment.reason || "The proposed repayment is not affordable based on the income and expenses supplied."}
+                    </Typography>
+                  )}
+                </Alert>
+                {affordabilityAssessment.status === "AFFORDABLE" && applicationId && uploadToken && !fundingBookingComplete && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography fontWeight="bold" sx={{ mb: 1 }}>Funding is subject to available company funds.</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      You may wait for funds to become available or select a future date. No money is reserved until the company bank balance is verified and sufficient funds are available.
+                    </Typography>
+                    <Button variant="contained" fullWidth sx={{ mb: 1 }} disabled={loading}
+                      onClick={() => handleFundingBooking("WAIT")}>Wait for Funds</Button>
+                    <TextField fullWidth type="date" label="Preferred Funding Date" InputLabelProps={{ shrink: true }}
+                      value={preferredFundingDate} onChange={(event) => setPreferredFundingDate(event.target.value)}
+                      sx={{ mb: 1 }} />
+                    <Button variant="outlined" fullWidth disabled={loading || !preferredFundingDate}
+                      onClick={() => handleFundingBooking("BOOK")}>Book a Future Date</Button>
+                    <Button color="error" fullWidth disabled={loading} onClick={handleCancelFundingRequest} sx={{ mt: 1 }}>
+                      Cancel Application
+                    </Button>
+                  </Box>
+                )}
+                {fundingBookingComplete && (
+                  <Alert severity="info" sx={{ mt: 2 }}>{fundingBookingMessage}</Alert>
+                )}
               </Box>
             )}
 
