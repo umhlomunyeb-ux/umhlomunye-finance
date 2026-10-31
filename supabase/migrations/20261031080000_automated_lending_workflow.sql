@@ -131,6 +131,7 @@ DECLARE
   v_valid boolean;
   v_total numeric(14,2);
   v_item jsonb;
+  v_assessment jsonb;
 BEGIN
   IF p_application_id IS NULL OR NULLIF(trim(p_upload_token),'') IS NULL THEN
     RAISE EXCEPTION 'Application and secure upload token are required.';
@@ -172,7 +173,13 @@ BEGIN
   FROM public.loan_application_expenses WHERE application_id=p_application_id;
   UPDATE public.loan_applications SET monthly_expenses_total=v_total, updated_at=now()
   WHERE id=p_application_id;
-  RETURN jsonb_build_object('success',true,'monthly_expenses_total',v_total);
+
+  v_assessment := public.calculate_application_affordability(p_application_id);
+  RETURN jsonb_build_object(
+    'success',true,
+    'monthly_expenses_total',v_total,
+    'assessment',v_assessment
+  );
 END;
 $$;
 
