@@ -31,7 +31,7 @@ const DEFAULT_SETTINGS = {
 
   // Loan amount rules
   minimum_loan_amount: 100,
-  maximum_loan_amount: 15000,
+  maximum_loan_amount: 6000,
 
   // Single flat interest rate for every loan amount.
   // Legacy tier columns remain synchronized for compatibility.
@@ -40,16 +40,16 @@ const DEFAULT_SETTINGS = {
   tier_2_interest_rate: 40,
 
   // Loan-term rules
-  term_1_max_amount: 5000,
+  term_1_max_amount: 4999.99,
   term_1_months: 1,
 
-  term_2_max_amount: 8000,
-  term_2_months: 3,
+  term_2_max_amount: 6000,
+  term_2_months: 2,
 
-  term_3_months: 6,
+  term_3_months: 2,
 
   // Global loan-term safety limit
-  maximum_loan_term_months: 6,
+  maximum_loan_term_months: 2,
 
   // Interest-cycle rules
   interest_cycle_enabled: true,
@@ -759,11 +759,6 @@ export function getLoanTermForAmount(
       settings.term_2_months
     );
 
-  const term3Months =
-    Number(
-      settings.term_3_months
-    );
-
   const maximumTerm =
     Number(
       settings.maximum_loan_term_months
@@ -776,7 +771,6 @@ export function getLoanTermForAmount(
     !Number.isFinite(term1Months) ||
     !Number.isFinite(term2Max) ||
     !Number.isFinite(term2Months) ||
-    !Number.isFinite(term3Months) ||
     !Number.isFinite(maximumTerm)
   ) {
     throw new Error(
@@ -799,7 +793,6 @@ export function getLoanTermForAmount(
   if (
     term1Max < minimum ||
     term2Max < term1Max ||
-    term3Months <= 0 ||
     term1Months <= 0 ||
     term2Months <= 0 ||
     maximumTerm <= 0
@@ -816,7 +809,9 @@ export function getLoanTermForAmount(
   } else if (value <= term2Max) {
     termMonths = term2Months;
   } else {
-    termMonths = term3Months;
+    throw new Error(
+      `Loan amount cannot exceed ${maximum}.`
+    );
   }
 
   if (termMonths > maximumTerm) {
