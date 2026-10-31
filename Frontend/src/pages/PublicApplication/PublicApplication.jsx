@@ -1638,59 +1638,7 @@ export default function PublicApplication() {
                       </TextField>
                     </Grid>
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                    >
-                      <TextField
-                        fullWidth
-                        type="number"
-                        label="Monthly Income"
-                        name="monthly_income"
-                        value={
-                          form.monthly_income
-                        }
-                        onChange={
-                          handleChange
-                        }
-                        inputProps={{
-                          min: 0,
-                          step: "0.01",
-                        }}
-                        InputProps={{
-                          startAdornment:
-                            "R ",
-                        }}
-                      />
-                    </Grid>
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                    >
-                      <TextField
-                        fullWidth
-                        type="number"
-                        label="Other Income"
-                        name="other_income"
-                        value={
-                          form.other_income
-                        }
-                        onChange={
-                          handleChange
-                        }
-                        inputProps={{
-                          min: 0,
-                          step: "0.01",
-                        }}
-                        InputProps={{
-                          startAdornment:
-                            "R ",
-                        }}
-                      />
-                    </Grid>
                   </Grid>
                 </>
               )}
