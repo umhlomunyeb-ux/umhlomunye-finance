@@ -197,6 +197,9 @@ export default function MobileLanding() {
   const [pairing, setPairing] =
     useState(false);
 
+  const [pairingOptionsOpen, setPairingOptionsOpen] =
+    useState(false);
+
   const [error, setError] = useState("");
 
   const [numericDialogOpen, setNumericDialogOpen] =
@@ -738,23 +741,13 @@ export default function MobileLanding() {
                 </Alert>
               )}
 
-              <Stack spacing={2}>
+              {!pairingOptionsOpen ? (
                 <Button
                   fullWidth
                   variant="contained"
                   size="large"
-                  startIcon={
-                    pairing ? (
-                      <CircularProgress
-                        size={20}
-                        color="inherit"
-                      />
-                    ) : (
-                      <QrCodeScannerIcon />
-                    )
-                  }
-                  onClick={handleScanQr}
-                  disabled={pairing}
+                  startIcon={<SmartphoneIcon /> }
+                  onClick={() => setPairingOptionsOpen(true)}
                   sx={{
                     py: 1.5,
                     borderRadius: 2,
@@ -762,31 +755,61 @@ export default function MobileLanding() {
                     fontWeight: 700,
                   }}
                 >
-                  {pairing
-                    ? "Pairing..."
-                    : "Pair Device"}
+                  Pair Device
                 </Button>
+              ) : (
+                <Stack spacing={2}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    size="large"
+                    startIcon={
+                      pairing ? (
+                        <CircularProgress size={20} color="inherit" />
+                      ) : (
+                        <QrCodeScannerIcon />
+                      )
+                    }
+                    onClick={handleScanQr}
+                    disabled={pairing}
+                    sx={{
+                      py: 1.5,
+                      borderRadius: 2,
+                      textTransform: "none",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {pairing ? "Pairing..." : "Scan QR Code"}
+                  </Button>
 
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  size="large"
-                  startIcon={<KeyIcon />}
-                  onClick={
-                    handleOpenNumericDialog
-                  }
-                  disabled={pairing}
-                  sx={{
-                    py: 1.5,
-                    borderRadius: 2,
-                    textTransform: "none",
-                    fontWeight: 700,
-                  }}
-                >
-                  Enter Numeric Code
-                </Button>
-              </Stack>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    size="large"
+                    startIcon={<KeyIcon />}
+                    onClick={handleOpenNumericDialog}
+                    disabled={pairing}
+                    sx={{
+                      py: 1.5,
+                      borderRadius: 2,
+                      textTransform: "none",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Enter Code
+                  </Button>
 
+                  <Button
+                    fullWidth
+                    color="inherit"
+                    onClick={() => setPairingOptionsOpen(false)}
+                    disabled={pairing}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Back
+                  </Button>
+                </Stack>
+              )}
               <Divider />
 
               <Typography
