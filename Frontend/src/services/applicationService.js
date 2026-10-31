@@ -421,7 +421,29 @@ async function submitApplicationToServer(
     throw error;
   }
 
-  return extractRpcResult(data);
+  const submitted = extractRpcResult(data);
+  const expenses = Array.isArray(applicationData.monthly_expenses)
+    ? applicationData.monthly_expenses
+    : [];
+
+  if (submitted?.application_id && submitted?.upload_token) {
+    const { error: expenseError } = await supabase.rpc(
+      "save_public_application_expenses",
+      {
+        p_application_id: submitted.application_id,
+        p_upload_token: submitted.upload_token,
+        p_expenses: expenses,
+      }
+    );
+
+    if (expenseError) {
+      throw new Error(
+        `Application was created but monthly expenses could not be saved: ${expenseError.message}`
+      );
+    }
+  }
+
+  return submitted;
 }
 
 /* ============================================================
