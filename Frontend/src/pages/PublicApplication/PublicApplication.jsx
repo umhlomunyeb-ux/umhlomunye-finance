@@ -1059,6 +1059,26 @@ export default function PublicApplication() {
     }
   }
 
+  async function handleDeclinePublicOffer() {
+    try {
+      setOfferFinalizing(true);
+      const { error: declineError } = await supabase.rpc("accept_public_loan_offer", {
+        p_application_id: applicationId,
+        p_upload_token: uploadToken,
+        p_accept: false,
+        p_acceptance_ip: null,
+      });
+      if (declineError) throw declineError;
+      setPublicOffer((current) => ({ ...current, offer_status: "DECLINED", status: "CANCELLED" }));
+      setFundingBookingComplete(true);
+      setFundingBookingMessage("You declined the quotation. Your application has been cancelled and reserved company funds have been released.");
+    } catch (err) {
+      setError(err?.message || "Unable to decline this quotation.");
+    } finally {
+      setOfferFinalizing(false);
+    }
+  }
+
   async function handleFundingBooking(choice) {
     try {
       setLoading(true);
@@ -1312,6 +1332,7 @@ export default function PublicApplication() {
                 <Button fullWidth variant="contained" sx={{ mt: 2 }} disabled={(!acceptanceChecked && publicOffer?.offer_status !== "ACCEPTED") || offerFinalizing} onClick={handleAcceptPublicOffer}>
                   {offerFinalizing ? "Preparing final agreement..." : publicOffer?.offer_status === "ACCEPTED" ? "Continue to Final Agreement" : "Accept Quotation and Prepare Agreement"}
                 </Button>
+                <Button fullWidth color="error" sx={{ mt: 1 }} disabled={offerFinalizing} onClick={handleDeclinePublicOffer}>Decline Quotation and Cancel</Button>
               </Paper>
             )}
             {(agreementUrl || publicOffer?.signing_token) && (
