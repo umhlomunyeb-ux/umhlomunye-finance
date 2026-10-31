@@ -209,26 +209,22 @@ export async function getBankTransactions() {
 ========================================================= */
 
 export async function getBankBalance() {
-  const transactions =
-    await getBankTransactions();
+  const [account, transactions] = await Promise.all([
+    getBankAccount(),
+    getBankTransactions(),
+  ]);
 
-  return transactions
-    .filter(
-      (transaction) =>
-        transaction.is_void !== true
-    )
-    .reduce(
-      (balance, transaction) => {
-        const amount = toNumber(
-          transaction.amount
-        );
+  const transactionMovement = transactions
+    .filter((transaction) => transaction.is_void !== true)
+    .reduce((balance, transaction) => {
+      const amount = toNumber(transaction.amount);
 
-        return transaction.direction === "IN"
-          ? balance + amount
-          : balance - amount;
-      },
-      0
-    );
+      return transaction.direction === "IN"
+        ? balance + amount
+        : balance - amount;
+    }, 0);
+
+  return toNumber(account?.opening_balance) + transactionMovement;
 }
 
 
@@ -1223,6 +1219,7 @@ export async function getBankSummary() {
     totalBankFees,
 
     currentBalance:
+      toNumber(account?.opening_balance) +
       totalMoneyIn -
       totalMoneyOut,
 
