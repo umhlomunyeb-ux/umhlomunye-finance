@@ -118,6 +118,32 @@ export default function PublicApplication() {
   const [form, setForm] =
     useState(EMPTY_FORM);
 
+  const [expenses, setExpenses] = useState([
+    { category: "Housing", description: "", monthly_amount: "" },
+  ]);
+
+  const monthlyExpenseTotal = expenses.reduce(
+    (total, item) => total + Math.max(0, Number(item.monthly_amount) || 0),
+    0
+  );
+
+  function updateExpense(index, field, value) {
+    setExpenses((current) => current.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, [field]: value } : item
+    ));
+  }
+
+  function addExpense() {
+    setExpenses((current) => current.length >= 40 ? current : [
+      ...current,
+      { category: "Other", description: "", monthly_amount: "" },
+    ]);
+  }
+
+  function removeExpense(index) {
+    setExpenses((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
   function normalizeId(value) {
     return String(value || "")
       .replace(/\D/g, "")
@@ -767,6 +793,14 @@ export default function PublicApplication() {
 
           id_number:
             normalizedFormId,
+
+          monthly_expenses: expenses
+            .filter((item) => Number(item.monthly_amount) > 0)
+            .map((item) => ({
+              category: item.category,
+              description: item.description,
+              monthly_amount: Number(item.monthly_amount),
+            })),
         });
 
       const result =
@@ -1660,6 +1694,61 @@ export default function PublicApplication() {
                   </Grid>
                 </>
               )}
+
+              <Divider sx={{ my: 4 }} />
+
+              {/* =================================================
+                  MONTHLY INCOME AND EXPENSES
+              ================================================= */}
+              <Typography variant="h6" sx={{ mb: 2 }} fontWeight="bold">
+                Monthly Income and Expenses
+              </Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Please provide your monthly income and regular expenses. These figures are used to calculate your disposable income and assess whether the proposed instalment is affordable. Supporting documents are optional.
+              </Alert>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth required type="number" label="Monthly Income" name="monthly_income"
+                    value={form.monthly_income} onChange={handleChange}
+                    inputProps={{ min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth type="number" label="Other Monthly Income" name="other_income"
+                    value={form.other_income} onChange={handleChange}
+                    inputProps={{ min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
+                </Grid>
+              </Grid>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mt: 3, mb: 1 }}>
+                Monthly Expenses
+              </Typography>
+              {expenses.map((item, index) => (
+                <Grid container spacing={1} key={index} sx={{ mb: 1 }} alignItems="center">
+                  <Grid item xs={12} sm={3}>
+                    <TextField fullWidth label="Category" value={item.category}
+                      onChange={(event) => updateExpense(index, "category", event.target.value)} />
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <TextField fullWidth label="Description (optional)" value={item.description}
+                      onChange={(event) => updateExpense(index, "description", event.target.value)} />
+                  </Grid>
+                  <Grid item xs={10} sm={4}>
+                    <TextField fullWidth type="number" label="Monthly Amount" value={item.monthly_amount}
+                      onChange={(event) => updateExpense(index, "monthly_amount", event.target.value)}
+                      inputProps={{ min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
+                  </Grid>
+                  <Grid item xs={2} sm={1}>
+                    <Button color="error" disabled={expenses.length === 1}
+                      onClick={() => removeExpense(index)}>Remove</Button>
+                  </Grid>
+                </Grid>
+              ))}
+              <Button variant="outlined" onClick={addExpense} disabled={expenses.length >= 40}>
+                Add Expense
+              </Button>
+              <Box sx={{ mt: 2, p: 2, bgcolor: "grey.100", borderRadius: 1 }}>
+                <Typography variant="body2">Total Monthly Expenses: <strong>R {monthlyExpenseTotal.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></Typography>
+                <Typography variant="body2">Estimated Disposable Income: <strong>R {(Number(form.monthly_income || 0) + Number(form.other_income || 0) - monthlyExpenseTotal).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></Typography>
+              </Box>
 
               <Divider sx={{ my: 4 }} />
 
