@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
       .single();
     if (appError) throw appError;
 
-    const signingUrl = `${frontendUrl.replace(/\\/+$/, "")}/sign-agreement/${finalized.signing_token}`;
+    const signingUrl = `${frontendUrl.replace(/\/+$/, "")}/sign-agreement/${finalized.signing_token}`;
     let emailSent = false;
     let emailError: string | null = null;
 
