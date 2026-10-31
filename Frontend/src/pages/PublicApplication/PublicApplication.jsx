@@ -1036,13 +1036,15 @@ export default function PublicApplication() {
     try {
       setOfferFinalizing(true);
       setError("");
-      const { error: acceptError } = await supabase.rpc("accept_public_loan_offer", {
-        p_application_id: applicationId,
-        p_upload_token: uploadToken,
-        p_accept: true,
-        p_acceptance_ip: null,
-      });
-      if (acceptError) throw acceptError;
+      if (publicOffer?.offer_status !== "ACCEPTED") {
+        const { error: acceptError } = await supabase.rpc("accept_public_loan_offer", {
+          p_application_id: applicationId,
+          p_upload_token: uploadToken,
+          p_accept: true,
+          p_acceptance_ip: null,
+        });
+        if (acceptError) throw acceptError;
+      }
       const { data, error: finalizeError } = await supabase.functions.invoke("finalize-public-loan-offer", {
         body: { applicationId, uploadToken },
       });
@@ -1288,7 +1290,7 @@ export default function PublicApplication() {
               </Box>
             )}
 
-            {publicOffer?.offer_status === "ISSUED" && (
+            {["ISSUED", "ACCEPTED"].includes(publicOffer?.offer_status) && (
               <Paper variant="outlined" sx={{ mt: 3, p: 2, textAlign: "left" }}>
                 <Typography variant="h6" fontWeight="bold">Pre-Agreement Statement and Loan Quotation</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Review the proposed loan costs and repayment obligations before accepting. This is a quotation, not yet the final signed agreement.</Typography>
@@ -1305,14 +1307,14 @@ export default function PublicApplication() {
                   <input type="checkbox" checked={acceptanceChecked} onChange={(event) => setAcceptanceChecked(event.target.checked)} />
                   <span>I have read and accept the Pre-Agreement Statement and Loan Quotation, including the amount, interest, total repayment and instalment schedule.</span>
                 </label>
-                <Button fullWidth variant="contained" sx={{ mt: 2 }} disabled={!acceptanceChecked || offerFinalizing} onClick={handleAcceptPublicOffer}>
-                  {offerFinalizing ? "Preparing final agreement..." : "Accept Quotation and Prepare Agreement"}
+                <Button fullWidth variant="contained" sx={{ mt: 2 }} disabled={(!acceptanceChecked && publicOffer?.offer_status !== "ACCEPTED") || offerFinalizing} onClick={handleAcceptPublicOffer}>
+                  {offerFinalizing ? "Preparing final agreement..." : publicOffer?.offer_status === "ACCEPTED" ? "Continue to Final Agreement" : "Accept Quotation and Prepare Agreement"}
                 </Button>
               </Paper>
             )}
-            {agreementUrl && (
+            {(agreementUrl || publicOffer?.signing_token) && (
               <Alert severity="success" sx={{ mt: 2 }}>
-                Your loan has been created and the final agreement is ready. <a href={agreementUrl}>Open and sign your loan agreement</a>.
+                Your loan has been created and the final agreement is ready. <a href={agreementUrl || `/sign-agreement/${publicOffer.signing_token}`}>Open and sign your loan agreement</a>.
               </Alert>
             )}
             {affordabilityAssessment && (
