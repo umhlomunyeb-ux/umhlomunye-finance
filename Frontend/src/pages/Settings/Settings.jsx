@@ -642,16 +642,8 @@ export default function Settings() {
       settings.maximum_loan_amount
     );
 
-    const tier1Max = Number(
-      settings.tier_1_max_amount
-    );
-
     const tier1Rate = Number(
       settings.tier_1_interest_rate
-    );
-
-    const tier2Rate = Number(
-      settings.tier_2_interest_rate
     );
 
     const term1Max = Number(
@@ -712,27 +704,11 @@ export default function Settings() {
     }
 
     if (
-      !Number.isFinite(tier1Max) ||
-      tier1Max < minimum ||
-      tier1Max > maximum
-    ) {
-      return "Tier 1 maximum must be between the minimum and maximum loan amounts.";
-    }
-
-    if (
       !Number.isFinite(tier1Rate) ||
       tier1Rate < 0 ||
       tier1Rate > 100
     ) {
       return "Tier 1 interest rate must be between 0% and 100%.";
-    }
-
-    if (
-      !Number.isFinite(tier2Rate) ||
-      tier2Rate < 0 ||
-      tier2Rate > 100
-    ) {
-      return "Tier 2 interest rate must be between 0% and 100%.";
     }
 
     if (
@@ -2433,9 +2409,7 @@ export default function Settings() {
           </Typography>
 
           {settings &&
-            settings.tier_1_max_amount != null &&
-            settings.tier_1_interest_rate != null &&
-            settings.tier_2_interest_rate != null && (
+            settings.tier_1_interest_rate != null && (
               <Alert
                 severity="info"
                 sx={{ mb: 3 }}
@@ -2443,22 +2417,8 @@ export default function Settings() {
                 <strong>
                   Current loan pricing:
                 </strong>{" "}
-                Loans up to R
-                {Number(
-                  settings.tier_1_max_amount
-                ).toLocaleString(
-                  "en-ZA"
-                )}{" "}
-                use{" "}
+                All loan amounts are charged a flat interest rate of{" "}
                 {settings.tier_1_interest_rate}%.
-                Loans above R
-                {Number(
-                  settings.tier_1_max_amount
-                ).toLocaleString(
-                  "en-ZA"
-                )}{" "}
-                use{" "}
-                {settings.tier_2_interest_rate}%.
               </Alert>
             )}
 
@@ -2528,23 +2488,20 @@ export default function Settings() {
               />
             </Grid>
 
-            {/* INTEREST TIER 1 */}
+            {/* FLAT INTEREST RATE */}
             <Grid size={{ xs: 12 }}>
               <Divider sx={{ my: 1 }} />
-
               <Typography
                 variant="subtitle1"
                 fontWeight={700}
               >
-                Interest Tier 1
+                Interest Rate
               </Typography>
-
               <Typography
                 variant="body2"
                 color="text.secondary"
               >
-                Loans up to this amount use the Tier 1
-                interest rate.
+                The same interest rate applies to every loan amount.
               </Typography>
             </Grid>
 
@@ -2557,93 +2514,11 @@ export default function Settings() {
               <TextField
                 fullWidth
                 type="number"
-                label="Tier 1 Maximum Amount"
-                value={
-                  settings.tier_1_max_amount
-                }
-                onChange={(e) =>
-                  handleChange(
-                    "tier_1_max_amount",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                InputProps={{
-                  startAdornment: (
-                    <Typography sx={{ mr: 1 }}>
-                      R
-                    </Typography>
-                  ),
-                }}
-              />
-            </Grid>
-
-            <Grid
-              size={{
-                xs: 12,
-                md: 6,
-              }}
-            >
-              <TextField
-                fullWidth
-                type="number"
-                label="Tier 1 Interest Rate"
-                value={
-                  settings.tier_1_interest_rate
-                }
+                label="Interest Rate"
+                value={settings.tier_1_interest_rate}
                 onChange={(e) =>
                   handleChange(
                     "tier_1_interest_rate",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                InputProps={{
-                  endAdornment: (
-                    <Typography sx={{ ml: 1 }}>
-                      %
-                    </Typography>
-                  ),
-                }}
-              />
-            </Grid>
-
-            {/* INTEREST TIER 2 */}
-            <Grid size={{ xs: 12 }}>
-              <Divider sx={{ my: 1 }} />
-
-              <Typography
-                variant="subtitle1"
-                fontWeight={700}
-              >
-                Interest Tier 2
-              </Typography>
-
-              <Typography
-                variant="body2"
-                color="text.secondary"
-              >
-                Loans above the Tier 1 maximum use this
-                interest rate.
-              </Typography>
-            </Grid>
-
-            <Grid
-              size={{
-                xs: 12,
-                md: 6,
-              }}
-            >
-              <TextField
-                fullWidth
-                type="number"
-                label="Tier 2 Interest Rate"
-                value={
-                  settings.tier_2_interest_rate
-                }
-                onChange={(e) =>
-                  handleChange(
-                    "tier_2_interest_rate",
                     e.target.value
                   )
                 }
@@ -3049,29 +2924,9 @@ export default function Settings() {
             sx={{ mt: 2 }}
           >
             <Typography>
-              R
-              {Number(
-                settings.minimum_loan_amount
-              ).toLocaleString()}
-              {" – "}
-              R
-              {Number(
-                settings.tier_1_max_amount
-              ).toLocaleString()}
-              {" → "}
+              All loan amounts:{" "}
               <strong>
                 {settings.tier_1_interest_rate}%
-              </strong>
-            </Typography>
-
-            <Typography>
-              Above R
-              {Number(
-                settings.tier_1_max_amount
-              ).toLocaleString()}
-              {" → "}
-              <strong>
-                {settings.tier_2_interest_rate}%
               </strong>
             </Typography>
 
