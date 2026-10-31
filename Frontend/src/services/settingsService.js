@@ -22,10 +22,11 @@ const DEFAULT_SETTINGS = {
   minimum_loan_amount: 100,
   maximum_loan_amount: 6000,
 
-  // Interest-rate rules
-  tier_1_max_amount: 2000,
+  // Single flat interest rate for every loan amount.
+  // tier_1_interest_rate is retained as the legacy database field.
+  tier_1_max_amount: 6000,
   tier_1_interest_rate: 40,
-  tier_2_interest_rate: 30,
+  tier_2_interest_rate: 40,
 
   // Loan-term rules
   term_1_max_amount: 4999.99,
@@ -289,13 +290,14 @@ export async function updateSystemSettings(settings) {
     // ----------------------------------------------------------
 
     tier_1_max_amount:
-      Number(settings.tier_1_max_amount),
+      Number(settings.maximum_loan_amount),
 
     tier_1_interest_rate:
       Number(settings.tier_1_interest_rate),
 
+    // Keep the legacy column synchronized; it is no longer a separate tier.
     tier_2_interest_rate:
-      Number(settings.tier_2_interest_rate),
+      Number(settings.tier_1_interest_rate),
 
     // ----------------------------------------------------------
     // Loan-term settings
@@ -607,30 +609,21 @@ export function getInterestRateForAmount(
     );
   }
 
-  const tierLimit =
-    Number(settings.tier_1_max_amount);
-
-  const tier1Rate =
+  const interestRate =
     Number(settings.tier_1_interest_rate);
 
-  const tier2Rate =
-    Number(settings.tier_2_interest_rate);
-
   if (
-    !Number.isFinite(tierLimit) ||
-    !Number.isFinite(tier1Rate) ||
-    !Number.isFinite(tier2Rate)
+    !Number.isFinite(interestRate) ||
+    interestRate < 0 ||
+    interestRate > 100
   ) {
     throw new Error(
-      "Interest-rate settings are incomplete or invalid."
+      "The flat interest-rate setting is incomplete or invalid."
     );
   }
 
-  return value <= tierLimit
-    ? tier1Rate
-    : tier2Rate;
+  return interestRate;
 }
-
 
 /**
  * Determine the applicable loan term from Settings.
