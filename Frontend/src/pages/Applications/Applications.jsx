@@ -23,6 +23,7 @@ import {
 import {
   getLoanApplications,
 } from "../../services/applicationService";
+import { supabase } from "../../lib/supabase";
 
 export default function Applications() {
   const [applications, setApplications] = useState([]);
@@ -32,6 +33,7 @@ export default function Applications() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [fundingSummary, setFundingSummary] = useState(null);
 
   // ===========================================================
   // LOAD APPLICATIONS
@@ -76,6 +78,17 @@ export default function Applications() {
   useEffect(() => {
     loadApplications();
   }, [loadApplications]);
+
+  useEffect(() => {
+    let active = true;
+    const loadFundingSummary = async () => {
+      const { data, error: summaryError } = await supabase.rpc("get_admin_funding_queue_summary");
+      if (active && !summaryError) setFundingSummary(data || null);
+    };
+    loadFundingSummary();
+    const timer = setInterval(loadFundingSummary, 30000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
 
   // ===========================================================
   // AUTOMATIC BACKGROUND REFRESH
@@ -255,6 +268,20 @@ export default function Applications() {
           <Typography color="text.secondary">
             Review applications submitted by clients.
           </Typography>
+
+          {fundingSummary?.fundable_applications?.length > 0 && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography fontWeight="bold">Funding available — quotations ready to be accepted</Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                Combined funding reserved: R {Number(fundingSummary.combined_funding_total || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })} · Remaining verified funds: R {Number(fundingSummary.remaining_after_reservations || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+              </Typography>
+              {fundingSummary.fundable_applications.map((item) => (
+                <Typography key={item.application_id} variant="body2">
+                  {item.application_number} — {item.customer_name} — R {Number(item.requested_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                </Typography>
+              ))}
+            </Alert>
+          )}
         </Box>
       </Box>
 
