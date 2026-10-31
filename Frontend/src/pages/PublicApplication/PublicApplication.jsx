@@ -1310,7 +1310,7 @@ export default function PublicApplication() {
               </Box>
             )}
 
-            {["ISSUED", "ACCEPTED"].includes(publicOffer?.offer_status) && (
+            {["ISSUED", "ACCEPTED"].includes(publicOffer?.offer_status) && !publicOffer?.signing_token && (
               <Paper variant="outlined" sx={{ mt: 3, p: 2, textAlign: "left" }}>
                 <Typography variant="h6" fontWeight="bold">Pre-Agreement Statement and Loan Quotation</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Review the proposed loan costs and repayment obligations before accepting. This is a quotation, not yet the final signed agreement.</Typography>
