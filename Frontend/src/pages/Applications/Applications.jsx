@@ -121,7 +121,11 @@ export default function Applications() {
         return "secondary";
 
       case "APPROVED":
+      case "OFFER_READY":
         return "success";
+
+      case "WAITING_FOR_FUNDS":
+        return "info";
 
       case "REJECTED":
         return "error";
@@ -151,6 +155,12 @@ export default function Applications() {
 
       case "APPROVED":
         return "Approved";
+
+      case "WAITING_FOR_FUNDS":
+        return "Waiting for Funds";
+
+      case "OFFER_READY":
+        return "Quotation Ready";
 
       case "REJECTED":
         return "Rejected";
