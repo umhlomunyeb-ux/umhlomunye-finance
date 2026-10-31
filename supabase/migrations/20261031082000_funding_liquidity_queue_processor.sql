@@ -94,8 +94,8 @@ BEGIN
     FROM public.bank_accounts ba
     WHERE ba.is_active=true AND ba.is_verified=true
     ORDER BY account_available DESC
-    FOR UPDATE OF ba
-    LIMIT 1;
+    LIMIT 1
+    FOR UPDATE OF ba;
 
     IF v_account.id IS NULL OR v_account.account_available < v_booking.requested_amount THEN
       UPDATE public.loan_funding_bookings SET last_checked_at=now()
