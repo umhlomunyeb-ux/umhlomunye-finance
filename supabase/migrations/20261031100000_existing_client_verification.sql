@@ -103,7 +103,12 @@ BEGIN
     FROM public.customers c
     WHERE c.id = v_customer_id
       AND coalesce(c.is_deleted, false) = false
-      AND coalesce(c.is_active, true) = true;
+      AND coalesce(c.is_active, true) = true
+      AND (
+        nullif(p_id_number, '') IS NULL
+        OR regexp_replace(coalesce(c.id_number, ''), '[^0-9]', '', 'g') =
+           regexp_replace(p_id_number, '[^0-9]', '', 'g')
+      );
 
     IF NOT FOUND THEN
       v_customer_id := NULL;
