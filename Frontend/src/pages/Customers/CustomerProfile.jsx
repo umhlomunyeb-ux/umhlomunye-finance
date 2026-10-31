@@ -10,6 +10,7 @@ import {
   Button,
   Grid,
   TextField,
+  Chip,
 } from "@mui/material";
 
 import toast from "react-hot-toast";
@@ -19,8 +20,9 @@ import {
   getCustomerById,
 } from "../../services/customerService";
 
+import { verifyExistingCustomer } from "../../services/existingClientService";
+import { isCurrentUserAdmin } from "../../services/userService";
 import { parseSouthAfricanId } from "../../utils/saIdValidator";
-
 
 export default function CustomerProfile() {
   const { id } = useParams();
@@ -29,42 +31,43 @@ export default function CustomerProfile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     loadCustomer();
+    checkAdmin();
   }, [id]);
 
-async function loadCustomer() {
-  try {
-    setLoading(true);
-    setError("");
-
-    const data =
-      await getCustomerById(id);
-
-    setCustomer(data);
-  } catch (err) {
-    console.error(err);
-    setError(
-      err.message ||
-        "Unable to load customer."
-    );
-  } finally {
-    setLoading(false);
+  async function checkAdmin() {
+    try {
+      setIsAdmin(Boolean(await isCurrentUserAdmin()));
+    } catch (err) {
+      console.error("Unable to check administrator access:", err);
+      setIsAdmin(false);
+    }
   }
-}
+
+  async function loadCustomer() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const data = await getCustomerById(id);
+      setCustomer(data);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Unable to load customer.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function handleChange(e) {
     const { name, value } = e.target;
+    let updatedCustomer = { ...customer, [name]: value };
 
-    let updatedCustomer = {
-      ...customer,
-      [name]: value,
-    };
-
-    // Automatically regenerate DOB and gender
-    // when the ID number changes.
     if (name === "id_number" && value.length === 13) {
       const result = parseSouthAfricanId(value);
 
@@ -73,7 +76,6 @@ async function loadCustomer() {
         updatedCustomer.gender = result.gender;
       } else {
         toast.error(result.message);
-
         updatedCustomer.date_of_birth = "";
         updatedCustomer.gender = "";
       }
@@ -90,22 +92,18 @@ async function loadCustomer() {
         toast.error("First name is required.");
         return;
       }
-
       if (!customer.last_name?.trim()) {
         toast.error("Last name is required.");
         return;
       }
-
       if (!customer.id_number?.trim()) {
         toast.error("ID number is required.");
         return;
       }
-
       if (!customer.cellphone?.trim()) {
         toast.error("Cellphone is required.");
         return;
       }
-
       if (customer.id_number.length !== 13) {
         toast.error("ID number must contain exactly 13 digits.");
         return;
@@ -122,27 +120,40 @@ async function loadCustomer() {
         occupation: customer.occupation || null,
         employer: customer.employer || null,
         monthly_income:
-          customer.monthly_income === "" ||
-          customer.monthly_income === null
+          customer.monthly_income === "" || customer.monthly_income === null
             ? null
             : Number(customer.monthly_income),
       };
 
       await updateCustomer(id, updatedCustomer);
-
       toast.success("Customer updated successfully.");
-
       setEditing(false);
-
       await loadCustomer();
     } catch (err) {
       console.error("Error updating customer:", err);
-
-      toast.error(
-        err.message || "Failed to update customer."
-      );
+      toast.error(err.message || "Failed to update customer.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleVerifyExistingClient() {
+    const confirmed = window.confirm(
+      "Confirm that this customer has previously borrowed from Umhlomunye Finance. Verification automatically removes the R1,500 first-loan restriction and grants eligibility up to R6,000."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setVerifying(true);
+      await verifyExistingCustomer(customer.id);
+      toast.success("Existing client verified. Loan limit eligibility is now R6,000.");
+      await loadCustomer();
+    } catch (err) {
+      console.error("Existing-client verification failed:", err);
+      toast.error(err.message || "Unable to verify existing client.");
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -157,9 +168,7 @@ async function loadCustomer() {
   if (error) {
     return (
       <Box sx={{ p: 3 }}>
-        <Typography color="error">
-          {error}
-        </Typography>
+        <Typography color="error">{error}</Typography>
       </Box>
     );
   }
@@ -167,34 +176,42 @@ async function loadCustomer() {
   if (!customer) {
     return (
       <Box sx={{ p: 3 }}>
-        <Typography>
-          Customer not found.
-        </Typography>
+        <Typography>Customer not found.</Typography>
       </Box>
     );
   }
 
+  const isVerifiedExistingClient = Boolean(customer.existing_client_verified_at);
+
   return (
     <Box sx={{ p: 3 }}>
-
       <Box
         sx={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           mb: 3,
+          flexWrap: "wrap",
+          gap: 2,
         }}
       >
-        <Typography variant="h4">
-          Customer Profile
-        </Typography>
+        <Box>
+          <Typography variant="h4">Customer Profile</Typography>
+          <Box sx={{ display: "flex", gap: 1, mt: 1, flexWrap: "wrap" }}>
+            {isVerifiedExistingClient ? (
+              <Chip label="Verified Existing Client" color="success" />
+            ) : (
+              <Chip label="Standard Customer" variant="outlined" />
+            )}
+            {isVerifiedExistingClient && (
+              <Chip label="Loan eligibility up to R6,000" color="primary" variant="outlined" />
+            )}
+          </Box>
+        </Box>
 
-        <Box sx={{ display: "flex", gap: 1 }}>
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
           {!editing && (
-            <Button
-              variant="contained"
-              onClick={() => setEditing(true)}
-            >
+            <Button variant="contained" onClick={() => setEditing(true)}>
               Edit Customer
             </Button>
           )}
@@ -211,38 +228,46 @@ async function loadCustomer() {
               >
                 Cancel
               </Button>
-
-              <Button
-                variant="contained"
-                onClick={handleSave}
-                disabled={saving}
-              >
+              <Button variant="contained" onClick={handleSave} disabled={saving}>
                 {saving ? "Saving..." : "Save Changes"}
               </Button>
             </>
           )}
 
-          <Button
-            component={Link}
-            to="/customers"
-            variant="outlined"
-          >
+          {isAdmin && !isVerifiedExistingClient && (
+            <Button
+              variant="contained"
+              color="success"
+              onClick={handleVerifyExistingClient}
+              disabled={verifying || editing}
+            >
+              {verifying ? "Verifying..." : "Verify Existing Client"}
+            </Button>
+          )}
+
+          <Button component={Link} to="/customers" variant="outlined">
             Back
           </Button>
         </Box>
       </Box>
 
+      {isVerifiedExistingClient && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Typography variant="body2">
+            Verified on: {new Date(customer.existing_client_verified_at).toLocaleString("en-ZA")}
+          </Typography>
+          {customer.existing_client_verification_note && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Verification note: {customer.existing_client_verification_note}
+            </Typography>
+          )}
+        </Paper>
+      )}
+
       <Grid container spacing={3}>
-
-        {/* PERSONAL INFORMATION */}
-
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-
-            <Typography variant="h6">
-              Personal Information
-            </Typography>
-
+            <Typography variant="h6">Personal Information</Typography>
             <Divider sx={{ my: 2 }} />
 
             <TextField
@@ -252,7 +277,6 @@ async function loadCustomer() {
               InputProps={{ readOnly: true }}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="First Name"
@@ -262,7 +286,6 @@ async function loadCustomer() {
               disabled={!editing}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="Last Name"
@@ -272,7 +295,6 @@ async function loadCustomer() {
               disabled={!editing}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="ID Number"
@@ -283,7 +305,6 @@ async function loadCustomer() {
               inputProps={{ maxLength: 13 }}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="Date of Birth"
@@ -291,26 +312,18 @@ async function loadCustomer() {
               InputProps={{ readOnly: true }}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="Gender"
               value={customer.gender || ""}
               InputProps={{ readOnly: true }}
             />
-
           </Paper>
         </Grid>
 
-        {/* CONTACT INFORMATION */}
-
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-
-            <Typography variant="h6">
-              Contact Information
-            </Typography>
-
+            <Typography variant="h6">Contact Information</Typography>
             <Divider sx={{ my: 2 }} />
 
             <TextField
@@ -322,7 +335,6 @@ async function loadCustomer() {
               disabled={!editing}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="Alternative Phone"
@@ -332,7 +344,6 @@ async function loadCustomer() {
               disabled={!editing}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="Email"
@@ -342,7 +353,6 @@ async function loadCustomer() {
               disabled={!editing}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="Physical Address"
@@ -354,7 +364,6 @@ async function loadCustomer() {
               rows={2}
               sx={{ mb: 2 }}
             />
-
             <TextField
               fullWidth
               label="Postal Address"
@@ -363,23 +372,14 @@ async function loadCustomer() {
               onChange={handleChange}
               disabled={!editing}
             />
-
           </Paper>
         </Grid>
 
-        {/* EMPLOYMENT */}
-
         <Grid item xs={12}>
           <Paper sx={{ p: 3 }}>
-
-            <Typography variant="h6">
-              Employment & Income
-            </Typography>
-
+            <Typography variant="h6">Employment & Income</Typography>
             <Divider sx={{ my: 2 }} />
-
             <Grid container spacing={2}>
-
               <Grid item xs={12} md={4}>
                 <TextField
                   fullWidth
@@ -390,7 +390,6 @@ async function loadCustomer() {
                   disabled={!editing}
                 />
               </Grid>
-
               <Grid item xs={12} md={4}>
                 <TextField
                   fullWidth
@@ -401,7 +400,6 @@ async function loadCustomer() {
                   disabled={!editing}
                 />
               </Grid>
-
               <Grid item xs={12} md={4}>
                 <TextField
                   fullWidth
@@ -413,14 +411,10 @@ async function loadCustomer() {
                   disabled={!editing}
                 />
               </Grid>
-
             </Grid>
-
           </Paper>
         </Grid>
-
       </Grid>
-
     </Box>
   );
 }
