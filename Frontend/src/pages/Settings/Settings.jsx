@@ -117,6 +117,9 @@ export default function Settings() {
   const [pairingQrCode, setPairingQrCode] =
     useState("");
 
+  const [mobileLandingQrCode, setMobileLandingQrCode] =
+    useState("");
+
   const [pairingSecondsRemaining, setPairingSecondsRemaining] =
     useState(0);
 
@@ -187,6 +190,35 @@ export default function Settings() {
     };
   }, [logoPreview]);
 
+  /*
+   * Create a permanent QR code that opens this LMS installation
+   * directly on the mobile landing page. This is separate from
+   * the temporary secure device-pairing QR code below.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function generateMobileLandingQr() {
+      try {
+        const mobileLandingUrl = `${window.location.origin}/mobile`;
+        const dataUrl = await QRCode.toDataURL(mobileLandingUrl, {
+          errorCorrectionLevel: "M",
+          margin: 2,
+          width: 320,
+        });
+
+        if (!cancelled) {
+          setMobileLandingQrCode(dataUrl);
+        }
+      } catch (err) {
+        console.error("Generate mobile landing QR error:", err);
+        if (!cancelled) setMobileLandingQrCode("");
+      }
+    }
+
+    generateMobileLandingQr();
+    return () => { cancelled = true; };
+  }, []);
   /*
    * Keep the pairing expiry countdown accurate.
    */
@@ -1876,6 +1908,39 @@ export default function Settings() {
               </Grid>
             </Grid>
 
+            {/* MOBILE APP LANDING PAGE LINK */}
+            <Card variant="outlined" sx={{ mb: 3 }}>
+              <CardContent>
+                <Stack spacing={2} alignItems="center">
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: "stretch" }}>
+                    <QrCode2Icon />
+                    <Typography variant="subtitle1" fontWeight={700}>
+                      Mobile App Link
+                    </Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" textAlign="center">
+                    Scan this QR code with a phone camera to open the LMS mobile landing page. This QR code does not pair or authorize the device.
+                  </Typography>
+                  {mobileLandingQrCode ? (
+                    <Box sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2, backgroundColor: "white", display: "inline-flex" }}>
+                      <img src={mobileLandingQrCode} alt="QR code linking to the LMS mobile landing page" style={{ width: 240, height: 240, display: "block" }} />
+                    </Box>
+                  ) : (
+                    <CircularProgress size={28} />
+                  )}
+                  <Typography
+                    component="a"
+                    href={`${window.location.origin}/mobile`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="body2"
+                    sx={{ overflowWrap: "anywhere", textAlign: "center" }}
+                  >
+                    {`${window.location.origin}/mobile`}
+                  </Typography>
+                </Stack>
+              </CardContent>
+            </Card>
             {/* GENERATE PAIRING */}
             <Card
               variant="outlined"

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -15,8 +16,10 @@ import {
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
+import LogoutIcon from "@mui/icons-material/Logout";
 
 import { supabase } from "../../lib/supabase";
+import { signOut } from "../../services/authService";
 
 const INSTALLATION_ID_STORAGE_KEY =
   "lms_companion_installation_id";
@@ -271,6 +274,17 @@ export default function MobilePreview() {
     [totalDisbursed, totalInterest]
   );
 
+  const handleLogout = async () => {
+    try {
+      const { error: logoutError } = await signOut();
+      if (logoutError) throw logoutError;
+      navigate("/mobile", { replace: true });
+    } catch (logoutError) {
+      console.error("MOBILE LOGOUT ERROR:", logoutError);
+      setError(logoutError?.message || "Unable to log out. Please try again.");
+    }
+  };
+
   const handleHome = () => {
     navigate("/mobile/preview");
   };
@@ -373,7 +387,7 @@ export default function MobilePreview() {
             )}
           </Box>
 
-          <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography
               sx={{
                 fontWeight: 800,
@@ -394,6 +408,33 @@ export default function MobilePreview() {
               {companyName}
             </Typography>
           </Box>
+
+
+          <Button
+            variant="outlined"
+            color="inherit"
+            size="small"
+            startIcon={<LogoutIcon />}
+            onClick={handleLogout}
+            sx={{
+              flexShrink: 0,
+              minWidth: 0,
+              px: 1.25,
+              py: 1,
+              borderColor: "rgba(255,255,255,0.55)",
+              borderRadius: 2,
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              textTransform: "none",
+              "&:hover": {
+                borderColor: "#fff",
+                backgroundColor: "rgba(255,255,255,0.10)",
+              },
+            }}
+          >
+            Log Out
+          </Button>
         </Stack>
       </Box>
 
