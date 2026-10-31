@@ -375,7 +375,7 @@ export default function MobilePreview() {
             )}
           </Box>
 
-          <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography
               sx={{
                 fontWeight: 800,
