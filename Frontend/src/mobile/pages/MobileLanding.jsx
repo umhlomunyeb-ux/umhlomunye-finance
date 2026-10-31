@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import {
   Alert,
   Box,
@@ -31,6 +31,7 @@ import {
 } from "@capacitor/barcode-scanner";
 
 import { supabase } from "../../lib/supabase";
+import { AuthContext } from "../../context/AuthContext";
 
 const DEVICE_ID_STORAGE_KEY = "lms_companion_device_id";
 
@@ -183,6 +184,7 @@ function extractQrPayload(rawValue) {
 
 export default function MobileLanding() {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useContext(AuthContext);
 
   const [deviceId, setDeviceId] = useState("");
   const [deviceLinked, setDeviceLinked] =
@@ -286,6 +288,11 @@ export default function MobileLanding() {
     checkDeviceStatus(id);
   }, [checkDeviceStatus]);
 
+  useEffect(() => {
+    if (!authLoading && user && deviceLinked) {
+      navigate("/mobile/preview", { replace: true });
+    }
+  }, [authLoading, user, deviceLinked, navigate]);
   const completeQrPairing = useCallback(
     async ({
       installationId,
@@ -532,7 +539,9 @@ export default function MobileLanding() {
   };
 
   const handleLogin = () => {
-    navigate("/login");
+    navigate("/login", {
+      state: { fromMobile: true },
+    });
   };
 
   if (checkingStatus) {
@@ -755,7 +764,7 @@ export default function MobileLanding() {
                 >
                   {pairing
                     ? "Pairing..."
-                    : "Scan QR Code"}
+                    : "Pair Device"}
                 </Button>
 
                 <Button
