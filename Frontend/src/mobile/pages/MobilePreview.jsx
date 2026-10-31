@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import {
   Alert,
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
@@ -16,9 +15,10 @@ import {
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
-import SmartphoneIcon from "@mui/icons-material/Smartphone";
+import LogoutIcon from "@mui/icons-material/Logout";
 
 import { supabase } from "../../lib/supabase";
+import { signOut } from "../../services/authService";
 
 const INSTALLATION_ID_STORAGE_KEY =
   "lms_companion_installation_id";
@@ -273,6 +273,17 @@ export default function MobilePreview() {
     [totalDisbursed, totalInterest]
   );
 
+  const handleLogout = async () => {
+    try {
+      const { error: logoutError } = await signOut();
+      if (logoutError) throw logoutError;
+      navigate("/mobile", { replace: true });
+    } catch (logoutError) {
+      console.error("MOBILE LOGOUT ERROR:", logoutError);
+      setError(logoutError?.message || "Unable to log out. Please try again.");
+    }
+  };
+
   const handleHome = () => {
     navigate("/mobile/preview");
   };
@@ -397,12 +408,13 @@ export default function MobilePreview() {
             </Typography>
           </Box>
 
+
           <Button
             variant="outlined"
             color="inherit"
             size="small"
-            startIcon={<SmartphoneIcon />}
-            onClick={() => navigate("/mobile")}
+            startIcon={<LogoutIcon />}
+            onClick={handleLogout}
             sx={{
               flexShrink: 0,
               minWidth: 0,
@@ -420,7 +432,7 @@ export default function MobilePreview() {
               },
             }}
           >
-            Pair Device
+            Log Out
           </Button>
         </Stack>
       </Box>
