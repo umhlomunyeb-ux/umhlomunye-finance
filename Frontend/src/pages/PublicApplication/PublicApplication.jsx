@@ -1297,7 +1297,9 @@ export default function PublicApplication() {
                 <Divider sx={{ mb: 2 }} />
                 <Typography><strong>Application:</strong> {publicOffer.application_number}</Typography>
                 <Typography><strong>Loan amount:</strong> R {Number(publicOffer.offer_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>Interest rate:</strong> {Number(publicOffer.interest_rate || 0).toLocaleString("en-ZA", { maximumFractionDigits: 2 })}%</Typography>
                 <Typography><strong>Interest:</strong> R {Number(publicOffer.offer_interest_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>First payment date:</strong> {publicOffer.preferred_payment_date ? new Date(`${publicOffer.preferred_payment_date}T00:00:00`).toLocaleDateString("en-ZA") : "To be confirmed"}</Typography>
                 <Typography><strong>Total repayment:</strong> R {Number(publicOffer.offer_total_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
                 <Typography><strong>Term:</strong> {publicOffer.offer_term_months} month(s)</Typography>
                 <Typography><strong>Monthly instalment:</strong> R {Number(publicOffer.offer_monthly_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
