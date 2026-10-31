@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -15,6 +16,7 @@ import {
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
+import SmartphoneIcon from "@mui/icons-material/Smartphone";
 
 import { supabase } from "../../lib/supabase";
 
@@ -394,6 +396,32 @@ export default function MobilePreview() {
               {companyName}
             </Typography>
           </Box>
+
+          <Button
+            variant="outlined"
+            color="inherit"
+            size="small"
+            startIcon={<SmartphoneIcon />}
+            onClick={() => navigate("/mobile")}
+            sx={{
+              flexShrink: 0,
+              minWidth: 0,
+              px: 1.25,
+              py: 1,
+              borderColor: "rgba(255,255,255,0.55)",
+              borderRadius: 2,
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              textTransform: "none",
+              "&:hover": {
+                borderColor: "#fff",
+                backgroundColor: "rgba(255,255,255,0.10)",
+              },
+            }}
+          >
+            Pair Device
+          </Button>
         </Stack>
       </Box>
 
