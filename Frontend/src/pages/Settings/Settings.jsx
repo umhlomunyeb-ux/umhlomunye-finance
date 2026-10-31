@@ -662,10 +662,6 @@ export default function Settings() {
       settings.term_2_months
     );
 
-    const term3Months = Number(
-      settings.term_3_months
-    );
-
     const maxTerm = Number(
       settings.maximum_loan_term_months
     );
@@ -742,13 +738,6 @@ export default function Settings() {
     }
 
     if (
-      !Number.isFinite(term3Months) ||
-      term3Months < term2Months
-    ) {
-      return "Term 3 must be greater than or equal to Term 2.";
-    }
-
-    if (
       !Number.isFinite(maxTerm) ||
       maxTerm <= 0
     ) {
@@ -761,10 +750,6 @@ export default function Settings() {
 
     if (term2Months > maxTerm) {
       return "Term 2 cannot exceed the maximum loan term.";
-    }
-
-    if (term3Months > maxTerm) {
-      return "Term 3 cannot exceed the maximum loan term.";
     }
 
     if (
@@ -2549,8 +2534,7 @@ export default function Settings() {
                 color="text.secondary"
                 sx={{ mb: 2 }}
               >
-                The loan term is automatically selected from
-                these amount ranges when a new loan is calculated.
+                Loans below R5,000 are repaid over 1 month. Loans from R5,000 up to R6,000 are repaid over 2 months.
               </Typography>
             </Grid>
 
@@ -2574,7 +2558,7 @@ export default function Settings() {
               <TextField
                 fullWidth
                 type="number"
-                label="Term 1 Maximum Amount"
+                label="Term 1 Maximum Amount (below R5,000)"
                 value={
                   settings.term_1_max_amount ?? ""
                 }
@@ -2645,7 +2629,7 @@ export default function Settings() {
               <TextField
                 fullWidth
                 type="number"
-                label="Term 2 Maximum Amount"
+                label="Term 2 Maximum Amount (R6,000 maximum)"
                 value={
                   settings.term_2_max_amount ?? ""
                 }
@@ -2682,47 +2666,6 @@ export default function Settings() {
                 onChange={(e) =>
                   handleChange(
                     "term_2_months",
-                    e.target.value
-                  )
-                }
-                disabled={!isAdmin}
-                InputProps={{
-                  endAdornment: (
-                    <Typography sx={{ ml: 1 }}>
-                      months
-                    </Typography>
-                  ),
-                }}
-              />
-            </Grid>
-
-            {/* TERM 3 */}
-            <Grid size={{ xs: 12 }}>
-              <Typography
-                variant="body2"
-                fontWeight={700}
-                sx={{ mb: 1, mt: 1 }}
-              >
-                Term Rule 3
-              </Typography>
-            </Grid>
-
-            <Grid
-              size={{
-                xs: 12,
-                md: 6,
-              }}
-            >
-              <TextField
-                fullWidth
-                type="number"
-                label="Term 3"
-                value={
-                  settings.term_3_months ?? ""
-                }
-                onChange={(e) =>
-                  handleChange(
-                    "term_3_months",
                     e.target.value
                   )
                 }
@@ -2972,18 +2915,6 @@ export default function Settings() {
                 ).toLocaleString()}{" "}
                 →{" "}
                 {settings.term_2_months} months
-              </strong>
-            </Typography>
-
-            <Typography>
-              Term 3:{" "}
-              <strong>
-                above R
-                {Number(
-                  settings.term_2_max_amount
-                ).toLocaleString()}{" "}
-                →{" "}
-                {settings.term_3_months} months
               </strong>
             </Typography>
 
