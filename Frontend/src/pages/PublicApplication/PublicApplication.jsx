@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   addLoanApplication,
@@ -100,6 +100,10 @@ export default function PublicApplication() {
   const [fundingBookingComplete, setFundingBookingComplete] = useState(false);
   const [fundingBookingMessage, setFundingBookingMessage] = useState("");
   const [preferredFundingDate, setPreferredFundingDate] = useState("");
+  const [publicOffer, setPublicOffer] = useState(null);
+  const [acceptanceChecked, setAcceptanceChecked] = useState(false);
+  const [offerFinalizing, setOfferFinalizing] = useState(false);
+  const [agreementUrl, setAgreementUrl] = useState("");
 
   const [loading, setLoading] = useState(false);
 
@@ -1012,6 +1016,47 @@ export default function PublicApplication() {
     }
   }
 
+  useEffect(() => {
+    if (!applicationId || !uploadToken || pendingSync) return undefined;
+    let active = true;
+    const checkOffer = async () => {
+      const { data, error: offerError } = await supabase.rpc("get_public_application_offer", {
+        p_application_id: applicationId,
+        p_upload_token: uploadToken,
+      });
+      if (!active || offerError || !data) return;
+      setPublicOffer(data);
+    };
+    checkOffer();
+    const timer = window.setInterval(checkOffer, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [applicationId, uploadToken, pendingSync]);
+
+  async function handleAcceptPublicOffer() {
+    try {
+      setOfferFinalizing(true);
+      setError("");
+      const { error: acceptError } = await supabase.rpc("accept_public_loan_offer", {
+        p_application_id: applicationId,
+        p_upload_token: uploadToken,
+        p_accept: true,
+        p_acceptance_ip: null,
+      });
+      if (acceptError) throw acceptError;
+      const { data, error: finalizeError } = await supabase.functions.invoke("finalize-public-loan-offer", {
+        body: { applicationId, uploadToken },
+      });
+      if (finalizeError) throw finalizeError;
+      if (!data?.success || !data?.signingUrl) throw new Error(data?.error || "The final agreement could not be prepared.");
+      setAgreementUrl(data.signingUrl);
+      setPublicOffer((current) => ({ ...current, offer_status: "FINALIZED" }));
+    } catch (err) {
+      setError(err?.message || "Unable to finalize the accepted quotation. Please retry.");
+    } finally {
+      setOfferFinalizing(false);
+    }
+  }
+
   async function handleFundingBooking(choice) {
     try {
       setLoading(true);
@@ -1243,6 +1288,33 @@ export default function PublicApplication() {
               </Box>
             )}
 
+            {publicOffer?.offer_status === "ISSUED" && (
+              <Paper variant="outlined" sx={{ mt: 3, p: 2, textAlign: "left" }}>
+                <Typography variant="h6" fontWeight="bold">Pre-Agreement Statement and Loan Quotation</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Review the proposed loan costs and repayment obligations before accepting. This is a quotation, not yet the final signed agreement.</Typography>
+                <Divider sx={{ mb: 2 }} />
+                <Typography><strong>Application:</strong> {publicOffer.application_number}</Typography>
+                <Typography><strong>Loan amount:</strong> R {Number(publicOffer.offer_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>Interest:</strong> R {Number(publicOffer.offer_interest_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>Total repayment:</strong> R {Number(publicOffer.offer_total_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography><strong>Term:</strong> {publicOffer.offer_term_months} month(s)</Typography>
+                <Typography><strong>Monthly instalment:</strong> R {Number(publicOffer.offer_monthly_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Typography variant="caption" color="text.secondary">Quotation expires: {publicOffer.offer_expires_at ? new Date(publicOffer.offer_expires_at).toLocaleString("en-ZA") : "Not specified"}</Typography>
+                <Divider sx={{ my: 2 }} />
+                <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <input type="checkbox" checked={acceptanceChecked} onChange={(event) => setAcceptanceChecked(event.target.checked)} />
+                  <span>I have read and accept the Pre-Agreement Statement and Loan Quotation, including the amount, interest, total repayment and instalment schedule.</span>
+                </label>
+                <Button fullWidth variant="contained" sx={{ mt: 2 }} disabled={!acceptanceChecked || offerFinalizing} onClick={handleAcceptPublicOffer}>
+                  {offerFinalizing ? "Preparing final agreement..." : "Accept Quotation and Prepare Agreement"}
+                </Button>
+              </Paper>
+            )}
+            {agreementUrl && (
+              <Alert severity="success" sx={{ mt: 2 }}>
+                Your loan has been created and the final agreement is ready. <a href={agreementUrl}>Open and sign your loan agreement</a>.
+              </Alert>
+            )}
             {affordabilityAssessment && (
               <Box sx={{ mt: 3, textAlign: "left" }}>
                 <Alert severity={affordabilityAssessment.status === "AFFORDABLE" ? "success" : "error"}>
