@@ -427,7 +427,7 @@ async function submitApplicationToServer(
     : [];
 
   if (submitted?.application_id && submitted?.upload_token) {
-    const { error: expenseError } = await supabase.rpc(
+    const { data: expenseResult, error: expenseError } = await supabase.rpc(
       "save_public_application_expenses",
       {
         p_application_id: submitted.application_id,
@@ -441,6 +441,8 @@ async function submitApplicationToServer(
         `Application was created but monthly expenses could not be saved: ${expenseError.message}`
       );
     }
+
+    submitted.affordability_assessment = expenseResult?.assessment || null;
   }
 
   return submitted;
