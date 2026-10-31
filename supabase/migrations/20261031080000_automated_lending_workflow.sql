@@ -60,17 +60,28 @@ BEGIN
   SELECT COALESCE(tier_1_interest_rate,40) INTO v_rate FROM public.system_settings LIMIT 1;
   v_rate := COALESCE(v_rate,40);
 
-  v_first_time := public.is_first_time_borrower(NULL, v_app.id_number);
+  v_first_time := public.is_first_time_borrower(v_app.customer_id, v_app.id_number);
   IF v_first_time THEN
-    v_term := 1;
-  ELSIF v_app.amount_requested < 5000 THEN
+    IF v_app.amount_requested > 1500 THEN
+      RAISE EXCEPTION 'FIRST_TIME_BORROWER_LIMIT: First-time applicants may request no more than R1,500.';
+    END IF;
     v_term := 1;
   ELSE
-    v_term := 2;
+    SELECT CASE
+      WHEN v_app.amount_requested <= term_1_max_amount THEN term_1_months
+      WHEN v_app.amount_requested <= term_2_max_amount THEN term_2_months
+      ELSE NULL
+    END INTO v_term
+    FROM public.system_settings
+    ORDER BY updated_at DESC LIMIT 1;
+    IF v_term IS NULL THEN
+      RAISE EXCEPTION 'No repayment term is configured for this loan amount.';
+    END IF;
   END IF;
 
   -- Flat monthly interest; total is distributed evenly over the agreed term.
-  v_interest := ROUND(COALESCE(v_app.amount_requested,0) * (v_rate/100) * v_term,2);
+  -- Match the live approve_loan_application calculation: one flat interest charge per loan.
+  v_interest := ROUND(COALESCE(v_app.amount_requested,0) * (v_rate/100),2);
   v_total := ROUND(COALESCE(v_app.amount_requested,0) + v_interest,2);
   v_repayment := ROUND(v_total / NULLIF(v_term,0),2);
 
@@ -103,3 +114,66 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.calculate_application_affordability(uuid) FROM PUBLIC, anon, authenticated;
+
+
+-- Save itemised expenses using the one-time application upload token.
+-- The token is never stored in plaintext; only its SHA-256 hash is compared.
+CREATE OR REPLACE FUNCTION public.save_public_application_expenses(
+  p_application_id uuid,
+  p_upload_token text,
+  p_expenses jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_valid boolean;
+  v_total numeric(14,2);
+  v_item jsonb;
+BEGIN
+  IF p_application_id IS NULL OR NULLIF(trim(p_upload_token),'') IS NULL THEN
+    RAISE EXCEPTION 'Application and secure upload token are required.';
+  END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM public.loan_application_upload_tokens t
+    JOIN public.loan_applications a ON a.id=t.application_id
+    WHERE t.application_id=p_application_id
+      AND t.token_hash=encode(digest(trim(p_upload_token),'sha256'),'hex')
+      AND t.expires_at > now()
+      AND t.used_at IS NULL
+      AND a.status='PENDING'
+  ) INTO v_valid;
+  IF NOT v_valid THEN RAISE EXCEPTION 'The application security token is invalid or expired.'; END IF;
+  IF jsonb_typeof(COALESCE(p_expenses,'[]'::jsonb)) <> 'array' THEN
+    RAISE EXCEPTION 'Expenses must be supplied as a list.';
+  END IF;
+  IF jsonb_array_length(COALESCE(p_expenses,'[]'::jsonb)) > 40 THEN
+    RAISE EXCEPTION 'A maximum of 40 expense items is allowed.';
+  END IF;
+
+  DELETE FROM public.loan_application_expenses WHERE application_id=p_application_id;
+  FOR v_item IN SELECT value FROM jsonb_array_elements(COALESCE(p_expenses,'[]'::jsonb))
+  LOOP
+    IF COALESCE((v_item->>'monthly_amount')::numeric,0) < 0 THEN
+      RAISE EXCEPTION 'Expense amounts cannot be negative.';
+    END IF;
+    IF COALESCE((v_item->>'monthly_amount')::numeric,0) > 0 THEN
+      INSERT INTO public.loan_application_expenses(application_id,expense_category,description,monthly_amount)
+      VALUES (
+        p_application_id,
+        COALESCE(NULLIF(trim(v_item->>'category'),''),'Other'),
+        NULLIF(trim(v_item->>'description'),''),
+        (v_item->>'monthly_amount')::numeric
+      );
+    END IF;
+  END LOOP;
+  SELECT COALESCE(SUM(monthly_amount),0) INTO v_total
+  FROM public.loan_application_expenses WHERE application_id=p_application_id;
+  UPDATE public.loan_applications SET monthly_expenses_total=v_total, updated_at=now()
+  WHERE id=p_application_id;
+  RETURN jsonb_build_object('success',true,'monthly_expenses_total',v_total);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.save_public_application_expenses(uuid,text,jsonb) TO anon, authenticated;
