@@ -8,6 +8,14 @@ ALTER TABLE public.customers
   ADD COLUMN IF NOT EXISTS existing_client_verified_by uuid REFERENCES auth.users(id),
   ADD COLUMN IF NOT EXISTS existing_client_verification_note text;
 
+UPDATE public.customers
+SET first_time_borrower_rule_applicable = true
+WHERE first_time_borrower_rule_applicable IS NULL;
+
+ALTER TABLE public.customers
+  ALTER COLUMN first_time_borrower_rule_applicable SET DEFAULT true,
+  ALTER COLUMN first_time_borrower_rule_applicable SET NOT NULL;
+
 CREATE OR REPLACE FUNCTION public.verify_existing_customer(
   p_customer_id uuid,
   p_verification_note text DEFAULT NULL
