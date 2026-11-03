@@ -550,6 +550,11 @@ export default function MobileApplicationReview() {
                 label="Address"
                 value={application.physical_address || "-"}
               />
+
+              <InfoRow
+                label="Work Address"
+                value={application.work_address || "-"}
+              />
             </Stack>
           </CardContent>
         </Card>
