@@ -1023,6 +1023,11 @@ export default function ApplicationReview() {
                 "-"}
             </Typography>
           </Grid>
+
+          <Grid item xs={12} md={8}>
+            <Typography color="text.secondary">Work Address</Typography>
+            <Typography fontWeight={500}>{application.work_address || "-"}</Typography>
+          </Grid>
         </Grid>
       </Paper>
 
