@@ -193,6 +193,7 @@ export default function PublicApplication() {
     setCustomerNumber("");
     setIdMessage("");
     setError("");
+    setSelectedTermMonths(1);
 
     setForm((previous) => ({
       ...previous,
