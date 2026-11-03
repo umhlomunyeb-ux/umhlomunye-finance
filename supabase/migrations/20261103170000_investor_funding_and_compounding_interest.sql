@@ -312,6 +312,9 @@ DECLARE
   v_transaction_id uuid;
   v_due_date date;
   v_new_balance numeric(14,2);
+  v_position jsonb;
+  v_current_shortfall numeric(14,2);
+  v_available numeric(14,2);
 BEGIN
   IF NOT public.current_user_is_active_admin() THEN
     RAISE EXCEPTION 'Only active administrators can record investor funding.';
@@ -322,8 +325,15 @@ BEGIN
   SELECT * INTO v_request FROM public.investor_funding_requests
   WHERE id=p_request_id AND status='REQUESTED' FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'This funding request is no longer awaiting investor funds.'; END IF;
-  IF round(p_amount,2) <> v_request.funding_shortfall THEN
-    RAISE EXCEPTION 'Investor funding must equal the current shortfall of R%.',v_request.funding_shortfall;
+
+  v_position := public.get_company_funding_position();
+  v_available := greatest(coalesce((v_position->>'available_funds')::numeric,0),0);
+  v_current_shortfall := round(greatest(v_request.loan_amount-v_available,0),2);
+  IF v_current_shortfall <= 0 THEN
+    RAISE EXCEPTION 'The company bank balance now covers this application. Refresh the funding queue before recording investor funds.';
+  END IF;
+  IF round(p_amount,2) <> v_current_shortfall THEN
+    RAISE EXCEPTION 'Investor funding must equal the current shortfall of R%. Refresh the funding queue and try again.',v_current_shortfall;
   END IF;
 
   SELECT * INTO v_investor FROM public.investors WHERE id=p_investor_id AND is_active=true;
