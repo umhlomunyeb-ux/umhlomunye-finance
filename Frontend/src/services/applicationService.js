@@ -301,10 +301,8 @@ function validateApplication(
     );
   }
 
-  if (!cellphone) {
-    throw new Error(
-      "Cellphone number is required."
-    );
+  if (!/^0\\d{9}$/.test(cellphone)) {
+    throw new Error("A valid 10-digit cellphone number starting with 0 is required.");
   }
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
