@@ -555,7 +555,7 @@ export default function MobileApplicationReview() {
                 label="Work Address"
                 value={application.work_address || "-"}
               />
-              <DetailField
+              <InfoRow
                 label="Work Telephone Number"
                 value={application.work_telephone || "-"}
               />
