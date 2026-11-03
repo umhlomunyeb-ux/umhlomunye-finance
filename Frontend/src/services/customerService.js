@@ -515,4 +515,28 @@ export async function getCustomerById(
   }
 
   return data;
+}\n\nexport async function increaseCustomerCreditLimit(customerId, newCreditLimit) {
+  if (!customerId) throw new Error("Customer ID is required.");
+  const amount = Number(newCreditLimit);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Enter a valid new credit limit.");
+  }
+  if (isOfflineMode) {
+    throw new Error("Credit limit increases are available only when connected to the live system.");
+  }
+
+  const { data, error } = await supabase.rpc("increase_customer_credit_limit", {
+    p_customer_id: customerId,
+    p_new_credit_limit: amount,
+  });
+
+  if (error) {
+    console.error("INCREASE CUSTOMER CREDIT LIMIT ERROR:", error);
+    throw new Error(getCustomerErrorMessage(error));
+  }
+  return data;
+}
+
+function getCustomerErrorMessage(error) {
+  return error?.message || "Unable to increase customer credit limit.";
 }
