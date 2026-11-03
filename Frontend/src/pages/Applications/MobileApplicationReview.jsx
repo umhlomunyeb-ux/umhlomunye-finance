@@ -3,8 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   Alert,
-  BottomNavigation,
-  BottomNavigationAction,
   Box,
   Button,
   Card,
@@ -16,14 +14,10 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  Paper,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 
 import { supabase } from "../../lib/supabase";
 import { findCustomerByIdNumber } from "../../services/customerService";
@@ -336,17 +330,6 @@ export default function MobileApplicationReview() {
       );
     } finally {
       setRejecting(false);
-    }
-  }
-
-  function handleNavigation(value) {
-    if (value === "home") {
-      navigate("/mobile/preview");
-      return;
-    }
-
-    if (value === "applications") {
-      navigate("/mobile/application-review");
     }
   }
 
