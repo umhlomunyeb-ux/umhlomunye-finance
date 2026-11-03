@@ -1088,3 +1088,182 @@ BEGIN
   END LOOP;
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.record_loan_payment(p_loan_id uuid, p_amount numeric, p_payment_date date, p_notes text DEFAULT ''::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_loan public.loans%rowtype;
+  v_new_balance numeric;
+  v_new_total_paid numeric;
+  v_new_status text;
+  v_next_interest_date timestamp without time zone;
+  v_next_payment_date date;
+  v_due_payment_date date;
+  v_transaction_id uuid;
+  v_cycle_days integer;
+  v_interest_cycle_enabled boolean;
+  v_company_timezone text;
+  v_interest_time time;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication is required to record a loan payment.';
+  end if;
+
+  if p_loan_id is null then
+    raise exception 'Loan ID is required.';
+  end if;
+
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Payment amount must be greater than zero.';
+  end if;
+
+  if p_payment_date is null then
+    raise exception 'Payment date is required.';
+  end if;
+
+  select *
+  into v_loan
+  from public.loans
+  where id = p_loan_id
+  for update;
+
+  if not found then
+    raise exception 'Loan not found.';
+  end if;
+
+  if lower(coalesce(v_loan.loan_status, '')) in
+     ('completed', 'void', 'cancelled') then
+    raise exception
+      'This loan is not available for repayment. Current status: %',
+      v_loan.loan_status;
+  end if;
+
+  if p_amount > coalesce(v_loan.current_balance, 0) then
+    raise exception
+      'Payment amount (%) cannot be greater than the current balance (%).',
+      p_amount,
+      coalesce(v_loan.current_balance, 0);
+  end if;
+
+  select
+    coalesce(interest_cycle_days, 8),
+    coalesce(interest_cycle_enabled, true),
+    coalesce(nullif(timezone, ''), 'Africa/Johannesburg'),
+    coalesce(interest_cycle_time, time '00:01:00')
+  into
+    v_cycle_days,
+    v_interest_cycle_enabled,
+    v_company_timezone,
+    v_interest_time
+  from public.system_settings
+  order by updated_at desc
+  limit 1;
+
+  if not found then
+    raise exception 'Loan Settings have not been configured.';
+  end if;
+
+  v_cycle_days := greatest(1, coalesce(v_cycle_days, 8));
+
+  v_new_balance := round(
+    greatest(
+      coalesce(v_loan.current_balance, 0) - p_amount,
+      0
+    ),
+    2
+  );
+
+  v_new_total_paid := round(
+    coalesce(v_loan.total_paid, 0) + p_amount,
+    2
+  );
+
+  if v_new_balance <= 0 then
+    v_new_status := 'Completed';
+  else
+    v_new_status := 'Active';
+  end if;
+
+  v_due_payment_date := coalesce(
+    v_loan.next_payment_date,
+    p_payment_date
+  );
+
+  if v_new_balance <= 0 then
+    v_next_payment_date := null;
+    v_next_interest_date := null;
+  elsif p_payment_date >= v_due_payment_date then
+    -- Advance the next instalment date, but keep the one-time
+    -- interest date anchored to the original first scheduled date.
+    v_next_payment_date := (
+      v_due_payment_date + interval '1 month'
+    )::date;
+    v_next_interest_date := v_loan.next_interest_date;
+  else
+    v_next_payment_date := v_loan.next_payment_date;
+    v_next_interest_date := v_loan.next_interest_date;
+  end if;
+
+  update public.loans
+  set
+    current_balance = v_new_balance,
+    total_paid = v_new_total_paid,
+    loan_status = v_new_status,
+    first_payment_date = coalesce(
+      first_payment_date,
+      p_payment_date
+    ),
+    last_payment_date = p_payment_date,
+    next_interest_date = v_next_interest_date,
+    next_payment_date = v_next_payment_date,
+    updated_at = current_timestamp
+  where id = p_loan_id;
+
+  insert into public.loan_transactions (
+    loan_id,
+    transaction_date,
+    transaction_type,
+    description,
+    debit,
+    credit,
+    balance,
+    created_by
+  )
+  values (
+    p_loan_id,
+    p_payment_date::timestamp,
+    'Payment',
+    case
+      when trim(coalesce(p_notes, '')) = '' then
+        'Loan repayment'
+      else
+        p_notes
+    end,
+    0,
+    p_amount,
+    v_new_balance,
+    auth.uid()
+  )
+  returning id into v_transaction_id;
+
+  return json_build_object(
+    'success', true,
+    'loan_id', p_loan_id,
+    'transaction_id', v_transaction_id,
+    'payment_amount', p_amount,
+    'payment_date', p_payment_date,
+    'new_balance', v_new_balance,
+    'total_paid', v_new_total_paid,
+    'loan_status', v_new_status,
+    'first_payment_date',
+      coalesce(v_loan.first_payment_date, p_payment_date),
+    'next_interest_date', v_next_interest_date,
+    'next_payment_date', v_next_payment_date
+  );
+end;
+$function$
+;
