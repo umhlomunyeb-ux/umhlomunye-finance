@@ -75,6 +75,30 @@ export default function CustomerTable({ customers, onChanged }) {
     }
   }
 
+  async function handleIncreaseCreditLimit(customer) {
+    const currentLimit = Number(customer.credit_limit || 6000);
+    const entered = window.prompt(
+      `Enter the new total credit limit for ${customer.first_name} ${customer.last_name}. Current limit: R${currentLimit.toFixed(2)}`,
+      String(currentLimit)
+    );
+
+    if (entered === null) return;
+    const newLimit = Number(String(entered).replace(/,/g, "").trim());
+    if (!Number.isFinite(newLimit) || newLimit <= currentLimit) {
+      toast.error("The new credit limit must be greater than the current limit.");
+      return;
+    }
+
+    try {
+      await increaseCustomerCreditLimit(customer.id, newLimit);
+      toast.success(`Credit limit increased to R${newLimit.toFixed(2)}. It is effective immediately.`);
+      if (onChanged) await onChanged();
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to increase customer credit limit.");
+    }
+  }
+
   async function handleReactivate(id) {
     try {
       await reactivateCustomer(id);
@@ -137,6 +161,15 @@ export default function CustomerTable({ customers, onChanged }) {
                   sx={{ mr: 1, mb: 0.5 }}
                 >
                   View
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  size="small"
+                  onClick={() => handleIncreaseCreditLimit(customer)}
+                  sx={{ mr: 1, mb: 0.5 }}
+                >
+                  Increase Credit Limit
                 </Button>
                 {customer.is_blacklisted ? (
                   <Button
