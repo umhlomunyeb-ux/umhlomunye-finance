@@ -23,6 +23,7 @@ import {
 
 import { signOut } from "../../services/authService";
 import { getSystemSettings } from "../../services/settingsService";
+import { isCurrentUserAdmin } from "../../services/userService";
 
 const menu = [
   {
@@ -81,9 +82,14 @@ export default function Sidebar() {
 
   const [companyShortName, setCompanyShortName] =
     useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     loadCompanySettings();
+    isCurrentUserAdmin().then(setIsAdmin).catch((error) => {
+      console.error("Sidebar role check error:", error);
+      setIsAdmin(false);
+    });
   }, []);
 
   async function loadCompanySettings() {
@@ -246,7 +252,7 @@ export default function Sidebar() {
           Main Menu
         </div>
 
-        {menu.map((item) => {
+        {menu.filter((item) => item.path !== "/investors" || isAdmin).map((item) => {
           const isActive =
             location.pathname ===
               item.path ||
