@@ -42,6 +42,9 @@ export async function enableAdminWebPush() {
   if (!publicKey) {
     throw new Error("Web Push is not configured yet. The administrator must add the public VAPID key to the mobile app build settings.");
   }
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error("Sign in as an administrator before enabling notifications.");
   if (Notification.permission === "denied") {
     throw new Error("Notifications are blocked for this Home Screen app. Enable them in iPhone Settings, then try again.");
   }
@@ -60,10 +63,6 @@ export async function enableAdminWebPush() {
       applicationServerKey: base64UrlToUint8Array(publicKey),
     });
   }
-
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError) throw userError;
-  if (!user) throw new Error("Sign in as an administrator before enabling notifications.");
 
   const json = subscription.toJSON();
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
