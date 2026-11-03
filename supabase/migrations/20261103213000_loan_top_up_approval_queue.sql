@@ -125,12 +125,14 @@ begin
   -- Keep the existing ledger balance and payment history intact. The new
   -- principal is posted once; the revised instalment estimate uses the
   -- 40% monthly rate and remaining term.
+  -- Recalculate the consolidated schedule on the new outstanding balance.
+  -- Prior repayments remain recorded and are included only in total_repayment.
   if v_remaining_months = 2 then
-    v_monthly := round((v_new_principal * 1.40 * 1.40) / 2.40,2);
+    v_monthly := round((v_new_balance * 1.40 * 1.40) / 2.40,2);
   else
-    v_monthly := round(v_new_principal * 1.40,2);
+    v_monthly := round(v_new_balance * 1.40,2);
   end if;
-  v_total := round(v_monthly * v_remaining_months,2);
+  v_total := round(coalesce(v_loan.total_paid,0) + (v_monthly * v_remaining_months),2);
 
   insert into public.loan_transactions(
     loan_id,transaction_date,transaction_type,description,debit,credit,balance,created_by
