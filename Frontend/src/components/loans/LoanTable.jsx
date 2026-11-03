@@ -7,6 +7,7 @@ import {
 } from "@mui/material";
 
 import { getLoans } from "../../services/loanService";
+import { adminUpdateLoan } from "../../services/loanEditService";
 import RecordPayment from "../../pages/Repayments/RecordPayment";
 import {
   requestLoanTopUp,
@@ -23,6 +24,8 @@ export default function LoanTable({ refreshKey, search = "" }) {
   const [loading, setLoading] = useState(true);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [topUpOpen, setTopUpOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ principal_amount: "", term_months: 1, first_payment_date: "", next_payment_date: "", notes: "" });
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [topUpAmount, setTopUpAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,6 +59,35 @@ export default function LoanTable({ refreshKey, search = "" }) {
   function handlePaymentClose() {
     setPaymentOpen(false);
     setSelectedLoan(null);
+  }
+
+  function openEdit(loan) {
+    setSelectedLoan(loan);
+    setEditForm({
+      principal_amount: String(loan.principal_amount ?? ""),
+      term_months: Number(loan.term_months) === 2 ? 2 : 1,
+      first_payment_date: loan.first_payment_date || "",
+      next_payment_date: loan.next_payment_date || loan.first_payment_date || "",
+      notes: loan.notes || "",
+    });
+    setError("");
+    setEditOpen(true);
+  }
+
+  async function submitEdit() {
+    if (!selectedLoan) return;
+    try {
+      setBusy(true);
+      setError("");
+      await adminUpdateLoan(selectedLoan.id, editForm);
+      setEditOpen(false);
+      setMessage("Loan details updated. Any principal change has been recorded as a separate ledger adjustment; payment history and bank transactions were preserved.");
+      await loadData();
+    } catch (err) {
+      setError(err?.message || "Unable to update loan details.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function openTopUp(loan) {
@@ -178,7 +210,7 @@ export default function LoanTable({ refreshKey, search = "" }) {
                   <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                     <Button size="small" variant="outlined" onClick={() => navigate(`/loans/${loan.id}`)}>View</Button>
                     <Button size="small" variant="contained" onClick={() => handlePaymentClick(loan)}>Payment</Button>
-                    <Button size="small" color="warning" onClick={() => setMessage("Loan editing is being completed separately; use Top Up for an increase to an existing loan.")}>Edit</Button>
+                    <Button size="small" color="warning" onClick={() => openEdit(loan)}>Edit</Button>
                     <Button size="small" variant="outlined" onClick={() => openTopUp(loan)} disabled={loan.loan_status !== "Active"}>Top Up</Button>
                     <Button size="small" color="error" disabled>Void</Button>
                   </Stack>
@@ -219,6 +251,40 @@ export default function LoanTable({ refreshKey, search = "" }) {
           <Button variant="outlined" disabled={busy} onClick={handleProcessQueue}>Process funding queue</Button>
         </Stack>}
       </Paper>
+
+      <Dialog open={editOpen} onClose={() => !busy && setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Edit loan — {selectedLoan?.loan_number}</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Changes are saved with an audit record. Principal changes create a separate loan-ledger adjustment; historical payments and bank transactions are not rewritten.
+          </Alert>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField fullWidth type="number" label="Principal amount (R)" value={editForm.principal_amount}
+              onChange={(event) => setEditForm((v) => ({ ...v, principal_amount: event.target.value }))}
+              inputProps={{ min: "0.01", step: "0.01" }} />
+            <TextField select fullWidth label="Repayment term" value={editForm.term_months}
+              onChange={(event) => setEditForm((v) => ({ ...v, term_months: Number(event.target.value) }))}>
+              <MenuItem value={1}>1 month</MenuItem>
+              <MenuItem value={2}>2 months</MenuItem>
+            </TextField>
+            <TextField fullWidth type="date" label="First payment date" value={editForm.first_payment_date}
+              onChange={(event) => setEditForm((v) => ({ ...v, first_payment_date: event.target.value }))}
+              InputLabelProps={{ shrink: true }} />
+            <TextField fullWidth type="date" label="Next payment date" value={editForm.next_payment_date}
+              onChange={(event) => setEditForm((v) => ({ ...v, next_payment_date: event.target.value }))}
+              InputLabelProps={{ shrink: true }} />
+            <TextField fullWidth multiline minRows={2} label="Loan notes" value={editForm.notes}
+              onChange={(event) => setEditForm((v) => ({ ...v, notes: event.target.value }))} />
+            <Typography variant="caption" color="text.secondary">Interest remains fixed at 40% per month. The revised instalment is recalculated from the edited principal and selected term.</Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={submitEdit} variant="contained" disabled={busy || !editForm.principal_amount || !editForm.first_payment_date || !editForm.next_payment_date}>
+            {busy ? "Saving..." : "Save changes"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={topUpOpen} onClose={() => !busy && setTopUpOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Request loan top-up</DialogTitle>
