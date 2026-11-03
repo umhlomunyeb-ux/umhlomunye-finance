@@ -60,6 +60,7 @@ const EMPTY_FORM = {
   email: "",
   physical_address: "",
   work_address: "",
+  work_telephone: "",
   employer: "",
   employment_status: "",
   monthly_income: "",
@@ -718,6 +719,11 @@ export default function PublicApplication() {
       return;
     }
 
+    if (!/^0\\d{9}$/.test(String(form.work_telephone || "").trim())) {
+      setError("Please enter a valid 10-digit work telephone number starting with 0.");
+      return;
+    }
+
     const missingExpense = expenses.find((item) =>
       item.monthly_amount === "" || !Number.isFinite(Number(item.monthly_amount)) || Number(item.monthly_amount) < 0
     );
@@ -806,6 +812,9 @@ export default function PublicApplication() {
 
           work_address:
             form.work_address.trim(),
+
+          work_telephone:
+            form.work_telephone.trim(),
 
           employer:
             form.employer.trim() || null,
@@ -1800,23 +1809,9 @@ export default function PublicApplication() {
                     helperText="Required"
                   />
                 </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    required
-                    multiline
-                    rows={2}
-                    label="Work Address"
-                    name="work_address"
-                    value={form.work_address}
-                    onChange={handleChange}
-                    helperText="Required"
-                  />
-                </Grid>
               </Grid>
 
-              {!existingCustomer && (
-                <>
+              <>
                   <Divider
                     sx={{ my: 4 }}
                   />
@@ -1840,7 +1835,7 @@ export default function PublicApplication() {
                     <Grid
                       item
                       xs={12}
-                      sm={6}
+                      sm={5}
                     >
                       <TextField
                         fullWidth
@@ -1889,11 +1884,34 @@ export default function PublicApplication() {
                         </MenuItem>
                       </TextField>
                     </Grid>
-
-
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        required
+                        multiline
+                        rows={2}
+                        label="Work Address"
+                        name="work_address"
+                        value={form.work_address}
+                        onChange={handleChange}
+                        helperText="Required"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        required
+                        type="tel"
+                        label="Work Telephone Number"
+                        name="work_telephone"
+                        value={form.work_telephone}
+                        onChange={handleChange}
+                        inputProps={{ inputMode: "numeric", pattern: "0[0-9]{9}", maxLength: 10 }}
+                        helperText="Enter a 10-digit work number, e.g. 0111234567"
+                      />
+                    </Grid>
                   </Grid>
                 </>
-              )}
 
               <Divider sx={{ my: 4 }} />
 
