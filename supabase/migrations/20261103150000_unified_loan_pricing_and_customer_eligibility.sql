@@ -1142,7 +1142,9 @@ begin
       v_loan.loan_status;
   end if;
 
-  if p_amount > coalesce(v_loan.current_balance, 0) then
+  -- Allow a one-cent rounding tolerance so the two equal instalments
+  -- can close the loan without leaving or rejecting a one-cent residue.
+  if p_amount > coalesce(v_loan.current_balance, 0) + 0.01 then
     raise exception
       'Payment amount (%) cannot be greater than the current balance (%).',
       p_amount,
@@ -1192,6 +1194,12 @@ begin
     v_loan.next_payment_date,
     p_payment_date
   );
+
+  IF COALESCE(v_loan.term_months,0) = 2
+     AND p_payment_date >= v_due_payment_date
+     AND v_new_balance <= 0.01 THEN
+    v_new_balance := 0;
+  END IF;
 
   if v_new_balance <= 0 then
     v_next_payment_date := null;
