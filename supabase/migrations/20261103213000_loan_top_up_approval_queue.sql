@@ -261,14 +261,14 @@ begin
   end loop;
   return jsonb_build_object('processed',v_processed);
 end;
-$;
+$$;
 
 create or replace function public.run_automated_funding_cycle()
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
-as $
+as $$
 declare
   v_expired integer;
   v_result jsonb;
@@ -280,7 +280,7 @@ begin
   v_topups := public.process_loan_top_up_funding_queue();
   return jsonb_build_object('expired_offers_requeued',v_expired,'funding_result',v_result,'top_up_result',v_topups);
 end;
-$;
+$$;
 
 revoke all on function public.request_loan_top_up(uuid,numeric) from public;
 revoke all on function public.approve_loan_top_up(uuid) from public;
