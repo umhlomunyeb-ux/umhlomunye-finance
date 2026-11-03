@@ -555,6 +555,10 @@ export default function MobileApplicationReview() {
                 label="Work Address"
                 value={application.work_address || "-"}
               />
+              <InfoRow
+                label="Work Telephone Number"
+                value={application.work_telephone || "-"}
+              />
             </Stack>
           </CardContent>
         </Card>

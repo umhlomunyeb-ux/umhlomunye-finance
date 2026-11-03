@@ -277,6 +277,7 @@ function validateApplication(
   const email = String(applicationData.email || "").trim();
   const physicalAddress = String(applicationData.physical_address || "").trim();
   const workAddress = String(applicationData.work_address || "").trim();
+  const workTelephone = String(applicationData.work_telephone || "").trim();
 
   const bankName =
     String(
@@ -300,10 +301,8 @@ function validateApplication(
     );
   }
 
-  if (!cellphone) {
-    throw new Error(
-      "Cellphone number is required."
-    );
+  if (!/^0\\d{9}$/.test(cellphone)) {
+    throw new Error("A valid 10-digit cellphone number starting with 0 is required.");
   }
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -311,6 +310,7 @@ function validateApplication(
   }
   if (!physicalAddress) throw new Error("Physical address is required.");
   if (!workAddress) throw new Error("Work address is required.");
+  if (!/^0\\d{9}$/.test(workTelephone)) throw new Error("A valid 10-digit work telephone number is required.");
 
   const requiredExpenseCategories = [
     "Grocery", "Housing", "Clothing", "Transportation",
@@ -370,6 +370,7 @@ async function submitApplicationToServer(
     email,
     physical_address,
     work_address,
+    work_telephone,
     id_number,
     employer,
     employment_status,
@@ -457,6 +458,17 @@ async function submitApplicationToServer(
   }
 
   const submitted = extractRpcResult(data);
+  if (submitted?.application_id && submitted?.upload_token) {
+    const { error: workTelephoneError } = await supabase.rpc("save_public_application_work_telephone", {
+      p_application_id: submitted.application_id,
+      p_upload_token: submitted.upload_token,
+      p_work_telephone: work_telephone,
+    });
+    if (workTelephoneError) {
+      throw new Error(`Application was created but work telephone could not be saved: ${workTelephoneError.message}`);
+    }
+  }
+
   const expenses = Array.isArray(applicationData.monthly_expenses)
     ? applicationData.monthly_expenses
     : [];

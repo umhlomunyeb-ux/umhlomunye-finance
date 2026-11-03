@@ -352,6 +352,32 @@ export async function deactivateCustomer(
   return data;
 }
 
+export async function blacklistCustomer(id, reason) {
+  let userId = null;
+  if (!isOfflineMode) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    userId = user?.id || null;
+  }
+
+  return updateCustomer(id, {
+    is_blacklisted: true,
+    blacklist_reason: reason?.trim() || null,
+    blacklisted_at: new Date().toISOString(),
+    blacklisted_by: userId,
+  });
+}
+
+export async function unblacklistCustomer(id) {
+  return updateCustomer(id, {
+    is_blacklisted: false,
+    blacklist_reason: null,
+    blacklisted_at: null,
+    blacklisted_by: null,
+  });
+}
+
 export async function reactivateCustomer(
   id
 ) {
