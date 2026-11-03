@@ -12,12 +12,6 @@
     "test:e2e": "node ./node_modules/@playwright/test/cli.js test"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.2",
-    "@capacitor/barcode-scanner": "^3.1.2",
-    "@capacitor/cli": "^8.5.2",
-    "@capacitor/core": "^8.5.2",
-    "@capacitor/ios": "^8.5.2",
-    "@capacitor/push-notifications": "^8.1.2",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^9.2.0",
