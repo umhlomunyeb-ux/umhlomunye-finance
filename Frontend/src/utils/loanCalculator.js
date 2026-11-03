@@ -114,87 +114,49 @@ export function getLoanTermForAmount(amount, settings) {
 export function calculateLoan(amount, settings) {
   const principal = Number(amount);
 
-  if (!settings) {
-    throw new Error("Loan settings could not be loaded.");
-  }
+  const empty = {
+    principalAmount: Number.isFinite(principal) ? principal : 0,
+    interestRate: 0,
+    interestAmount: 0,
+    totalRepayment: 0,
+    monthlyRepayment: 0,
+    balance: 0,
+    termMonths: 0,
+    initialBalance: 0,
+    additionalInterestRate: 40,
+    additionalInterestDateDays: 8,
+  };
 
-  if (!Number.isFinite(principal) || principal <= 0) {
-    return {
-      principalAmount: 0,
-      interestRate: 0,
-      interestAmount: 0,
-      totalRepayment: 0,
-      monthlyRepayment: 0,
-      balance: 0,
-      termMonths: 0,
-    };
-  }
+  if (!settings) throw new Error("Loan settings could not be loaded.");
+  if (!Number.isFinite(principal) || principal <= 0) return empty;
 
   const minimum = Number(settings.minimum_loan_amount);
   const maximum = Number(settings.maximum_loan_amount);
+  if (principal < minimum || principal > maximum) return empty;
 
-  if (principal < minimum) {
-    return {
-      principalAmount: principal,
-      interestRate: 0,
-      interestAmount: 0,
-      totalRepayment: 0,
-      monthlyRepayment: 0,
-      balance: 0,
-      termMonths: 0,
-    };
+  const interestRate = Number(getInterestRateForAmount(principal, settings));
+  const termMonths = getLoanTermForAmount(principal, settings);
+  if (!Number.isFinite(interestRate) || interestRate < 0) {
+    throw new Error("The configured interest rate is invalid.");
   }
 
-  if (principal > maximum) {
-    return {
-      principalAmount: principal,
-      interestRate: 0,
-      interestAmount: 0,
-      totalRepayment: 0,
-      monthlyRepayment: 0,
-      balance: 0,
-      termMonths: 0,
-    };
+  // Charge the initial 40% once when the loan is issued.
+  const interestAmount = Number((principal * interestRate / 100).toFixed(2));
+  const initialBalance = Number((principal + interestAmount).toFixed(2));
+
+  let monthlyRepayment;
+  let totalRepayment;
+
+  if (termMonths === 2) {
+    // The second 40% charge is applied to the balance remaining after
+    // instalment one. Solve for two equal instalments:
+    // X = (initialBalance - X) * 1.40.
+    monthlyRepayment = Number((initialBalance * 1.4 / 2.4).toFixed(2));
+    totalRepayment = Number((monthlyRepayment * 2).toFixed(2));
+  } else {
+    monthlyRepayment = initialBalance;
+    totalRepayment = initialBalance;
   }
-
-  const interestRate = Number(
-    getInterestRateForAmount(principal, settings)
-  );
-
-  const termMonths = getLoanTermForAmount(
-    principal,
-    settings
-  );
-
-  /*
-   * Current loan pricing:
-   *
-   * principal × configured interest rate
-   */
-  const interestAmount = Number(
-    (
-      principal *
-      (interestRate / 100)
-    ).toFixed(2)
-  );
-
-  const totalRepayment = Number(
-    (
-      principal +
-      interestAmount
-    ).toFixed(2)
-  );
-
-  /*
-   * Equal monthly repayments.
-   *
-   * The final month absorbs any cent-rounding difference.
-   */
-  const monthlyRepayment = Number(
-    (
-      totalRepayment / termMonths
-    ).toFixed(2)
-  );
 
   return {
     principalAmount: principal,
@@ -202,7 +164,10 @@ export function calculateLoan(amount, settings) {
     interestAmount,
     totalRepayment,
     monthlyRepayment,
-    balance: totalRepayment,
+    balance: initialBalance,
+    initialBalance,
+    additionalInterestRate: interestRate,
+    additionalInterestDateDays: Number(settings.interest_cycle_days) || 8,
     termMonths,
   };
 }

@@ -20,8 +20,6 @@ import {
   getCustomerById,
 } from "../../services/customerService";
 
-import { verifyExistingCustomer } from "../../services/existingClientService";
-import { isCurrentUserAdmin } from "../../services/userService";
 import { parseSouthAfricanId } from "../../utils/saIdValidator";
 
 export default function CustomerProfile() {
@@ -31,23 +29,11 @@ export default function CustomerProfile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [verifying, setVerifying] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     loadCustomer();
-    checkAdmin();
   }, [id]);
-
-  async function checkAdmin() {
-    try {
-      setIsAdmin(Boolean(await isCurrentUserAdmin()));
-    } catch (err) {
-      console.error("Unable to check administrator access:", err);
-      setIsAdmin(false);
-    }
-  }
 
   async function loadCustomer() {
     try {
@@ -137,26 +123,6 @@ export default function CustomerProfile() {
     }
   }
 
-  async function handleVerifyExistingClient() {
-    const confirmed = window.confirm(
-      "Confirm that this customer has previously borrowed from Umhlomunye Finance. Verification automatically removes the R1,500 first-loan restriction and grants eligibility up to R6,000."
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setVerifying(true);
-      await verifyExistingCustomer(customer.id);
-      toast.success("Existing client verified. Loan limit eligibility is now R6,000.");
-      await loadCustomer();
-    } catch (err) {
-      console.error("Existing-client verification failed:", err);
-      toast.error(err.message || "Unable to verify existing client.");
-    } finally {
-      setVerifying(false);
-    }
-  }
-
   if (loading) {
     return (
       <Box sx={{ p: 3 }}>
@@ -181,8 +147,6 @@ export default function CustomerProfile() {
     );
   }
 
-  const isVerifiedExistingClient = Boolean(customer.existing_client_verified_at);
-
   return (
     <Box sx={{ p: 3 }}>
       <Box
@@ -198,14 +162,7 @@ export default function CustomerProfile() {
         <Box>
           <Typography variant="h4">Customer Profile</Typography>
           <Box sx={{ display: "flex", gap: 1, mt: 1, flexWrap: "wrap" }}>
-            {isVerifiedExistingClient ? (
-              <Chip label="Verified Existing Client" color="success" />
-            ) : (
-              <Chip label="Standard Customer" variant="outlined" />
-            )}
-            {isVerifiedExistingClient && (
-              <Chip label="Loan eligibility up to R6,000" color="primary" variant="outlined" />
-            )}
+            <Chip label="Loan eligibility up to R6,000" color="primary" variant="outlined" />
           </Box>
         </Box>
 
@@ -234,35 +191,11 @@ export default function CustomerProfile() {
             </>
           )}
 
-          {isAdmin && !isVerifiedExistingClient && (
-            <Button
-              variant="contained"
-              color="success"
-              onClick={handleVerifyExistingClient}
-              disabled={verifying || editing}
-            >
-              {verifying ? "Verifying..." : "Verify Existing Client"}
-            </Button>
-          )}
-
           <Button component={Link} to="/customers" variant="outlined">
             Back
           </Button>
         </Box>
       </Box>
-
-      {isVerifiedExistingClient && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="body2">
-            Verified on: {new Date(customer.existing_client_verified_at).toLocaleString("en-ZA")}
-          </Typography>
-          {customer.existing_client_verification_note && (
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              Verification note: {customer.existing_client_verification_note}
-            </Typography>
-          )}
-        </Paper>
-      )}
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
