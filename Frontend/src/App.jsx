@@ -30,6 +30,9 @@ import MobileApplicationReviews from "./pages/Applications/MobileApplicationRevi
 import MobileApplicationReview from "./pages/Applications/MobileApplicationReview";
 import MobileLanding from "./mobile/pages/MobileLanding";
 import MobilePreview from "./mobile/pages/MobilePreview";
+import MobileLogin from "./mobile/pages/MobileLogin";
+import MobileFundingRequests from "./mobile/pages/MobileFundingRequests";
+import MobileAdminRoute from "./routes/MobileAdminRoute";
 
 import MobileApp from "./mobile/MobileApp";
 
@@ -91,17 +94,16 @@ export default function App() {
               element={<MobileLanding />} 
             />
 
-            <Route 
-              path="/mobile/preview" 
-              element={<MobilePreview />} 
-            />
+            <Route path="/mobile/login" element={<MobileLogin />} />
+            <Route path="/mobile/preview" element={<ProtectedRoute><MobileAdminRoute><MobilePreview /></MobileAdminRoute></ProtectedRoute>} />
+            <Route path="/mobile/funding-requests" element={<ProtectedRoute><MobileAdminRoute><MobileFundingRequests /></MobileAdminRoute></ProtectedRoute>} />
 
           {/* MOBILE APPLICATION REVIEW - WEB */}
           <Route
             path="/mobile/application-review"
             element={
               <ProtectedRoute>
-                <MobileApplicationReviews />
+                <MobileAdminRoute><MobileApplicationReviews /></MobileAdminRoute>
               </ProtectedRoute>
             }
           />
@@ -110,7 +112,7 @@ export default function App() {
             path="/mobile/application-review/:id"
             element={
               <ProtectedRoute>
-                <MobileApplicationReview />
+                <MobileAdminRoute><MobileApplicationReview /></MobileAdminRoute>
               </ProtectedRoute>
             }
           />
