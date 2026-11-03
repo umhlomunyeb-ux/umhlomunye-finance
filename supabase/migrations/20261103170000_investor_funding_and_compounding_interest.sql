@@ -429,6 +429,9 @@ BEGIN
   IF p_amount IS NULL OR p_amount <= 0 THEN RAISE EXCEPTION 'Repayment amount must be greater than zero.'; END IF;
   IF coalesce(trim(p_reference),'')='' THEN RAISE EXCEPTION 'Bank payment reference is required.'; END IF;
 
+  -- Apply any interest already due before reducing the investor liability.
+  PERFORM public.apply_due_investor_interest();
+
   SELECT * INTO v_borrowing FROM public.company_borrowings
   WHERE id=p_borrowing_id AND investor_id IS NOT NULL FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Investor borrowing not found.'; END IF;
@@ -493,6 +496,7 @@ DECLARE
   v_today date := (now() AT TIME ZONE 'Africa/Johannesburg')::date;
   v_charge numeric(14,2);
   v_before numeric(14,2);
+  v_initial_balance numeric(14,2);
   v_after numeric(14,2);
   v_count integer;
   v_total integer := 0;
@@ -509,6 +513,7 @@ BEGIN
     FOR UPDATE
   LOOP
     v_before := v_borrowing.outstanding_amount;
+    v_initial_balance := v_before;
     v_count := v_borrowing.interest_charge_count;
     WHILE v_borrowing.next_interest_charge_date<=v_today AND v_before>0 LOOP
       v_charge := round(v_before*v_borrowing.investor_monthly_interest_rate/100,2);
@@ -535,8 +540,7 @@ BEGIN
     SET outstanding_amount=v_before,
         interest_charge_count=v_count,
         interest_charged_total=coalesce(interest_charged_total,0)+
-          coalesce((SELECT sum(c.interest_amount) FROM public.investor_interest_charges c
-            WHERE c.borrowing_id=v_borrowing.id AND c.charge_number>v_borrowing.interest_charge_count),0),
+          greatest(v_before-v_initial_balance,0),
         next_interest_charge_date=v_borrowing.next_interest_charge_date,
         status=CASE WHEN v_before<=0 THEN 'Paid' WHEN status='Partially Paid' THEN 'Partially Paid' ELSE 'Outstanding' END,
         updated_at=now()
