@@ -59,11 +59,18 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  v_notify boolean := false;
 BEGIN
-  IF NEW.status='REQUESTED' AND (
-    TG_OP='INSERT' OR OLD.status IS DISTINCT FROM NEW.status
-    OR OLD.funding_shortfall IS DISTINCT FROM NEW.funding_shortfall
-  ) THEN
+  IF TG_OP='INSERT' THEN
+    v_notify := NEW.status='REQUESTED';
+  ELSE
+    v_notify := NEW.status='REQUESTED' AND (
+      OLD.status IS DISTINCT FROM NEW.status
+      OR OLD.funding_shortfall IS DISTINCT FROM NEW.funding_shortfall
+    );
+  END IF;
+  IF v_notify THEN
     PERFORM public.enqueue_mobile_funding_notification(
       'INVESTOR-FUNDING:'||NEW.id::text,
       'INVESTOR_FUNDING_REQUIRED',
@@ -93,10 +100,14 @@ AS $$
 DECLARE
   v_loan_number text;
   v_customer_name text;
+  v_notify boolean := false;
 BEGIN
-  IF NEW.status='WAITING_FOR_FUNDS' AND (
-    TG_OP='INSERT' OR OLD.status IS DISTINCT FROM NEW.status
-  ) THEN
+  IF TG_OP='INSERT' THEN
+    v_notify := NEW.status='WAITING_FOR_FUNDS';
+  ELSE
+    v_notify := NEW.status='WAITING_FOR_FUNDS' AND OLD.status IS DISTINCT FROM NEW.status;
+  END IF;
+  IF v_notify THEN
     SELECT l.loan_number,trim(coalesce(c.first_name,'')||' '||coalesce(c.last_name,''))
     INTO v_loan_number,v_customer_name
     FROM public.loans l
