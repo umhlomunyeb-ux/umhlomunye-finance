@@ -1275,3 +1275,59 @@ begin
 end;
 $function$
 ;
+
+
+-- Include the agreed term and scheduled instalment in the electronically signed agreement.
+DROP FUNCTION IF EXISTS public.get_agreement_for_signing(uuid);
+
+CREATE FUNCTION public.get_agreement_for_signing(p_signing_token uuid)
+RETURNS TABLE(
+  agreement_id uuid,
+  agreement_number text,
+  agreement_version text,
+  status text,
+  generated_at timestamp without time zone,
+  verification_token text,
+  customer_name text,
+  loan_number text,
+  principal_amount numeric,
+  interest_rate numeric,
+  interest_amount numeric,
+  total_repayment numeric,
+  current_balance numeric,
+  first_payment_date date,
+  next_payment_date date,
+  term_months integer,
+  monthly_repayment numeric
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $function$
+BEGIN
+  RETURN QUERY
+  SELECT
+    a.id,
+    a.agreement_number,
+    a.agreement_version,
+    a.status,
+    a.generated_at,
+    a.verification_token,
+    c.first_name || ' ' || c.last_name,
+    l.loan_number,
+    l.principal_amount,
+    l.interest_rate,
+    l.interest_amount,
+    l.total_repayment,
+    l.current_balance,
+    l.first_payment_date,
+    l.next_payment_date,
+    l.term_months,
+    l.monthly_repayment
+  FROM public.loan_agreements a
+  JOIN public.loans l ON l.id = a.loan_id
+  JOIN public.customers c ON c.id = a.customer_id
+  WHERE a.signing_token = p_signing_token
+    AND a.status IN ('Pending', 'Sent');
+END;
+$function$;
