@@ -20,6 +20,8 @@ DECLARE
   v_delta numeric(14,2);
   v_new_balance numeric(14,2);
   v_paid_principal numeric(14,2);
+  v_customer_limit numeric(14,2);
+  v_other_exposure numeric(14,2);
   v_monthly numeric(14,2);
   v_total numeric(14,2);
   v_tx uuid;
@@ -30,11 +32,18 @@ BEGIN
   IF p_loan_id IS NULL OR p_principal_amount IS NULL OR p_principal_amount <= 0 THEN
     RAISE EXCEPTION 'A valid loan and principal amount are required.';
   END IF;
-  IF p_term_months NOT IN (1,2) THEN
+  IF p_term_months IS NULL OR p_term_months NOT IN (1,2) THEN
     RAISE EXCEPTION 'Loan term must be 1 or 2 months.';
   END IF;
   IF p_first_payment_date IS NULL OR p_next_payment_date IS NULL THEN
     RAISE EXCEPTION 'First and next payment dates are required.';
+  END IF;
+  IF p_next_payment_date < p_first_payment_date THEN
+    RAISE EXCEPTION 'Next payment date cannot be before the first payment date.';
+  END IF;
+  IF (p_principal_amount >= 5000 AND p_term_months <> 2)
+     OR (p_principal_amount < 5000 AND p_term_months <> 1) THEN
+    RAISE EXCEPTION 'The repayment term must follow the current loan rules: below R5,000 is 1 month; R5,000 and above is 2 months.';
   END IF;
 
   SELECT * INTO v_loan
@@ -53,6 +62,26 @@ BEGIN
     AND upper(coalesce(transaction_type,'')) IN ('PAYMENT','REPAYMENT');
 
   v_new_principal := round(p_principal_amount,2);
+  SELECT coalesce(c.credit_limit,ss.maximum_loan_amount)
+    INTO v_customer_limit
+  FROM public.customers c
+  CROSS JOIN LATERAL (SELECT maximum_loan_amount FROM public.system_settings ORDER BY updated_at DESC LIMIT 1) ss
+  WHERE c.id=v_loan.customer_id;
+  IF v_customer_limit IS NULL THEN
+    RAISE EXCEPTION 'The customer credit limit is not configured.';
+  END IF;
+  SELECT coalesce(sum(greatest(l.principal_amount-coalesce((
+    SELECT sum(t.principal_paid) FROM public.loan_transactions t
+    WHERE t.loan_id=l.id AND upper(coalesce(t.transaction_type,'')) IN ('PAYMENT','REPAYMENT')
+  ),0)),0),0)
+  INTO v_other_exposure
+  FROM public.loans l
+  WHERE l.customer_id=v_loan.customer_id AND l.id<>p_loan_id
+    AND coalesce(l.is_deleted,false)=false
+    AND lower(coalesce(l.loan_status,'')) IN ('active','pending');
+  IF round(v_other_exposure + greatest(v_new_principal-v_paid_principal,0),2) > v_customer_limit THEN
+    RAISE EXCEPTION 'The edited loan would exceed the customer credit limit of R%.',round(v_customer_limit,2);
+  END IF;
   IF v_new_principal < v_paid_principal THEN
     RAISE EXCEPTION 'Principal cannot be lower than principal already repaid (R%).',
       round(v_paid_principal,2);
