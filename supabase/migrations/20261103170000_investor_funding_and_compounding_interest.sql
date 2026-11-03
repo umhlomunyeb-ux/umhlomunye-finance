@@ -528,7 +528,7 @@ BEGIN
           coalesce((SELECT sum(c.interest_amount) FROM public.investor_interest_charges c
             WHERE c.borrowing_id=v_borrowing.id AND c.charge_number>v_borrowing.interest_charge_count),0),
         next_interest_charge_date=v_borrowing.next_interest_charge_date,
-        status=CASE WHEN v_before<=0 THEN 'Paid' ELSE 'Outstanding' END,
+        status=CASE WHEN v_before<=0 THEN 'Paid' WHEN status='Partially Paid' THEN 'Partially Paid' ELSE 'Outstanding' END,
         updated_at=now()
     WHERE id=v_borrowing.id;
   END LOOP;
