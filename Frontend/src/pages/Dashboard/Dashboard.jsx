@@ -39,9 +39,8 @@ import {
   localApiUrl,
 } from "../../config/appMode";
 
-import { getCurrentUserProfile } from "../../services/userService";
+import { getCurrentUserProfile, isCurrentUserAdmin } from "../../services/userService";
 import { getSystemSettings } from "../../services/settingsService";
-import { isCurrentUserAdmin } from "../../services/userService";
 import { sendPendingInvestorFundingAlerts } from "../../services/investorFundingService";
 
 function money(value) {
