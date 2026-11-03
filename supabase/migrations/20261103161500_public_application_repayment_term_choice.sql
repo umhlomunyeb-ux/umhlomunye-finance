@@ -102,7 +102,7 @@ REVOKE ALL ON FUNCTION public.submit_loan_application(
 ) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.submit_loan_application(
   text,text,text,text,text,text,text,numeric,numeric,text,text,numeric,text,date,text,text,text,integer
-) TO anon, authenticated;
+) TO anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.calculate_application_affordability(p_application_id uuid)
 RETURNS jsonb
