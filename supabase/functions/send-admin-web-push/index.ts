@@ -33,7 +33,7 @@ Deno.serve(async (req: Request) => {
       .select("id")
       .eq("role", "admin")
       .eq("is_active", true)
-      .eq("is_deleted", false);
+      .or("is_deleted.is.null,is_deleted.eq.false");
     if (adminError) throw adminError;
     const adminIds = (admins || []).map((admin: { id: string }) => admin.id);
     if (!adminIds.length) return new Response(JSON.stringify({ sent: 0, message: "No active administrators." }), { headers: corsHeaders });
