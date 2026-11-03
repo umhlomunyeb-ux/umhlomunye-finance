@@ -274,6 +274,9 @@ function validateApplication(
     String(
       applicationData.cellphone || ""
     ).trim();
+  const email = String(applicationData.email || "").trim();
+  const physicalAddress = String(applicationData.physical_address || "").trim();
+  const workAddress = String(applicationData.work_address || "").trim();
 
   const bankName =
     String(
@@ -301,6 +304,24 @@ function validateApplication(
     throw new Error(
       "Cellphone number is required."
     );
+  }
+
+  if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    throw new Error("A valid email address is required.");
+  }
+  if (!physicalAddress) throw new Error("Physical address is required.");
+  if (!workAddress) throw new Error("Work address is required.");
+
+  const requiredExpenseCategories = [
+    "Grocery", "Housing", "Clothing", "Transportation",
+    "Existing Loan Repayments", "Other Expenses",
+  ];
+  const submittedExpenses = Array.isArray(applicationData.monthly_expenses) ? applicationData.monthly_expenses : [];
+  for (const category of requiredExpenseCategories) {
+    const expense = submittedExpenses.find((item) => item.category === category);
+    if (!expense || expense.monthly_amount === "" || !Number.isFinite(Number(expense.monthly_amount)) || Number(expense.monthly_amount) < 0) {
+      throw new Error(`A valid monthly amount is required for ${category} (enter R0 if none).`);
+    }
   }
 
   if (!bankName) {
@@ -348,6 +369,7 @@ async function submitApplicationToServer(
     cellphone,
     email,
     physical_address,
+    work_address,
     id_number,
     employer,
     employment_status,
@@ -432,6 +454,16 @@ async function submitApplicationToServer(
   }
 
   const submitted = extractRpcResult(data);
+  if (submitted?.application_id && submitted?.upload_token) {
+    const { error: workAddressError } = await supabase.rpc("save_public_application_work_address", {
+      p_application_id: submitted.application_id,
+      p_upload_token: submitted.upload_token,
+      p_work_address: work_address,
+    });
+    if (workAddressError) {
+      throw new Error(`Application was created but work address could not be saved: ${workAddressError.message}`);
+    }
+  }
   const expenses = Array.isArray(applicationData.monthly_expenses)
     ? applicationData.monthly_expenses
     : [];
