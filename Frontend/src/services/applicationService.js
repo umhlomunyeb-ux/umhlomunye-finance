@@ -306,7 +306,7 @@ function validateApplication(
     );
   }
 
-  if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error("A valid email address is required.");
   }
   if (!physicalAddress) throw new Error("Physical address is required.");
@@ -446,6 +446,9 @@ async function submitApplicationToServer(
 
       p_id_number:
         id_number,
+
+      p_work_address:
+        work_address,
     }
   );
 
@@ -454,16 +457,6 @@ async function submitApplicationToServer(
   }
 
   const submitted = extractRpcResult(data);
-  if (submitted?.application_id && submitted?.upload_token) {
-    const { error: workAddressError } = await supabase.rpc("save_public_application_work_address", {
-      p_application_id: submitted.application_id,
-      p_upload_token: submitted.upload_token,
-      p_work_address: work_address,
-    });
-    if (workAddressError) {
-      throw new Error(`Application was created but work address could not be saved: ${workAddressError.message}`);
-    }
-  }
   const expenses = Array.isArray(applicationData.monthly_expenses)
     ? applicationData.monthly_expenses
     : [];
