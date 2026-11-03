@@ -298,6 +298,16 @@ const generateSignedAgreementPdf = async (
       ],
 
       [
+        "Repayment Term",
+        `${Number(agreement.term_months || 0)} month(s)`,
+      ],
+
+      [
+        "Scheduled Instalment",
+        money(agreement.monthly_repayment),
+      ],
+
+      [
         "Current Balance",
         money(agreement.current_balance),
       ],
@@ -910,7 +920,9 @@ export default function SignAgreement() {
               total_repayment,
               current_balance,
               first_payment_date,
-              next_payment_date
+              next_payment_date,
+              term_months,
+              monthly_repayment
             `)
             .eq("id", data.loan_id)
             .maybeSingle();
