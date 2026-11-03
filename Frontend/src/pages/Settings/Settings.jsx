@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
 
 import {
   Alert,
@@ -98,9 +97,6 @@ export default function Settings() {
   const [removeLogoRequested, setRemoveLogoRequested] =
     useState(false);
 
-  const [mobileLandingQrCode, setMobileLandingQrCode] =
-    useState("");
-
   /* ============================================================
      MOBILE APP SETUP
      ============================================================ */
@@ -160,35 +156,6 @@ export default function Settings() {
     };
   }, [logoPreview]);
 
-  /*
-   * Create a permanent QR code that opens this LMS installation
-   * directly on the mobile landing page. This is separate from
-   * the permanent QR code that opens the LMS mobile review branch.
-   */
-  useEffect(() => {
-    let cancelled = false;
-
-    async function generateMobileLandingQr() {
-      try {
-        const mobileLandingUrl = `${window.location.origin}/mobile`;
-        const dataUrl = await QRCode.toDataURL(mobileLandingUrl, {
-          errorCorrectionLevel: "M",
-          margin: 2,
-          width: 320,
-        });
-
-        if (!cancelled) {
-          setMobileLandingQrCode(dataUrl);
-        }
-      } catch (err) {
-        console.error("Generate mobile landing QR error:", err);
-        if (!cancelled) setMobileLandingQrCode("");
-      }
-    }
-
-    generateMobileLandingQr();
-    return () => { cancelled = true; };
-  }, []);
   async function loadPage() {
     try {
       setLoading(true);
@@ -1485,16 +1452,6 @@ export default function Settings() {
                       Mobile App Link
                     </Typography>
                   </Stack>
-                  <Typography variant="body2" color="text.secondary" textAlign="center">
-                    Scan this QR code to open the mobile review branch. Sign in with your existing LMS administrator account.
-                  </Typography>
-                  {mobileLandingQrCode ? (
-                    <Box sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2, backgroundColor: "white", display: "inline-flex" }}>
-                      <img src={mobileLandingQrCode} alt="QR code linking to the LMS mobile landing page" style={{ width: 240, height: 240, display: "block" }} />
-                    </Box>
-                  ) : (
-                    <CircularProgress size={28} />
-                  )}
                   <Typography
                     component="a"
                     href={`${window.location.origin}/mobile`}
