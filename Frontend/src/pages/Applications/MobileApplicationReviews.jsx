@@ -62,6 +62,11 @@ export default function MobileApplicationReviews() {
 
   useEffect(() => {
     loadApplications();
+    const channel = supabase
+      .channel("mobile-application-review-list")
+      .on("postgres_changes", { event: "*", schema: "public", table: "loan_applications" }, loadApplications)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   function formatMoney(value) {
