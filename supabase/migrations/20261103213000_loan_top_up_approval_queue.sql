@@ -126,9 +126,9 @@ begin
   -- principal is posted once; the revised instalment estimate uses the
   -- 40% monthly rate and remaining term.
   if v_remaining_months = 2 then
-    v_monthly := round((v_new_balance * 1.40) / 2.40,2);
+    v_monthly := round((v_new_principal * 1.40 * 1.40) / 2.40,2);
   else
-    v_monthly := round(v_new_balance * 1.40,2);
+    v_monthly := round(v_new_principal * 1.40,2);
   end if;
   v_total := round(v_monthly * v_remaining_months,2);
 
