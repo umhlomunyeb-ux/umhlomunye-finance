@@ -19,7 +19,7 @@ export default function MobilePreview(){
  const [loading,setLoading]=useState(true),[error,setError]=useState("");
  const load=useCallback(async()=>{try{setError("");const results=await Promise.all([
  supabase.from("loans").select("id,principal_amount,current_balance,total_paid,interest_amount,loan_status,is_deleted,created_at").eq("is_deleted",false).order("created_at",{ascending:false}),
- supabase.from("loan_transactions").select("transaction_type,credit,interest_paid").order("transaction_date",{ascending:false}).limit(50),
+ supabase.from("loan_transactions").select("transaction_type,credit,interest_paid").ilike("transaction_type","payment").order("transaction_date",{ascending:false}),
  supabase.from("loan_applications").select("id").eq("status","PENDING"),
  supabase.from("investor_funding_requests").select("id,status").eq("status","REQUESTED")
  ]);for(const r of results)if(r.error)throw r.error;setLoans(results[0].data||[]);setTransactions(results[1].data||[]);setApplications(results[2].data||[]);setFunding(results[3].data||[]);}catch(e){console.error("Mobile dashboard:",e);setError(e?.message||"Unable to load dashboard tiles.");}finally{setLoading(false);}},[]);
