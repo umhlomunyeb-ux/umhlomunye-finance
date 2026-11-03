@@ -84,6 +84,20 @@ export default function InvestorFunding() {
   );
   const totalOutstanding = outstanding.reduce((sum, item) => sum + Number(item.outstanding_amount || 0), 0);
   const totalInterest = data.borrowings.reduce((sum, item) => sum + Number(item.interest_charged_total || 0), 0);
+  const interestHistory = data.borrowings.flatMap((borrowing) =>
+    (borrowing.investor_interest_charges || []).map((charge) => ({
+      ...charge,
+      investorName: borrowing.investors?.investor_name || borrowing.lender_name,
+      applicationNumber: borrowing.loan_applications?.application_number || "General funding",
+    }))
+  );
+  const repaymentHistory = data.borrowings.flatMap((borrowing) =>
+    (borrowing.investor_repayments || []).map((repayment) => ({
+      ...repayment,
+      investorName: borrowing.investors?.investor_name || borrowing.lender_name,
+      applicationNumber: borrowing.loan_applications?.application_number || "General funding",
+    }))
+  );
   const awaiting = data.requests.filter((item) => item.status === "REQUESTED");
 
   const runSave = async (action, message) => {
@@ -249,6 +263,43 @@ export default function InvestorFunding() {
           )}
         </CardContent>
       </Card>
+
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid item xs={12} lg={6}>
+          <Card variant="outlined" sx={{ height: "100%" }}>
+            <CardContent>
+              <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Investor Interest History</Typography>
+              {interestHistory.length === 0 ? <Typography color="text.secondary">No investor interest has been charged yet.</Typography> : (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead><TableRow><TableCell>Date</TableCell><TableCell>Investor / Application</TableCell><TableCell align="right">Rate</TableCell><TableCell align="right">Interest Added</TableCell><TableCell align="right">Balance After</TableCell></TableRow></TableHead>
+                    <TableBody>{interestHistory.sort((a,b) => new Date(b.charge_date)-new Date(a.charge_date)).map((charge) => (
+                      <TableRow key={charge.id}><TableCell>{charge.charge_date}</TableCell><TableCell>{charge.investorName}<Typography variant="caption" display="block" color="text.secondary">{charge.applicationNumber}</Typography></TableCell><TableCell align="right">{Number(charge.interest_rate)}%</TableCell><TableCell align="right">{money(charge.interest_amount)}</TableCell><TableCell align="right">{money(charge.balance_after)}</TableCell></TableRow>
+                    ))}</TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} lg={6}>
+          <Card variant="outlined" sx={{ height: "100%" }}>
+            <CardContent>
+              <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Investor Repayment History</Typography>
+              {repaymentHistory.length === 0 ? <Typography color="text.secondary">No investor repayments have been recorded yet.</Typography> : (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead><TableRow><TableCell>Date</TableCell><TableCell>Investor / Application</TableCell><TableCell>Reference</TableCell><TableCell align="right">Amount</TableCell></TableRow></TableHead>
+                    <TableBody>{repaymentHistory.sort((a,b) => new Date(b.repayment_date)-new Date(a.repayment_date)).map((repayment) => (
+                      <TableRow key={repayment.id}><TableCell>{repayment.repayment_date}</TableCell><TableCell>{repayment.investorName}<Typography variant="caption" display="block" color="text.secondary">{repayment.applicationNumber}</Typography></TableCell><TableCell>{repayment.reference}</TableCell><TableCell align="right">{money(repayment.amount)}</TableCell></TableRow>
+                    ))}</TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
       <Card variant="outlined">
         <CardContent>
