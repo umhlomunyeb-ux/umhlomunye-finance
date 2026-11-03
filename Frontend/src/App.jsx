@@ -1,6 +1,5 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Capacitor } from "@capacitor/core";
 
 import Login from "./pages/Login/Login";
 import Dashboard from "./pages/Dashboard/Dashboard";
@@ -34,30 +33,8 @@ import MobileLogin from "./mobile/pages/MobileLogin";
 import MobileFundingRequests from "./mobile/pages/MobileFundingRequests";
 import MobileAdminRoute from "./routes/MobileAdminRoute";
 
-import MobileApp from "./mobile/MobileApp";
 
 export default function App() {
-  /*
-   * NATIVE MOBILE APPLICATION
-   *
-   * Android/iOS only:
-   * Login
-   *   ↓
-   * Pending Applications
-   *   ↓
-   * Application Review
-   *
-   * The desktop system is not rendered inside the native app.
-   */
-  if (Capacitor.isNativePlatform()) {
-    return <MobileApp />;
-  }
-
-  /*
-   * EXISTING DESKTOP WEB APPLICATION
-   *
-   * This section remains unchanged.
-   */
   return (
     <>
       <Toaster position="top-right" />
