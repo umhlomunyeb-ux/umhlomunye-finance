@@ -21,6 +21,7 @@ import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 
 import { supabase } from "../../lib/supabase";
+import MobileBottomNavigation from "../../mobile/components/MobileBottomNavigation";
 
 export default function MobileApplicationReviews() {
   const navigate = useNavigate();
@@ -384,39 +385,7 @@ export default function MobileApplicationReviews() {
         )}
       </Box>
 
-      {/* MOBILE BOTTOM NAVIGATION */}
-      <Paper
-        elevation={8}
-        sx={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 100,
-          borderTop: "1px solid",
-          borderColor: "divider",
-        }}
-      >
-        <BottomNavigation
-          value="applications"
-          onChange={(_, value) =>
-            handleNavigation(value)
-          }
-          showLabels
-        >
-          <BottomNavigationAction
-            label="Home"
-            value="home"
-            icon={<HomeOutlinedIcon />}
-          />
-
-          <BottomNavigationAction
-            label="Applications"
-            value="applications"
-            icon={<DescriptionOutlinedIcon />}
-          />
-        </BottomNavigation>
-      </Paper>
+      <MobileBottomNavigation />
     </Box>
   );
 }
