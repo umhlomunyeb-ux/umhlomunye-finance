@@ -823,6 +823,18 @@ export default function LoanForm({
                 </Box>
               </Box>
             )}
+          {loan.principal_amount &&
+            Number(loan.principal_amount) >= Number(settings?.minimum_loan_amount || 0) &&
+            Number(loan.principal_amount) <= Number(settings?.maximum_loan_amount || 0) && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                An initial 40% interest charge is added when the loan is issued. If any balance remains
+                8 days after the first scheduled payment date, one additional 40% charge is applied
+                to that remaining balance. This additional charge is applied only once.
+                {loan.term_months === 2
+                  ? " The two instalments are calculated to be equal."
+                  : ""}
+              </Alert>
+            )}
         </Paper>
 
         {/* =====================================================
