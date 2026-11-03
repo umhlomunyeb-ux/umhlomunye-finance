@@ -190,6 +190,8 @@ declare
   v_item record;
   v_account record;
   v_balance numeric(15,2);
+  v_limit numeric(14,2);
+  v_exposure numeric(14,2);
   v_processed integer := 0;
 begin
   if auth.uid() is not null and not public.current_user_is_active_admin() then
@@ -202,6 +204,24 @@ begin
     order by approved_at,created_at
     for update skip locked
   loop
+    select coalesce(c.credit_limit, ss.maximum_loan_amount)
+      into v_limit
+    from public.customers c
+    cross join lateral (select maximum_loan_amount from public.system_settings order by updated_at desc limit 1) ss
+    where c.id=v_item.customer_id;
+    select coalesce(sum(greatest(l.principal_amount - coalesce((
+      select sum(t.principal_paid) from public.loan_transactions t
+      where t.loan_id=l.id and upper(coalesce(t.transaction_type,'')) in ('PAYMENT','REPAYMENT')
+    ),0),0)),0)
+      into v_exposure
+    from public.loans l
+    where l.customer_id=v_item.customer_id and l.is_deleted=false
+      and lower(coalesce(l.loan_status,'')) in ('active','pending');
+    if v_limit is null or round(v_exposure,2) > round(v_limit,2) then
+      update public.loan_top_up_requests set status='BLOCKED',updated_at=now() where id=v_item.id;
+      continue;
+    end if;
+
     select ba.id,
       coalesce((select bt.balance_after from public.bank_transactions bt
         where bt.bank_account_id=ba.id and coalesce(bt.is_void,false)=false
