@@ -24,6 +24,10 @@ import {
   Select,
   FormControl,
   InputLabel,
+  Slider,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
 } from "@mui/material";
 
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -61,7 +65,7 @@ const EMPTY_FORM = {
   other_income: "",
   bank_name: "",
   account_number: "",
-  amount_requested: "",
+  amount_requested: "100",
   loan_purpose: "",
   preferred_payment_date: "",
   collection_preference: "",
@@ -127,6 +131,8 @@ export default function PublicApplication() {
   const [form, setForm] =
     useState(EMPTY_FORM);
 
+  const [selectedTermMonths, setSelectedTermMonths] = useState(1);
+
   const [expenses, setExpenses] = useState([
     { category: "Housing", description: "", monthly_amount: "" },
   ]);
@@ -135,6 +141,24 @@ export default function PublicApplication() {
     (total, item) => total + Math.max(0, Number(item.monthly_amount) || 0),
     0
   );
+
+  const selectedLoanAmount = Math.min(6000, Math.max(100, Number(form.amount_requested) || 100));
+  const selectedLoanTerm = selectedLoanAmount < 5000 ? 1 : selectedTermMonths;
+  const initialLoanInterest = Number((selectedLoanAmount * 0.4).toFixed(2));
+  const initialLoanBalance = Number((selectedLoanAmount + initialLoanInterest).toFixed(2));
+  const displayedInstalment = selectedLoanTerm === 2
+    ? Number((initialLoanBalance * 1.4 / 2.4).toFixed(2))
+    : initialLoanBalance;
+  const displayedTotalRepayment = Number((displayedInstalment * selectedLoanTerm).toFixed(2));
+  const displayedDayEightInterest = selectedLoanTerm === 2
+    ? Number(((initialLoanBalance - displayedInstalment) * 0.4).toFixed(2))
+    : 0;
+  const formatCurrency = (value) => new Intl.NumberFormat("en-ZA", {
+    style: "currency",
+    currency: "ZAR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 
   function updateExpense(index, field, value) {
     setExpenses((current) => current.map((item, itemIndex) =>
@@ -291,7 +315,7 @@ export default function PublicApplication() {
             customer.collection_preference ||
             "",
 
-          amount_requested: "",
+          amount_requested: "100",
 
           preferred_payment_date: "",
 
@@ -368,6 +392,8 @@ export default function PublicApplication() {
 
     if (name === "amount_requested") {
       setError("");
+      const amount = Number(value);
+      setSelectedTermMonths(amount >= 5000 ? 2 : 1);
     }
   }
 
@@ -668,11 +694,17 @@ export default function PublicApplication() {
 
     if (
       !Number.isFinite(amount) ||
-      amount <= 0
+      amount < 100 ||
+      amount > 6000
     ) {
       setError(
-        "Loan amount must be greater than zero."
+        "Choose a loan amount between R100 and R6,000."
       );
+      return;
+    }
+
+    if (![1, 2].includes(selectedLoanTerm) || (amount < 5000 && selectedLoanTerm !== 1)) {
+      setError("The selected repayment term is not available for this loan amount.");
       return;
     }
 
@@ -784,6 +816,9 @@ export default function PublicApplication() {
 
           amount_requested:
             amount,
+
+          selected_term_months:
+            selectedLoanTerm,
 
           loan_purpose:
             form.loan_purpose.trim() ||
@@ -2016,32 +2051,91 @@ export default function PublicApplication() {
                 container
                 spacing={2}
               >
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                >
+                <Grid item xs={12}>
+                  <Typography fontWeight="bold" sx={{ mb: 1 }}>
+                    Choose your loan amount
+                  </Typography>
+                  <Typography variant="h5" fontWeight="bold" color="primary" sx={{ mb: 1 }}>
+                    {formatCurrency(selectedLoanAmount)}
+                  </Typography>
+                  <Slider
+                    value={selectedLoanAmount}
+                    min={100}
+                    max={6000}
+                    step={1}
+                    valueLabelDisplay="auto"
+                    valueLabelFormat={(value) => formatCurrency(value)}
+                    onChange={(_, value) => {
+                      setForm((previous) => ({
+                        ...previous,
+                        amount_requested: String(value),
+                      }));
+                      setSelectedTermMonths(value >= 5000 ? 2 : 1);
+                      setError("");
+                    }}
+                    aria-label="Loan amount"
+                  />
+                  <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
+                    <Typography variant="caption" color="text.secondary">R100</Typography>
+                    <Typography variant="caption" color="text.secondary">R6,000 maximum</Typography>
+                  </Box>
                   <TextField
                     fullWidth
                     required
                     type="number"
                     label="Amount Requested"
                     name="amount_requested"
-                    value={
-                      form.amount_requested
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    inputProps={{
-                      min: 0.01,
-                      step: "0.01",
-                    }}
-                    InputProps={{
-                      startAdornment:
-                        "R ",
-                    }}
+                    value={form.amount_requested}
+                    onChange={handleChange}
+                    inputProps={{ min: 100, max: 6000, step: "0.01" }}
+                    InputProps={{ startAdornment: "R " }}
+                    helperText="Move the slider or enter an exact amount."
                   />
+                </Grid>
+
+                {selectedLoanAmount >= 5000 && (
+                  <Grid item xs={12}>
+                    <Typography fontWeight="bold" sx={{ mb: 1 }}>
+                      Choose your repayment term
+                    </Typography>
+                    <RadioGroup
+                      row
+                      value={String(selectedLoanTerm)}
+                      onChange={(event) => setSelectedTermMonths(Number(event.target.value))}
+                    >
+                      <FormControlLabel value="1" control={<Radio />} label="1 month" />
+                      <FormControlLabel value="2" control={<Radio />} label="2 months (equal instalments)" />
+                    </RadioGroup>
+                  </Grid>
+                )}
+
+                <Grid item xs={12}>
+                  <Paper variant="outlined" sx={{ p: 2, backgroundColor: "#f8fafc" }}>
+                    <Typography variant="h6" fontWeight="bold" sx={{ mb: 1 }}>
+                      Your repayment quotation
+                    </Typography>
+                    <Grid container spacing={1}>
+                      <Grid item xs={7}><Typography color="text.secondary">Loan amount</Typography></Grid>
+                      <Grid item xs={5}><Typography textAlign="right" fontWeight="medium">{formatCurrency(selectedLoanAmount)}</Typography></Grid>
+                      <Grid item xs={7}><Typography color="text.secondary">Initial interest (40%)</Typography></Grid>
+                      <Grid item xs={5}><Typography textAlign="right" fontWeight="medium">{formatCurrency(initialLoanInterest)}</Typography></Grid>
+                      {selectedLoanTerm === 2 && (
+                        <>
+                          <Grid item xs={7}><Typography color="text.secondary">Day-8 interest on remaining balance (40%)</Typography></Grid>
+                          <Grid item xs={5}><Typography textAlign="right" fontWeight="medium">{formatCurrency(displayedDayEightInterest)}</Typography></Grid>
+                        </>
+                      )}
+                      <Grid item xs={7}><Typography color="text.secondary">Repayment term</Typography></Grid>
+                      <Grid item xs={5}><Typography textAlign="right" fontWeight="medium">{selectedLoanTerm} month(s)</Typography></Grid>
+                      <Grid item xs={7}><Typography color="text.secondary">Instalment{selectedLoanTerm === 2 ? " (each)" : ""}</Typography></Grid>
+                      <Grid item xs={5}><Typography textAlign="right" fontWeight="bold" color="primary.main">{formatCurrency(displayedInstalment)}</Typography></Grid>
+                      <Grid item xs={7}><Typography fontWeight="bold">Total repayment</Typography></Grid>
+                      <Grid item xs={5}><Typography textAlign="right" fontWeight="bold">{formatCurrency(displayedTotalRepayment)}</Typography></Grid>
+                    </Grid>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                      The 40% initial interest is added when the loan is issued. For 2-month loans, one additional 40% charge is applied to the outstanding balance 8 days after the first scheduled payment date. The two instalments are calculated to be equal, subject to cent rounding.
+                    </Typography>
+                  </Paper>
                 </Grid>
 
                 <Grid
