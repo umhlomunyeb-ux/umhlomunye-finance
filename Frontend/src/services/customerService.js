@@ -515,7 +515,9 @@ export async function getCustomerById(
   }
 
   return data;
-}\n\nexport async function increaseCustomerCreditLimit(customerId, newCreditLimit) {
+}
+
+export async function increaseCustomerCreditLimit(customerId, newCreditLimit) {
   if (!customerId) throw new Error("Customer ID is required.");
   const amount = Number(newCreditLimit);
   if (!Number.isFinite(amount) || amount <= 0) {
