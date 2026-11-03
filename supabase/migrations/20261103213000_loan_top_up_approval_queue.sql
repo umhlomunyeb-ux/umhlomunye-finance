@@ -23,6 +23,7 @@ create index if not exists idx_loan_top_up_requests_status_created
   on public.loan_top_up_requests(status, created_at);
 
 alter table public.loan_top_up_requests enable row level security;
+grant select on public.loan_top_up_requests to authenticated;
 
 drop policy if exists "Admins can view loan top up requests" on public.loan_top_up_requests;
 create policy "Admins can view loan top up requests"
