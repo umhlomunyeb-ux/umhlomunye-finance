@@ -25,7 +25,7 @@ export default defineConfig({
 
       icons: [
         {
-          src: "/icon.svg",
+          src: "/favicon.svg",
           sizes: "any",
           type: "image/svg+xml",
           purpose: "any",
@@ -35,6 +35,8 @@ export default defineConfig({
 
     workbox: {
       cleanupOutdatedCaches: true,
+      // Keep the generated Workbox worker and add push event handlers.
+      importScripts: ["/push-sw.js"],
     },
   }), cloudflare()],
 
