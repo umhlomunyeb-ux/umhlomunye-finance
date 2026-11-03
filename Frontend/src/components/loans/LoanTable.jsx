@@ -260,9 +260,9 @@ export default function LoanTable({ refreshKey, search = "" }) {
           </Alert>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField fullWidth type="number" label="Principal amount (R)" value={editForm.principal_amount}
-              onChange={(event) => setEditForm((v) => ({ ...v, principal_amount: event.target.value }))}
+              onChange={(event) => { const amount = Number(event.target.value); setEditForm((v) => ({ ...v, principal_amount: event.target.value, term_months: amount >= 5000 ? 2 : 1 })); }}
               inputProps={{ min: "0.01", step: "0.01" }} />
-            <TextField select fullWidth label="Repayment term" value={editForm.term_months}
+            <TextField select fullWidth disabled label="Repayment term (based on principal)" value={editForm.term_months}
               onChange={(event) => setEditForm((v) => ({ ...v, term_months: Number(event.target.value) }))}>
               <MenuItem value={1}>1 month</MenuItem>
               <MenuItem value={2}>2 months</MenuItem>
