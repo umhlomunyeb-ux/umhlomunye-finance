@@ -12,7 +12,8 @@ type EmailRequest = {
     | "PENDING_REVIEW"
     | "APPROVED"
     | "REJECTED"
-    | "AGREEMENT";
+    | "AGREEMENT"
+    | "INVESTOR_FUNDING_REQUIRED";
 
   applicationId?: string;
   loanId?: string;
@@ -27,6 +28,12 @@ type EmailRequest = {
 
   amountRequested?: number;
   approvedAmount?: number;
+  termMonths?: number;
+  availableBankBalance?: number;
+  fundingShortfall?: number;
+  interestRateMonthly?: number;
+  estimatedInterest?: number;
+  estimatedTotalLiability?: number;
 
   rejectionReason?: string;
 
@@ -112,6 +119,28 @@ function buildEmailContent(data: EmailRequest) {
       <p>
         Please log in to Umhlomunye Finance to review the application.
       </p>
+    `;
+  }
+
+
+  if (data.notificationType === "INVESTOR_FUNDING_REQUIRED") {
+    subject = `Investor Funding Required – ${applicationNumber}`;
+    title = "Investor Funding Required";
+    body = `
+      <p>Hello Administrator,</p>
+      <p>A qualifying loan application is waiting for funds. Please contact an investor and arrange the funding shortfall below.</p>
+      <table style="border-collapse:collapse;width:100%;margin:20px 0;">
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Application</strong></td><td style="padding:8px;border:1px solid #ddd;">${applicationNumber}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Customer</strong></td><td style="padding:8px;border:1px solid #ddd;">${clientName}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Approved loan amount</strong></td><td style="padding:8px;border:1px solid #ddd;">${formatCurrency(data.amountRequested)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Repayment term</strong></td><td style="padding:8px;border:1px solid #ddd;">${escapeHtml(data.termMonths || "-")} month(s)</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Available bank balance</strong></td><td style="padding:8px;border:1px solid #ddd;">${formatCurrency(data.availableBankBalance)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Investor funds required</strong></td><td style="padding:8px;border:1px solid #ddd;"><strong>${formatCurrency(data.fundingShortfall)}</strong></td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Investor interest rate</strong></td><td style="padding:8px;border:1px solid #ddd;">${escapeHtml(data.interestRateMonthly || 25)}% per month</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Estimated investor interest</strong></td><td style="padding:8px;border:1px solid #ddd;">${formatCurrency(data.estimatedInterest)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;"><strong>Estimated total investor liability</strong></td><td style="padding:8px;border:1px solid #ddd;"><strong>${formatCurrency(data.estimatedTotalLiability)}</strong></td></tr>
+      </table>
+      <p>Please open the Investors section in Umhlomunye Finance to record the investor and confirm receipt of funds after the transfer reflects in the company bank account.</p>
     `;
   }
 

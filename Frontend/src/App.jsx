@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 
@@ -22,6 +23,7 @@ import SignAgreement from "./pages/Public/SignAgreement";
 import VerifyStatement from "./pages/Public/VerifyStatement";
 import VerifyAgreement from "./pages/Public/VerifyAgreement";
 import Bank from "./pages/Bank/Bank";
+const InvestorFunding = lazy(() => import("./pages/Investors/InvestorFunding"));
 import TestEmail from "./pages/TestEmail";
 import PendingApplications from "./pages/Applications/PendingApplications";
 import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
@@ -184,6 +186,11 @@ export default function App() {
             <Route
               path="/bank"
               element={<Bank />}
+            />
+
+            <Route
+              path="/investors"
+              element={<Suspense fallback={<div>Loading investor funding...</div>}><InvestorFunding /></Suspense>}
             />
 
             <Route
