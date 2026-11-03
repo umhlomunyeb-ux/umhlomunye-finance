@@ -28,23 +28,21 @@ Deploy the function with JWT verification disabled because it validates the dedi
 supabase functions deploy send-admin-web-push --project-ref xralmilbzedtfdwwxton --no-verify-jwt
 ```
 
-## 3. Store the webhook destination and matching secret in Vault
+## 3. Copy the existing Vault webhook secret into Edge Function Secrets
 
-After deploying, run this in the Supabase SQL Editor. Replace the placeholder with the exact same random value used for `WEB_PUSH_WEBHOOK_SECRET` in Edge Function Secrets:
+The database URL and random webhook secret have already been created and stored in Supabase Vault for this project. Do not create duplicate Vault entries.
+
+In the Supabase SQL Editor, run:
 
 ```sql
-select vault.create_secret(
-  'https://xralmilbzedtfdwwxton.supabase.co/functions/v1/send-admin-web-push',
-  'web_push_function_url'
-);
-
-select vault.create_secret(
-  'PASTE_THE_SAME_WEB_PUSH_WEBHOOK_SECRET_HERE',
-  'web_push_webhook_secret'
-);
+select decrypted_secret
+from vault.decrypted_secrets
+where name='web_push_webhook_secret';
 ```
 
-The database trigger reads these values from Vault. If they are not present, the existing in-app alerts continue working and external push is simply skipped.
+Copy the returned value directly into **Edge Functions → Secrets** as `WEB_PUSH_WEBHOOK_SECRET`. Do not send or commit this value. The function URL is already stored as `web_push_function_url`, and the database trigger reads both values from Vault.
+
+If the Vault values are missing in a future environment, create them once using `vault.create_secret`; use the exact same random value for the Vault secret and the Edge Function secret.
 
 ## 4. Configure the frontend build
 
