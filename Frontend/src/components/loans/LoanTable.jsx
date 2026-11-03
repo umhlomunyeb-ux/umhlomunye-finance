@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Table, TableBody, TableCell, TableHead, TableRow, Paper, Button,
   Stack, Chip, CircularProgress, Typography, Dialog, DialogTitle,
-  DialogContent, DialogActions, TextField, Alert, Divider,
+  DialogContent, DialogActions, TextField, Alert, Divider, MenuItem,
 } from "@mui/material";
 
 import { getLoans } from "../../services/loanService";
