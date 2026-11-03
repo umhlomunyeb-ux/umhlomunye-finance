@@ -1,24 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import {
-  Alert,
-  BottomNavigation,
-  BottomNavigationAction,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
-  Paper,
-  Stack,
-  Typography,
-} from "@mui/material";
-
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, Stack, Typography } from "@mui/material";
 
 import { supabase } from "../../lib/supabase";
 import MobileBottomNavigation from "../../mobile/components/MobileBottomNavigation";
@@ -127,17 +110,6 @@ export default function MobileApplicationReviews() {
 
       default:
         return "default";
-    }
-  }
-
-  function handleNavigation(value) {
-    if (value === "home") {
-      navigate("/mobile/preview");
-      return;
-    }
-
-    if (value === "applications") {
-      navigate("/mobile/application-review");
     }
   }
 
