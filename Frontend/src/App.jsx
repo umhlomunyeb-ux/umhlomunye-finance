@@ -22,6 +22,7 @@ import SignAgreement from "./pages/Public/SignAgreement";
 import VerifyStatement from "./pages/Public/VerifyStatement";
 import VerifyAgreement from "./pages/Public/VerifyAgreement";
 import Bank from "./pages/Bank/Bank";
+import InvestorFunding from "./pages/Investors/InvestorFunding";
 import TestEmail from "./pages/TestEmail";
 import PendingApplications from "./pages/Applications/PendingApplications";
 import MobileApplicationReviews from "./pages/Applications/MobileApplicationReviews";
@@ -184,6 +185,11 @@ export default function App() {
             <Route
               path="/bank"
               element={<Bank />}
+            />
+
+            <Route
+              path="/investors"
+              element={<InvestorFunding />}
             />
 
             <Route
