@@ -321,11 +321,17 @@ function validateApplication(
 
   if (
     !Number.isFinite(amount) ||
-    amount <= 0
+    amount < 100 ||
+    amount > 6000
   ) {
     throw new Error(
-      "Loan amount must be greater than zero."
+      "Loan amount must be between R100 and R6,000."
     );
+  }
+
+  const term = Number(applicationData.selected_term_months ?? 1);
+  if (![1, 2].includes(term) || (amount < 5000 && term !== 1)) {
+    throw new Error("The selected repayment term is not available for this loan amount.");
   }
 }
 
@@ -354,6 +360,7 @@ async function submitApplicationToServer(
     preferred_payment_date,
     collection_preference,
     notes,
+    selected_term_months,
   } = applicationData;
 
   const {
@@ -397,6 +404,9 @@ async function submitApplicationToServer(
 
       p_amount_requested:
         amount_requested,
+
+      p_selected_term_months:
+        selected_term_months ?? 1,
 
       p_loan_purpose:
         loan_purpose ?? null,
