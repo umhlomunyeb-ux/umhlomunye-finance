@@ -288,7 +288,7 @@ const generateSignedAgreementPdf = async (
       ],
 
       [
-        "Interest Amount",
+        "Initial Interest Amount",
         money(agreement.interest_amount),
       ],
 
@@ -364,13 +364,13 @@ const generateSignedAgreementPdf = async (
     [
       "3.",
       "Interest",
-      "Interest is charged at the rate stated in this agreement and forms part of the customer's repayment obligation.",
+      "An initial 40% interest charge is added to the principal when the loan is issued. If any balance remains 8 days after the first scheduled payment date, one additional 40% charge is applied to that remaining balance. This additional charge is applied once only and does not repeat.",
     ],
 
     [
       "4.",
       "Repayment",
-      "The customer agrees to repay the amount due according to the applicable repayment schedule.",
+      "The customer agrees to repay the amount due according to the applicable repayment schedule. For a two-month loan, the two scheduled instalments are equal.",
     ],
 
     [
