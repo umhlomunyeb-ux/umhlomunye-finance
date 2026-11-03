@@ -9,8 +9,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "Umhlomunye Finance";
   const options = {
     body: payload.body || "A new funding request needs your attention.",
-    icon: "/icon.svg",
-    badge: "/icon.svg",
+    icon: "/favicon.svg",
+    badge: "/favicon.svg",
     tag: payload.event_key || payload.id || "umhlomunye-funding-alert",
     renotify: false,
     data: { url: payload.url || "/mobile/funding-requests" },
