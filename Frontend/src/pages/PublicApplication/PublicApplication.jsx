@@ -1319,6 +1319,14 @@ export default function PublicApplication() {
                 <Typography><strong>Loan amount:</strong> R {Number(publicOffer.offer_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
                 <Typography><strong>Interest rate:</strong> {Number(publicOffer.interest_rate || 0).toLocaleString("en-ZA", { maximumFractionDigits: 2 })}%</Typography>
                 <Typography><strong>Interest:</strong> R {Number(publicOffer.offer_interest_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
+                <Alert severity="info" sx={{ my: 1 }}>
+                  An initial 40% interest charge is added when the loan is issued. If any balance remains
+                  8 days after the first scheduled payment date, one additional 40% charge is applied
+                  to that remaining balance. This additional charge is applied once only and does not repeat.
+                  {Number(publicOffer.offer_term_months) === 2
+                    ? " The two monthly instalments are equal."
+                    : ""}
+                </Alert>
                 <Typography><strong>First payment date:</strong> {publicOffer.preferred_payment_date ? new Date(`${publicOffer.preferred_payment_date}T00:00:00`).toLocaleDateString("en-ZA") : "To be confirmed"}</Typography>
                 <Typography><strong>Total repayment:</strong> R {Number(publicOffer.offer_total_repayment || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</Typography>
                 <Typography><strong>Term:</strong> {publicOffer.offer_term_months} month(s)</Typography>
