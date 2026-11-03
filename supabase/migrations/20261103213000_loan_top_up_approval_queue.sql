@@ -202,14 +202,16 @@ begin
     order by approved_at,created_at
     for update skip locked
   loop
-    select ba.id, ba.opening_balance into v_account
+    select ba.id,
+      coalesce((select bt.balance_after from public.bank_transactions bt
+        where bt.bank_account_id=ba.id and coalesce(bt.is_void,false)=false
+        order by bt.transaction_date desc,bt.created_at desc limit 1),ba.opening_balance) as ledger_balance
+    into v_account
     from public.bank_accounts ba
     where ba.is_active=true and ba.is_verified=true
-      and coalesce((
-        select bt.balance_after from public.bank_transactions bt
+      and coalesce((select bt.balance_after from public.bank_transactions bt
         where bt.bank_account_id=ba.id and coalesce(bt.is_void,false)=false
-        order by bt.transaction_date desc,bt.created_at desc limit 1
-      ),ba.opening_balance) >= v_item.requested_amount
+        order by bt.transaction_date desc,bt.created_at desc limit 1),ba.opening_balance) >= v_item.requested_amount
     order by ba.created_at asc limit 1
     for update;
     if not found then
@@ -217,10 +219,7 @@ begin
       continue;
     end if;
 
-    select coalesce(sum(case when direction='IN' then amount else -amount end),0)
-      into v_balance from public.bank_transactions
-      where bank_account_id=v_account.id and is_void=false;
-    v_balance := round(v_balance-v_item.requested_amount,2);
+    v_balance := round(v_account.ledger_balance-v_item.requested_amount,2);
 
     insert into public.bank_transactions(
       bank_account_id,transaction_date,transaction_type,description,amount,direction,
@@ -240,7 +239,26 @@ begin
   end loop;
   return jsonb_build_object('processed',v_processed);
 end;
-$$;
+$;
+
+create or replace function public.run_automated_funding_cycle()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  v_expired integer;
+  v_result jsonb;
+  v_topups jsonb;
+begin
+  perform pg_advisory_xact_lock(hashtext('umhlomunye-funding-cycle'));
+  v_expired := public.expire_public_loan_offers();
+  v_result := public.process_funding_queue();
+  v_topups := public.process_loan_top_up_funding_queue();
+  return jsonb_build_object('expired_offers_requeued',v_expired,'funding_result',v_result,'top_up_result',v_topups);
+end;
+$;
 
 revoke all on function public.request_loan_top_up(uuid,numeric) from public;
 revoke all on function public.approve_loan_top_up(uuid) from public;
