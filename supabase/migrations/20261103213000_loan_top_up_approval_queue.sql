@@ -191,6 +191,7 @@ declare
   v_item record;
   v_account record;
   v_balance numeric(15,2);
+  v_bank_transaction_id uuid;
   v_limit numeric(14,2);
   v_exposure numeric(14,2);
   v_processed integer := 0;
@@ -250,10 +251,10 @@ begin
       'Approved top-up disbursement for loan '||v_item.loan_id::text,
       v_item.requested_amount,'OUT',v_balance,
       'TOPUP-'||v_item.id::text,coalesce(v_item.approved_by,auth.uid())
-    ) returning id into v_item.bank_transaction_id;
+    ) returning id into v_bank_transaction_id;
 
     update public.loan_top_up_requests set
-      status='FUNDED',bank_account_id=v_account.id,bank_transaction_id=v_item.bank_transaction_id,
+      status='FUNDED',bank_account_id=v_account.id,bank_transaction_id=v_bank_transaction_id,
       funded_at=now(),updated_at=now()
     where id=v_item.id;
     v_processed := v_processed+1;
