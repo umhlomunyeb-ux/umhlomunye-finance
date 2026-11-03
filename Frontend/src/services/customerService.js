@@ -353,15 +353,19 @@ export async function deactivateCustomer(
 }
 
 export async function blacklistCustomer(id, reason) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let userId = null;
+  if (!isOfflineMode) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    userId = user?.id || null;
+  }
 
   return updateCustomer(id, {
     is_blacklisted: true,
     blacklist_reason: reason?.trim() || null,
     blacklisted_at: new Date().toISOString(),
-    blacklisted_by: user?.id || null,
+    blacklisted_by: userId,
   });
 }
 
