@@ -698,6 +698,11 @@ export default function PublicApplication() {
       return;
     }
 
+    if (!/^0\\d{9}$/.test(String(form.cellphone || "").trim())) {
+      setError("Please enter a valid 10-digit cellphone number starting with 0.");
+      return;
+    }
+
     if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       setError("Please enter a valid email address.");
       return;
@@ -1750,22 +1755,18 @@ export default function PublicApplication() {
                 >
                   <TextField
                     fullWidth
-                    required={!existingCustomer}
+                    required
+                    type="tel"
                     label="Cellphone"
                     name="cellphone"
-                    value={
-                      form.cellphone
-                    }
-                    onChange={
-                      handleChange
-                    }
+                    value={form.cellphone}
+                    onChange={handleChange}
                     inputProps={{
-                      inputMode: "tel",
+                      inputMode: "numeric",
+                      pattern: "0[0-9]{9}",
+                      maxLength: 10,
                     }}
-                    InputProps={{
-                      readOnly:
-                        existingCustomer,
-                    }}
+                    helperText="Enter a 10-digit cellphone number, e.g. 0821234567"
                   />
                 </Grid>
 
