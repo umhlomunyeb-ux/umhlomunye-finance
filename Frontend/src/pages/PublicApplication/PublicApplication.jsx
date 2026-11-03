@@ -699,7 +699,7 @@ export default function PublicApplication() {
       return;
     }
 
-    if (!/^0\\d{9}$/.test(String(form.cellphone || "").trim())) {
+    if (!/^0\d{9}$/.test(String(form.cellphone || "").trim())) {
       setError("Please enter a valid 10-digit cellphone number starting with 0.");
       return;
     }
@@ -719,7 +719,7 @@ export default function PublicApplication() {
       return;
     }
 
-    if (!/^0\\d{9}$/.test(String(form.work_telephone || "").trim())) {
+    if (!/^0\d{9}$/.test(String(form.work_telephone || "").trim())) {
       setError("Please enter a valid 10-digit work telephone number starting with 0.");
       return;
     }
@@ -1853,7 +1853,7 @@ export default function PublicApplication() {
                     <Grid
                       item
                       xs={12}
-                      sm={6}
+                      sm={7}
                     >
                       <TextField
                         select
