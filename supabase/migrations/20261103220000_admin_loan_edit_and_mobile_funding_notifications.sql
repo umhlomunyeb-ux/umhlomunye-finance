@@ -93,10 +93,12 @@ BEGIN
     RAISE EXCEPTION 'This edit would make the loan balance negative.';
   END IF;
 
+  -- Re-amortise the amount still outstanding after the principal adjustment,
+  -- not the original principal (which may already have been partly repaid).
   IF p_term_months=2 THEN
-    v_monthly := round((v_new_principal*1.40*1.40)/2.40,2);
+    v_monthly := round((v_new_balance*1.40*1.40)/2.40,2);
   ELSE
-    v_monthly := round(v_new_principal*1.40,2);
+    v_monthly := round(v_new_balance*1.40,2);
   END IF;
   v_total := round(coalesce(v_loan.total_paid,0)+(v_monthly*p_term_months),2);
 
