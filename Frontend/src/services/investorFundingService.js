@@ -92,8 +92,17 @@ export async function sendPendingInvestorFundingAlerts(requests) {
     if (!claim?.claimed) continue;
 
     try {
+      const { data: sentRows, error: sentRowsError } = await supabase
+        .from("email_notifications")
+        .select("recipient_email")
+        .eq("application_id", claim.application_id)
+        .eq("notification_type", "INVESTOR_FUNDING_REQUIRED")
+        .eq("status", "SENT");
+      if (sentRowsError) throw sentRowsError;
+      const alreadySent = new Set((sentRows || []).map((row) => row.recipient_email));
+      const unsentRecipients = recipients.filter((admin) => !alreadySent.has(admin.email));
       const results = await Promise.allSettled(
-        recipients.map((admin) =>
+        unsentRecipients.map((admin) =>
           sendLoanEmail({
             notificationType: "INVESTOR_FUNDING_REQUIRED",
             recipientEmail: admin.email,
