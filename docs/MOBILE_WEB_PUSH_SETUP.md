@@ -48,7 +48,7 @@ The database trigger reads these values from Vault. If they are not present, the
 
 ## 4. Configure the frontend build
 
-Set `VITE_WEB_PUSH_PUBLIC_KEY` to the generated public VAPID key in the build environment used to build the Umhlomunye Finance Cloudflare Worker. This is a public key and is embedded in the browser bundle. Do not set the private key in Cloudflare's frontend build variables.
+In GitHub repository **Settings → Secrets and variables → Actions → Variables**, create a repository variable named `UMHLOMUNYE_WEB_PUSH_PUBLIC_KEY` and set it to the generated public VAPID key. The deployment workflow maps it to `VITE_WEB_PUSH_PUBLIC_KEY` when building the Umhlomunye Finance Cloudflare Worker. This is a public key and is embedded in the browser bundle. Do not set the private key in GitHub variables or frontend build settings.
 
 ## 5. Enable it on the iPhone
 
