@@ -35,6 +35,8 @@ export default defineConfig({
 
     workbox: {
       cleanupOutdatedCaches: true,
+      // Keep the generated Workbox worker and add push event handlers.
+      importScripts: ["/push-sw.js"],
     },
   }), cloudflare()],
 
