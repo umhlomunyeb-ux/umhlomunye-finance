@@ -171,7 +171,7 @@ BEGIN
     v_shortfall := round(greatest(NEW.requested_amount - v_available,0),2);
 
     IF v_shortfall > 0 THEN
-      v_term := coalesce(v_app.offer_term_months,v_app.selected_term_months,1);
+      v_term := least(greatest(coalesce(v_app.offer_term_months,v_app.selected_term_months,1),1),2);
       v_estimated_total := round(v_shortfall * power(1 + v_rate / 100, v_term),2);
 
       INSERT INTO public.investor_funding_requests(
@@ -438,7 +438,8 @@ BEGIN
   IF p_amount > v_borrowing.outstanding_amount THEN RAISE EXCEPTION 'Repayment exceeds the investor outstanding liability.'; END IF;
 
   SELECT * INTO v_account FROM public.bank_accounts
-  WHERE is_active=true ORDER BY created_at ASC LIMIT 1 FOR UPDATE;
+  WHERE is_active=true AND is_verified=true
+  ORDER BY created_at ASC LIMIT 1 FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'No active company bank account was found.'; END IF;
 
   SELECT coalesce((
