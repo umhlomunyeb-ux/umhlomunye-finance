@@ -17,12 +17,20 @@ export default function MobilePreview(){
  const navigate=useNavigate();const [loans,setLoans]=useState([]),[transactions,setTransactions]=useState([]),[applications,setApplications]=useState([]),[funding,setFunding]=useState([]);
  const [userName,setUserName]=useState("Administrator"),[company,setCompany]=useState("Umhlomunye Finance"),[logo,setLogo]=useState("");
  const [loading,setLoading]=useState(true),[error,setError]=useState("");
- const load=useCallback(async()=>{try{setError("");const results=await Promise.all([
+ const load=useCallback(async()=>{setError("");try{const results=await Promise.all([
  supabase.from("loans").select("id,principal_amount,current_balance,total_paid,interest_amount,loan_status,is_deleted,created_at").eq("is_deleted",false).order("created_at",{ascending:false}),
- supabase.from("loan_transactions").select("transaction_type,credit,interest_paid").ilike("transaction_type","payment").order("transaction_date",{ascending:false}),
+ supabase.from("loan_transactions").select("transaction_type,credit,interest_paid").order("transaction_date",{ascending:false}),
  supabase.from("loan_applications").select("id").eq("status","PENDING"),
  supabase.from("investor_funding_requests").select("id,status").eq("status","REQUESTED")
- ]);for(const r of results)if(r.error)throw r.error;setLoans(results[0].data||[]);setTransactions(results[1].data||[]);setApplications(results[2].data||[]);setFunding(results[3].data||[]);}catch(e){console.error("Mobile dashboard:",e);setError(e?.message||"Unable to load dashboard tiles.");}finally{setLoading(false);}},[]);
+ ]);
+ const [loanResult,transactionResult,applicationResult,fundingResult]=results;
+ const failures=[];
+ if(loanResult.error){console.error("Mobile dashboard loans:",loanResult.error);failures.push("loans");setLoans([]);}else setLoans(loanResult.data||[]);
+ if(transactionResult.error){console.error("Mobile dashboard transactions:",transactionResult.error);failures.push("repayments");setTransactions([]);}else setTransactions(transactionResult.data||[]);
+ if(applicationResult.error){console.error("Mobile dashboard applications:",applicationResult.error);failures.push("applications");setApplications([]);}else setApplications(applicationResult.data||[]);
+ if(fundingResult.error){console.error("Mobile dashboard funding requests:",fundingResult.error);failures.push("funding requests");setFunding([]);}else setFunding(fundingResult.data||[]);
+ if(failures.length)setError("Some dashboard information could not be loaded: "+failures.join(", ")+". Other available totals are still displayed.");
+ }catch(e){console.error("Mobile dashboard:",e);setError(e?.message||"Unable to load dashboard tiles.");}finally{setLoading(false);}},[]);
  useEffect(()=>{let active=true;Promise.all([getCurrentUserProfile(),getSystemSettings()]).then(([p,s])=>{if(!active)return;setUserName(p?.full_name?.trim()||p?.username||"Administrator");setCompany(s?.company_name||"Umhlomunye Finance");setLogo(s?.company_logo_url||"");}).catch(e=>console.error("Mobile dashboard header:",e));load();const ch=supabase.channel("mobile-lms-dashboard").on("postgres_changes",{event:"*",schema:"public",table:"loans"},load).on("postgres_changes",{event:"*",schema:"public",table:"loan_transactions"},load).on("postgres_changes",{event:"*",schema:"public",table:"loan_applications"},load).on("postgres_changes",{event:"*",schema:"public",table:"investor_funding_requests"},load).subscribe();const timer=setInterval(load,30000);return()=>{active=false;clearInterval(timer);supabase.removeChannel(ch);};},[load]);
  const active=useMemo(()=>loans.filter(l=>String(l.loan_status||"").toLowerCase()==="active"&&!l.is_deleted),[loans]);
  const totalDisbursed=useMemo(()=>loans.reduce((s,l)=>s+Number(l.principal_amount||0),0),[loans]);
