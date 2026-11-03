@@ -18,6 +18,7 @@ import {
   Assignment,
   AccountBalance,
   Description,
+  Paid,
 } from "@mui/icons-material";
 
 import { signOut } from "../../services/authService";
@@ -58,6 +59,11 @@ const menu = [
     text: "Bank",
     icon: <AccountBalance />,
     path: "/bank",
+  },
+  {
+    text: "Investors",
+    icon: <Paid />,
+    path: "/investors",
   },
   {
     text: "Settings",
