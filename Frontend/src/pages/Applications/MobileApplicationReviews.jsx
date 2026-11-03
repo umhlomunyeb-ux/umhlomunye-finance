@@ -1,26 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import {
-  Alert,
-  BottomNavigation,
-  BottomNavigationAction,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
-  Paper,
-  Stack,
-  Typography,
-} from "@mui/material";
-
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, Stack, Typography } from "@mui/material";
 
 import { supabase } from "../../lib/supabase";
+import MobileBottomNavigation from "../../mobile/components/MobileBottomNavigation";
 
 export default function MobileApplicationReviews() {
   const navigate = useNavigate();
@@ -61,6 +45,11 @@ export default function MobileApplicationReviews() {
 
   useEffect(() => {
     loadApplications();
+    const channel = supabase
+      .channel("mobile-application-review-list")
+      .on("postgres_changes", { event: "*", schema: "public", table: "loan_applications" }, loadApplications)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   function formatMoney(value) {
@@ -121,17 +110,6 @@ export default function MobileApplicationReviews() {
 
       default:
         return "default";
-    }
-  }
-
-  function handleNavigation(value) {
-    if (value === "home") {
-      navigate("/mobile/preview");
-      return;
-    }
-
-    if (value === "applications") {
-      navigate("/mobile/application-review");
     }
   }
 
@@ -384,39 +362,7 @@ export default function MobileApplicationReviews() {
         )}
       </Box>
 
-      {/* MOBILE BOTTOM NAVIGATION */}
-      <Paper
-        elevation={8}
-        sx={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 100,
-          borderTop: "1px solid",
-          borderColor: "divider",
-        }}
-      >
-        <BottomNavigation
-          value="applications"
-          onChange={(_, value) =>
-            handleNavigation(value)
-          }
-          showLabels
-        >
-          <BottomNavigationAction
-            label="Home"
-            value="home"
-            icon={<HomeOutlinedIcon />}
-          />
-
-          <BottomNavigationAction
-            label="Applications"
-            value="applications"
-            icon={<DescriptionOutlinedIcon />}
-          />
-        </BottomNavigation>
-      </Paper>
+      <MobileBottomNavigation />
     </Box>
   );
 }

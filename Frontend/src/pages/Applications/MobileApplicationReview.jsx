@@ -3,8 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   Alert,
-  BottomNavigation,
-  BottomNavigationAction,
   Box,
   Button,
   Card,
@@ -16,17 +14,14 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  Paper,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-
 import { supabase } from "../../lib/supabase";
 import { findCustomerByIdNumber } from "../../services/customerService";
+import SharedMobileBottomNavigation from "../../mobile/components/MobileBottomNavigation";
 
 export default function MobileApplicationReview() {
   const { id } = useParams();
@@ -335,17 +330,6 @@ export default function MobileApplicationReview() {
       );
     } finally {
       setRejecting(false);
-    }
-  }
-
-  function handleNavigation(value) {
-    if (value === "home") {
-      navigate("/mobile/preview");
-      return;
-    }
-
-    if (value === "applications") {
-      navigate("/mobile/application-review");
     }
   }
 
@@ -957,55 +941,9 @@ export default function MobileApplicationReview() {
   );
 }
 
-function MobileBottomNavigation({
-  navigate,
-  current,
-}) {
-  return (
-    <Paper
-      elevation={8}
-      sx={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        borderTop: "1px solid",
-        borderColor: "divider",
-      }}
-    >
-      <BottomNavigation
-        value={current}
-        onChange={(_, value) => {
-          if (value === "home") {
-            navigate("/mobile/preview");
-          }
-
-          if (value === "applications") {
-            navigate("/mobile/application-review");
-          }
-        }}
-        showLabels
-        sx={{
-          height: 56,
-        }}
-      >
-        <BottomNavigationAction
-          label="Home"
-          value="home"
-          icon={<HomeOutlinedIcon />}
-        />
-
-        <BottomNavigationAction
-          label="Applications"
-          value="applications"
-          icon={<DescriptionOutlinedIcon />}
-        />
-      </BottomNavigation>
-    </Paper>
-  );
+function MobileBottomNavigation() {
+  return <SharedMobileBottomNavigation />;
 }
-
 function Section({ title, children }) {
   return (
     <Card sx={{ mb: 1.5 }}>
