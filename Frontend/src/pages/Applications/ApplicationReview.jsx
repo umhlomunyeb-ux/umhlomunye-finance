@@ -20,7 +20,7 @@ import {
 } from "@mui/material";
 
 import { supabase } from "../../lib/supabase";
-import { findCustomerByIdNumber } from "../../services/customerService";
+import { getCustomerById } from "../../services/customerService";
 import { sendLoanEmail } from "../../services/emailService";
 
 export default function ApplicationReview() {
@@ -60,36 +60,29 @@ export default function ApplicationReview() {
       setCustomerError("");
       setCustomer(null);
 
-      if (!applicationData.id_number) {
+      if (!applicationData.customer_id) {
         setCustomerError(
-          "No ID number was provided on this application."
+          "No existing customer is linked to this application."
         );
-
         return null;
       }
 
-      const existingCustomer = await findCustomerByIdNumber(
-        applicationData.id_number
+      const existingCustomer = await getCustomerById(
+        applicationData.customer_id
       );
 
       if (!existingCustomer) {
         setCustomerError(
-          "No existing customer was found with this ID number."
+          "The linked customer record could not be found."
         );
-
         return null;
       }
 
       setCustomer(existingCustomer);
-
       return existingCustomer;
-    } catch (err) {
-      console.error("Unable to identify customer:", err);
-
-      setCustomerError(
-        err?.message || "Unable to identify the customer."
-      );
-
+    } catch (error) {
+      console.error("APPLICATION CUSTOMER LOOKUP ERROR:", error);
+      setCustomerError(error.message || "Unable to check the customer record.");
       return null;
     } finally {
       setCustomerLoading(false);
@@ -235,7 +228,7 @@ export default function ApplicationReview() {
 
       setApplication(data);
 
-      if (data.id_number) {
+      if (data.customer_id) {
         await findApplicationCustomer(data);
       } else {
         setCustomer(null);
@@ -1057,7 +1050,7 @@ export default function ApplicationReview() {
             letterSpacing: "0.05em",
           }}
         >
-          {application.id_number || "Not captured"}
+          *************
         </Typography>
       </Paper>
 
