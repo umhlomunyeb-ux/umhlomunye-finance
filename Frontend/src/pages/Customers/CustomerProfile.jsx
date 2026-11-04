@@ -16,8 +16,6 @@ import {
 import toast from "react-hot-toast";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { supabase } from "../../lib/supabase";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import { supabase } from "../../lib/supabase";
 
 import {
   updateCustomer,
@@ -34,8 +32,6 @@ export default function CustomerProfile() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [updateLink, setUpdateLink] = useState("");
-  const [generatingUpdateLink, setGeneratingUpdateLink] = useState(false);
   const [updateLink, setUpdateLink] = useState("");
   const [generatingUpdateLink, setGeneratingUpdateLink] = useState(false);
 
@@ -64,26 +60,6 @@ export default function CustomerProfile() {
       const { data, error: rpcError } = await supabase.rpc("create_customer_information_update_link", {
         p_customer_id: id,
       });
-      if (rpcError) throw rpcError;
-      const link = `${window.location.origin}/update-information/${data}`;
-      setUpdateLink(link);
-      try {
-        await navigator.clipboard.writeText(link);
-        toast.success("Customer update link copied. It expires in 7 days and can be used once.");
-      } catch {
-        toast.success("Customer update link generated. Copy it from the field below.");
-      }
-    } catch (err) {
-      toast.error(err.message || "Unable to generate customer update link.");
-    } finally {
-      setGeneratingUpdateLink(false);
-    }
-  }
-
-  async function handleGenerateUpdateLink() {
-    try {
-      setGeneratingUpdateLink(true);
-      const { data, error: rpcError } = await supabase.rpc("create_customer_information_update_link", { p_customer_id: id });
       if (rpcError) throw rpcError;
       const link = `${window.location.origin}/update-information/${data}`;
       setUpdateLink(link);
