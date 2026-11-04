@@ -40,6 +40,7 @@ import {
 } from "../../services/bankService";
 
 import { isCurrentUserAdmin } from "../../services/userService";
+import { supabase } from "../../lib/supabase";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-ZA", {
@@ -151,7 +152,7 @@ export default function Bank() {
         getCompanyBorrowings(),
         isCurrentUserAdmin(),
         (async () => {
-          const { data, error } = await (await import("../../lib/supabase")).supabase
+          const { data, error } = await supabase
             .from("investors")
             .select("id, investor_name, is_active")
             .eq("is_active", true)
