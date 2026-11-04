@@ -2483,11 +2483,7 @@ export default function LoanProfile() {
                           "anywhere",
                       }}
                     >
-                      {loan.customer
-                        ?.id_number ||
-                        customer?.id_number ||
-                        customer?.identity_number ||
-                        "-"}
+*************
                     </Typography>
                   </Box>
                 </Grid>
