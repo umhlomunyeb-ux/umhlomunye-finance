@@ -1050,8 +1050,10 @@ export default function Bank() {
                   <thead>
                     <tr>
                       {[
-                        "Date",
-                        "Lender",
+                        "Borrowing Date",
+                        "Investor / Director",
+                        "Monthly Rate",
+                        "Repayment Due Date",
                         "Original Amount",
                         "Amount Repaid",
                         "Outstanding",
@@ -1081,6 +1083,14 @@ export default function Bank() {
 
                         <td style={{ padding: "12px" }}>
                           {borrowing.lender_name}
+                        </td>
+
+                        <td style={{ padding: "12px" }}>
+                          {Number(borrowing.investor_monthly_interest_rate || 0).toFixed(2)}%
+                        </td>
+
+                        <td style={{ padding: "12px" }}>
+                          {formatDate(borrowing.repayment_due_date)}
                         </td>
 
                         <td style={{ padding: "12px" }}>
