@@ -20,7 +20,7 @@ export default defineConfig({
       display: "standalone",
       orientation: "portrait",
 
-      start_url: "/mobile/application-review",
+      start_url: "/mobile",
       scope: "/mobile/",
 
       icons: [
