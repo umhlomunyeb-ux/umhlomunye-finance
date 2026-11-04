@@ -5,7 +5,11 @@ function sanitizeCustomer(customer) {
     return null;
   }
 
-  return customer;
+  return {
+    ...customer,
+    id: customer.id || customer.customer_id || null,
+    id_number: "*************",
+  };
 }
 
 async function getCustomers(req, res) {
@@ -140,16 +144,11 @@ async function createCustomer(req, res) {
 
     const duplicate =
       await query(
-        `
-          SELECT id
-          FROM public.customers
-          WHERE id_number = $1
-          LIMIT 1
-        `,
+        "SELECT public.customer_id_number_exists($1) AS exists",
         [idNumber]
       );
 
-    if (duplicate.rows.length > 0) {
+    if (duplicate.rows[0]?.exists) {
       return res.status(409).json({
         error: "Customer already exists.",
       });
@@ -473,19 +472,13 @@ async function customerExists(req, res) {
 
     const result =
       await query(
-        `
-          SELECT id
-          FROM public.customers
-          WHERE id_number = $1
-          LIMIT 1
-        `,
+        "SELECT public.customer_id_number_exists($1) AS exists",
         [idNumber]
       );
 
     return res.json({
       success: true,
-      exists:
-        result.rows.length > 0,
+      exists: Boolean(result.rows[0]?.exists),
     });
   } catch (error) {
     console.error(
@@ -519,29 +512,7 @@ async function findCustomerByIdNumber(
 
     const result =
       await query(
-        `
-          SELECT
-            id,
-            customer_number,
-            first_name,
-            last_name,
-            id_number,
-            cellphone,
-            email,
-            date_of_birth,
-            gender,
-            employer,
-            occupation,
-            monthly_income,
-            physical_address,
-            postal_address,
-            alternative_phone,
-            is_active,
-            is_deleted
-          FROM public.customers
-          WHERE id_number = $1
-          LIMIT 1
-        `,
+        "SELECT * FROM public.lookup_public_customer_by_id_number($1) LIMIT 1",
         [idNumber]
       );
 
@@ -581,12 +552,7 @@ async function findCustomerByDetails(
     if (idNumber) {
       const result =
         await query(
-          `
-            SELECT *
-            FROM public.customers
-            WHERE id_number = $1
-            LIMIT 1
-          `,
+          "SELECT * FROM public.lookup_public_customer_by_id_number($1) LIMIT 1",
           [idNumber]
         );
 
