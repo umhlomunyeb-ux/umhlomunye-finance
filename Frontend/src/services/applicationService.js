@@ -144,6 +144,51 @@ function getServerApplicationId(
   );
 }
 
+const MASKED_ID_NUMBER = "*************";
+
+async function scrubReadableIdsFromOfflineStorage() {
+  const applications = await getAllApplications();
+  for (const application of applications || []) {
+    const storedId = String(application?.id_number || "");
+    if (storedId && storedId !== MASKED_ID_NUMBER) {
+      const unsynced = !getServerApplicationId(application);
+      await saveApplication({
+        ...application,
+        id_number: MASKED_ID_NUMBER,
+        ...(unsynced
+          ? {
+              sync_state: "FAILED",
+              sync_error: "The stored ID number was removed for privacy. Please resubmit this application while connected.",
+              offline_pending_sync: false,
+            }
+          : {}),
+      });
+    }
+  }
+
+  const operations = await getPendingOperations();
+  for (const operation of operations || []) {
+    if (
+      operation.operation_type === OPERATION_TYPES.SUBMIT_APPLICATION &&
+      operation.payload?.id_number &&
+      operation.payload.id_number !== MASKED_ID_NUMBER
+    ) {
+      await updateOperation(operation.id, {
+        status: "FAILED",
+        error: "The stored ID number was removed from the offline queue for privacy. Please resubmit while connected.",
+        payload: {
+          ...operation.payload,
+          id_number: MASKED_ID_NUMBER,
+        },
+      });
+    }
+  }
+}
+
+const idScrubPromise = scrubReadableIdsFromOfflineStorage().catch((error) => {
+  console.error("Unable to sanitize older offline application records:", error);
+});
+
 /*
  * These errors describe a synchronization dependency rather
  * than an actual failed operation. They must remain PENDING
@@ -2493,6 +2538,9 @@ export async function syncPendingApplicationOperations() {
         await countPendingOperations(),
     };
   }
+
+  await idScrubPromise;
+  await scrubReadableIdsFromOfflineStorage();
 
   synchronizationRunning =
     true;
