@@ -240,7 +240,7 @@ function getReference(document) {
   if (document?.customer_id_number_snapshot) {
     return {
       label: "ID Number",
-      value: document.customer_id_number_snapshot,
+      value: "*************",
     };
   }
 
