@@ -47,9 +47,6 @@ export default function Customers() {
         customer.last_name
           ?.toLowerCase()
           .includes(searchTerm) ||
-        customer.id_number
-          ?.toLowerCase()
-          .includes(searchTerm) ||
         customer.cellphone
           ?.toLowerCase()
           .includes(searchTerm)
