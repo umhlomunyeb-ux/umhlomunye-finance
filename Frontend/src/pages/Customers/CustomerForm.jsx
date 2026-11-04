@@ -207,6 +207,7 @@ async function loadCustomerNumber() {
               fullWidth
               label="ID Number"
               name="id_number"
+              type="password"
               value={customer.id_number}
               onChange={handleChange}
             />
