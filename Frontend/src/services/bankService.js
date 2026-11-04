@@ -401,7 +401,10 @@ export async function createOtherExpense({
 ========================================================= */
 
 export async function createCompanyBorrowing({
+  investorId,
   lenderName,
+  monthlyInterestRate,
+  repaymentDueDate,
   amount,
   borrowingDate,
   description = "",
@@ -410,10 +413,21 @@ export async function createCompanyBorrowing({
 }) {
   const numericAmount = toNumber(amount);
 
+  if (!investorId) {
+    throw new Error("An investor or director must be selected.");
+  }
+
   if (!lenderName?.trim()) {
-    throw new Error(
-      "Lender name is required."
-    );
+    throw new Error("Lender name is required.");
+  }
+
+  const numericRate = Number(monthlyInterestRate);
+  if (!Number.isFinite(numericRate) || numericRate < 0) {
+    throw new Error("A valid monthly interest rate is required. Zero is allowed.");
+  }
+
+  if (!repaymentDueDate) {
+    throw new Error("Repayment due date is required.");
   }
 
   if (numericAmount <= 0) {
@@ -492,6 +506,15 @@ export async function createCompanyBorrowing({
 
         p_borrowing_agreement_path:
           borrowingAgreementPath,
+
+        p_investor_id:
+          investorId,
+
+        p_interest_rate:
+          numericRate,
+
+        p_repayment_due_date:
+          repaymentDueDate,
       }
     );
 
