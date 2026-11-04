@@ -245,16 +245,13 @@ export async function customerExists(
     );
   }
 
-  const { data, error } =
-    await supabase
-      .from("customers")
-      .select("id")
-      .eq("id_number", idNumber)
-      .maybeSingle();
+  const { data, error } = await supabase.rpc(
+    "customer_id_number_exists",
+    { p_id_number: idNumber.trim() }
+  );
 
   if (error) throw error;
-
-  return !!data;
+  return Boolean(data);
 }
 
 export async function findCustomerByIdNumber(
@@ -275,39 +272,16 @@ export async function findCustomerByIdNumber(
     return result?.customer || null;
   }
 
-  const { data, error } =
-    await supabase
-      .from("customers")
-      .select(`
-        id,
-        customer_number,
-        first_name,
-        last_name,
-        id_number,
-        cellphone,
-        email,
-        date_of_birth,
-        gender,
-        employer,
-        occupation,
-        monthly_income,
-        physical_address,
-        postal_address,
-        alternative_phone,
-        is_active,
-        is_deleted
-      `)
-      .eq(
-        "id_number",
-        idNumber.trim()
-      )
-      .maybeSingle();
+  const { data, error } = await supabase.rpc(
+    "lookup_public_customer_by_id_number",
+    { p_id_number: idNumber.trim() }
+  );
 
-  if (error) {
-    throw error;
-  }
-
-  return data || null;
+  if (error) throw error;
+  const customer = Array.isArray(data) ? data[0] : data;
+  return customer
+    ? { ...customer, id: customer.customer_id, id_number: "*************" }
+    : null;
 }
 
 export async function deactivateCustomer(
@@ -451,21 +425,8 @@ export async function findCustomerByDetails({
   }
 
   if (idNumber && idNumber.trim()) {
-    const { data, error } =
-      await supabase
-        .from("customers")
-        .select("*")
-        .eq(
-          "id_number",
-          idNumber.trim()
-        )
-        .maybeSingle();
-
-    if (error) throw error;
-
-    if (data) {
-      return data;
-    }
+    const data = await findCustomerByIdNumber(idNumber);
+    if (data) return data;
   }
 
   if (cellphone && cellphone.trim()) {
