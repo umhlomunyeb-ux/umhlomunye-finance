@@ -1140,7 +1140,6 @@ export async function getDocuments({
       [
         `document_name.ilike.%${escaped}%`,
         `document_type.ilike.%${escaped}%`,
-        `customer_id_number_snapshot.ilike.%${escaped}%`,
         `loan_number_snapshot.ilike.%${escaped}%`,
         `company_name_snapshot.ilike.%${escaped}%`,
       ].join(",")
