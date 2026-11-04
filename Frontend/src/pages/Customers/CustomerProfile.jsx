@@ -108,16 +108,8 @@ export default function CustomerProfile() {
         toast.error("Last name is required.");
         return;
       }
-      if (!customer.id_number?.trim()) {
-        toast.error("ID number is required.");
-        return;
-      }
       if (!customer.cellphone?.trim()) {
         toast.error("Cellphone is required.");
-        return;
-      }
-      if (customer.id_number.length !== 13) {
-        toast.error("ID number must contain exactly 13 digits.");
         return;
       }
 
@@ -272,10 +264,9 @@ export default function CustomerProfile() {
               fullWidth
               label="ID Number"
               name="id_number"
-              value={customer.id_number || ""}
-              onChange={handleChange}
-              disabled={!editing}
-              inputProps={{ maxLength: 13 }}
+              type="password"
+              value="*************"
+              disabled
               sx={{ mb: 2 }}
             />
             <TextField
