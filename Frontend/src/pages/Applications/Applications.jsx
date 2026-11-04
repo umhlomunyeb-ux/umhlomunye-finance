@@ -296,6 +296,46 @@ export default function Applications() {
       </Box>
 
       {/* =====================================================
+          PUBLIC APPLICATION LINK
+      ====================================================== */}
+
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography fontWeight="bold" gutterBottom>
+          Public Loan Application Link
+        </Typography>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          alignItems={{ xs: "stretch", sm: "center" }}
+        >
+          <Typography
+            component="a"
+            href="https://umhlomunye-finance2.umhlomunyeb.workers.dev/apply"
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{ flex: 1, overflowWrap: "anywhere" }}
+          >
+            https://umhlomunye-finance2.umhlomunyeb.workers.dev/apply
+          </Typography>
+          <Button
+            variant="outlined"
+            onClick={() => navigator.clipboard.writeText("https://umhlomunye-finance2.umhlomunyeb.workers.dev/apply")}
+          >
+            Copy Application Link
+          </Button>
+          <Button
+            variant="contained"
+            component="a"
+            href="https://umhlomunye-finance2.umhlomunyeb.workers.dev/apply"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open Application Form
+          </Button>
+        </Stack>
+      </Paper>
+
+      {/* =====================================================
           BACKGROUND REFRESH STATUS
       ====================================================== */}
 
