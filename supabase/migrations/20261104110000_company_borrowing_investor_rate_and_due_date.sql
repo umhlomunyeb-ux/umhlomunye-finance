@@ -4,6 +4,8 @@
 ALTER TABLE public.company_borrowings
   ADD COLUMN IF NOT EXISTS repayment_due_date date;
 
+DROP FUNCTION IF EXISTS public.create_company_borrowing_with_agreement(text,numeric,date,text,text,text);
+
 CREATE OR REPLACE FUNCTION public.create_company_borrowing_with_agreement(
   p_lender_name text,
   p_amount numeric,
