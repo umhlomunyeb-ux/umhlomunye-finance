@@ -315,14 +315,11 @@ function validateApplication(
       applicationData.last_name || ""
     ).trim();
 
-  const cellphone =
-    String(
-      applicationData.cellphone || ""
-    ).trim();
+  const cellphone = normalizeSouthAfricanPhone(applicationData.cellphone);
   const email = String(applicationData.email || "").trim();
   const physicalAddress = String(applicationData.physical_address || "").trim();
   const workAddress = String(applicationData.work_address || "").trim();
-  const workTelephone = String(applicationData.work_telephone || "").trim();
+  const workTelephone = normalizeSouthAfricanPhone(applicationData.work_telephone);
 
   const bankName =
     String(
@@ -547,9 +544,13 @@ async function submitApplicationToServer(
 export async function addLoanApplication(
   applicationData
 ) {
-  validateApplication(
-    applicationData
-  );
+  const normalizedApplicationData = {
+    ...applicationData,
+    cellphone: normalizeSouthAfricanPhone(applicationData.cellphone),
+    work_telephone: normalizeSouthAfricanPhone(applicationData.work_telephone),
+  };
+
+  validateApplication(normalizedApplicationData);
 
   if (!isBrowserOnline()) {
     throw new Error(
@@ -624,7 +625,7 @@ export async function addLoanApplication(
   try {
     const serverApplication =
       await submitApplicationToServer(
-        applicationData
+        normalizedApplicationData
       );
 
     const serverId =
