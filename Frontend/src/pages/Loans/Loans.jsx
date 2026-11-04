@@ -558,10 +558,7 @@ export default function Loans() {
 
       setCustomerNotFound(false);
 
-      setIdNumber(
-        createdCustomer.id_number ||
-          cleanIdNumber
-      );
+      setIdNumber("*************");
 
       setCreateCustomerOpen(false);
       setCreateCustomerError("");
@@ -944,6 +941,7 @@ export default function Loans() {
             <TextField
               fullWidth
               label="Customer ID Number"
+              type="password"
               value={idNumber}
               onChange={(event) => {
                 const value =
@@ -1030,7 +1028,7 @@ export default function Loans() {
 
                 <Typography variant="body2">
                   ID Number:{" "}
-                  {verifiedCustomer.id_number}
+                  *************
                 </Typography>
 
                 {verifiedCustomer.cellphone && (
@@ -1525,6 +1523,7 @@ export default function Loans() {
                   fullWidth
                   required
                   label="ID Number"
+                  type="password"
                   value={
                     newCustomer.id_number
                   }
