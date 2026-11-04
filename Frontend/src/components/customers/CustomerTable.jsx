@@ -138,7 +138,7 @@ export default function CustomerTable({ customers, onChanged }) {
               <TableCell>{customer.customer_number}</TableCell>
               <TableCell>{customer.first_name}</TableCell>
               <TableCell>{customer.last_name}</TableCell>
-              <TableCell>{customer.id_number}</TableCell>
+              <TableCell>*************</TableCell>
               <TableCell>{customer.cellphone}</TableCell>
               <TableCell>
                 <Chip
