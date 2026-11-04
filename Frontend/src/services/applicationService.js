@@ -506,6 +506,12 @@ export async function addLoanApplication(
     applicationData
   );
 
+  if (!isBrowserOnline()) {
+    throw new Error(
+      "An internet connection is required to securely check the ID number and submit this application. No ID number will be saved on this device while offline."
+    );
+  }
+
   const localId =
     applicationData.local_id ||
     generateLocalId();
@@ -514,6 +520,9 @@ export async function addLoanApplication(
     normaliseApplication(
       {
         ...applicationData,
+
+        // Never persist a readable ID number in the browser's offline database.
+        id_number: "*************",
 
         local_id:
           localId,
@@ -555,34 +564,13 @@ export async function addLoanApplication(
   );
 
   /*
-   * No internet:
-   * leave the application in IndexedDB and
-   * queue the server submission.
+   * Connectivity is required for the secure ID check and submission.
+   * The readable ID is never copied into IndexedDB or the sync queue.
    */
   if (!isBrowserOnline()) {
-    await enqueueOperation({
-      operation_type:
-        OPERATION_TYPES.SUBMIT_APPLICATION,
-
-      application_local_id:
-        localId,
-
-      payload:
-        applicationData,
-
-      status:
-        "PENDING",
-    });
-
-    return {
-      ...localApplication,
-
-      offline:
-        true,
-
-      pending_sync:
-        true,
-    };
+    throw new Error(
+      "The connection was lost before secure submission. Reconnect and submit again; the ID number was not saved offline."
+    );
   }
 
   /*
@@ -653,45 +641,17 @@ export async function addLoanApplication(
     return synced;
   } catch (error) {
     if (isNetworkError(error)) {
-      await enqueueOperation({
-        operation_type:
-          OPERATION_TYPES.SUBMIT_APPLICATION,
-
-        application_local_id:
-          localId,
-
-        payload:
-          applicationData,
-
-        status:
-          "PENDING",
-      });
-
       await saveApplication({
         ...localApplication,
-
-        sync_state:
-          "PENDING",
-
-        sync_error:
-          "Waiting for an internet connection.",
-
-        offline_pending_sync:
-          true,
-
-        updated_at:
-          new Date().toISOString(),
+        sync_state: "FAILED",
+        sync_error: "Secure submission was interrupted. Reconnect and submit again.",
+        offline_pending_sync: false,
+        updated_at: new Date().toISOString(),
       });
 
-      return {
-        ...localApplication,
-
-        offline:
-          true,
-
-        pending_sync:
-          true,
-      };
+      throw new Error(
+        "The connection was lost before secure submission completed. The ID number was not saved offline; reconnect and submit again."
+      );
     }
 
     throw error;
