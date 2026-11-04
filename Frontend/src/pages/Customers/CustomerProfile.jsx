@@ -14,6 +14,8 @@ import {
 } from "@mui/material";
 
 import toast from "react-hot-toast";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { supabase } from "../../lib/supabase";
 
 import {
   updateCustomer,
@@ -30,6 +32,8 @@ export default function CustomerProfile() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [updateLink, setUpdateLink] = useState("");
+  const [generatingUpdateLink, setGeneratingUpdateLink] = useState(false);
 
   useEffect(() => {
     loadCustomer();
@@ -47,6 +51,28 @@ export default function CustomerProfile() {
       setError(err.message || "Unable to load customer.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGenerateUpdateLink() {
+    try {
+      setGeneratingUpdateLink(true);
+      const { data, error: rpcError } = await supabase.rpc("create_customer_information_update_link", {
+        p_customer_id: id,
+      });
+      if (rpcError) throw rpcError;
+      const link = `${window.location.origin}/update-information/${data}`;
+      setUpdateLink(link);
+      try {
+        await navigator.clipboard.writeText(link);
+        toast.success("Customer update link copied. It expires in 7 days and can be used once.");
+      } catch {
+        toast.success("Customer update link generated. Copy it from the field below.");
+      }
+    } catch (err) {
+      toast.error(err.message || "Unable to generate customer update link.");
+    } finally {
+      setGeneratingUpdateLink(false);
     }
   }
 
@@ -196,6 +222,15 @@ export default function CustomerProfile() {
           </Button>
         </Box>
       </Box>
+
+      {updateLink && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Typography variant="subtitle1">Customer information update link</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Send this link to the customer's currently registered cellphone number via WhatsApp or SMS. It expires in 7 days and can be used once.</Typography>
+          <TextField fullWidth size="small" value={updateLink} InputProps={{ readOnly: true }} />
+          <Button sx={{ mt: 1 }} startIcon={<ContentCopyIcon />} onClick={() => navigator.clipboard.writeText(updateLink).then(() => toast.success("Link copied."))}>Copy link</Button>
+        </Paper>
+      )}
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
