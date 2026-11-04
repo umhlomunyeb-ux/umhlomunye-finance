@@ -218,6 +218,11 @@ export default function CustomerProfile() {
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
           {!editing && (
+            <Button variant="outlined" onClick={handleGenerateUpdateLink} disabled={generatingUpdateLink}>
+              {generatingUpdateLink ? "Generating..." : "Generate Update Link"}
+            </Button>
+          )}
+          {!editing && (
             <Button variant="contained" onClick={() => setEditing(true)}>
               Edit Customer
             </Button>
