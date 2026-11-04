@@ -176,7 +176,7 @@ export default function CustomerInformationUpdate() {
             {field("Employer", "employer")}
             {field("Monthly income (R)", "monthly_income", { type: "number", inputProps: { min: 0, step: "0.01" } })}
           </Grid>
-          <Alert severity="warning" sx={{ mt: 3 }}>For your protection, this link can be used once and expires after 7 days. If your cellphone number has changed and you cannot receive messages on your registered number, contact our office for assistance.</Alert>
+          <Alert severity="warning" sx={{ mt: 3 }}>For your protection, this link can be used once and expires after 7 days. No OTP is required. Please enter your current cellphone number and email address so we can update your contact details.</Alert>
           {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 2 }}>
             <input id="confirm-information" type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
