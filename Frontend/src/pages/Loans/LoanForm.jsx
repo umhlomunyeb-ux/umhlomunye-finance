@@ -641,7 +641,7 @@ export default function LoanForm({
                 </Typography>
 
                 <Typography fontWeight="bold">
-                  {customer.id_number || "-"}
+                  *************
                 </Typography>
               </Box>
 
