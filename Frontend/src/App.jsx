@@ -14,6 +14,7 @@ import LoanProfile from "./pages/Loans/LoanProfile";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import MainLayout from "./components/layout/MainLayout";
 import PublicApplication from "./pages/PublicApplication/PublicApplication";
+import CustomerInformationUpdate from "./pages/Public/CustomerInformationUpdate";
 import Applications from "./pages/Applications/Applications";
 import ApplicationReview from "./pages/Applications/ApplicationReview";
 import CustomerProfile from "./pages/Customers/CustomerProfile";
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
           <Route path="/apply" element={<PublicApplication />} />
+          <Route path="/update-information/:token" element={<CustomerInformationUpdate />} />
 
           <Route
             path="/sign-agreement/:token"
