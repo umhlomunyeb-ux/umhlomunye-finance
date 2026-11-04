@@ -346,7 +346,7 @@ function validateApplication(
     );
   }
 
-  if (!/^0\\d{9}$/.test(cellphone)) {
+  if (!/^0\d{9}$/.test(cellphone)) {
     throw new Error("A valid 10-digit cellphone number starting with 0 is required.");
   }
 
@@ -355,7 +355,7 @@ function validateApplication(
   }
   if (!physicalAddress) throw new Error("Physical address is required.");
   if (!workAddress) throw new Error("Work address is required.");
-  if (!/^0\\d{9}$/.test(workTelephone)) throw new Error("A valid 10-digit work telephone number is required.");
+  if (!/^0\d{9}$/.test(workTelephone)) throw new Error("A valid 10-digit work telephone number is required.");
 
   const requiredExpenseCategories = [
     "Grocery", "Housing", "Clothing", "Transportation",
