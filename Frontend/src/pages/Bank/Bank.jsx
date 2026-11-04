@@ -40,6 +40,7 @@ import {
 } from "../../services/bankService";
 
 import { isCurrentUserAdmin } from "../../services/userService";
+import { supabase } from "../../lib/supabase";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-ZA", {
@@ -81,6 +82,7 @@ function getTransactionTypeLabel(type) {
 export default function Bank() {
   const [summary, setSummary] = useState(null);
   const [borrowings, setBorrowings] = useState([]);
+  const [investors, setInvestors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -120,9 +122,12 @@ export default function Bank() {
   });
 
   const [borrowingForm, setBorrowingForm] = useState({
+    investorId: "",
     lenderName: "",
     amount: "",
     borrowingDate: today(),
+    repaymentDueDate: "",
+    monthlyInterestRate: "0",
     description: "",
     reference: "",
   });
@@ -142,14 +147,24 @@ export default function Bank() {
     try {
       setError("");
 
-      const [bankSummary, companyBorrowings, admin] = await Promise.all([
+      const [bankSummary, companyBorrowings, admin, investorResult] = await Promise.all([
         getBankSummary(),
         getCompanyBorrowings(),
         isCurrentUserAdmin(),
+        (async () => {
+          const { data, error } = await supabase
+            .from("investors")
+            .select("id, investor_name, is_active")
+            .eq("is_active", true)
+            .order("investor_name");
+          if (error) throw error;
+          return data || [];
+        })(),
       ]);
 
       setSummary(bankSummary);
       setBorrowings(companyBorrowings);
+      setInvestors(investorResult);
       setIsAdmin(Boolean(admin));
     } catch (err) {
       console.error("Bank module error:", err);
@@ -384,8 +399,18 @@ export default function Bank() {
   async function handleBorrowing(event) {
     event.preventDefault();
 
-    if (!borrowingForm.lenderName.trim()) {
-      setError("Please enter the lender name.");
+    if (!borrowingForm.investorId) {
+      setError("Please select an investor or director from the Investor Register.");
+      return;
+    }
+
+    if (!borrowingForm.repaymentDueDate) {
+      setError("Please enter the borrowing repayment due date.");
+      return;
+    }
+
+    if (borrowingForm.monthlyInterestRate === "" || !Number.isFinite(Number(borrowingForm.monthlyInterestRate)) || Number(borrowingForm.monthlyInterestRate) < 0) {
+      setError("Enter a valid monthly interest rate. Use 0 for an interest-free borrowing.");
       return;
     }
 
@@ -403,8 +428,14 @@ export default function Bank() {
       setSaving(true);
       setError("");
 
+      const selectedInvestor = investors.find((item) => item.id === borrowingForm.investorId);
+      if (!selectedInvestor) throw new Error("The selected investor is no longer available.");
+
       await createCompanyBorrowing({
-        lenderName: borrowingForm.lenderName,
+        investorId: borrowingForm.investorId,
+        lenderName: selectedInvestor.investor_name,
+        monthlyInterestRate: borrowingForm.monthlyInterestRate,
+        repaymentDueDate: borrowingForm.repaymentDueDate,
         amount: borrowingForm.amount,
         borrowingDate: borrowingForm.borrowingDate,
         description: borrowingForm.description,
@@ -415,9 +446,12 @@ export default function Bank() {
       closeDialogs();
 
       setBorrowingForm({
+        investorId: "",
         lenderName: "",
         amount: "",
         borrowingDate: today(),
+        repaymentDueDate: "",
+        monthlyInterestRate: "0",
         description: "",
         reference: "",
       });
@@ -1016,8 +1050,10 @@ export default function Bank() {
                   <thead>
                     <tr>
                       {[
-                        "Date",
-                        "Lender",
+                        "Borrowing Date",
+                        "Investor / Director",
+                        "Monthly Rate",
+                        "Repayment Due Date",
                         "Original Amount",
                         "Amount Repaid",
                         "Outstanding",
@@ -1047,6 +1083,14 @@ export default function Bank() {
 
                         <td style={{ padding: "12px" }}>
                           {borrowing.lender_name}
+                        </td>
+
+                        <td style={{ padding: "12px" }}>
+                          {Number(borrowing.investor_monthly_interest_rate || 0).toFixed(2)}%
+                        </td>
+
+                        <td style={{ padding: "12px" }}>
+                          {formatDate(borrowing.repayment_due_date)}
                         </td>
 
                         <td style={{ padding: "12px" }}>
@@ -1384,15 +1428,38 @@ export default function Bank() {
           <DialogContent>
             <Stack spacing={2} mt={1}>
               <TextField
-                label="Lender Name"
-                value={borrowingForm.lenderName}
+                select
+                label="Investor / Director"
+                value={borrowingForm.investorId}
                 onChange={(event) =>
                   setBorrowingForm({
                     ...borrowingForm,
-                    lenderName: event.target.value,
+                    investorId: event.target.value,
                   })
                 }
-                placeholder="Example: Director Loan"
+                fullWidth
+                required
+                helperText="Select the lender from the Investor Register. Add the director there first if necessary."
+              >
+                {investors.map((investor) => (
+                  <MenuItem key={investor.id} value={investor.id}>
+                    {investor.investor_name}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                label="Monthly Interest Rate (%)"
+                type="number"
+                value={borrowingForm.monthlyInterestRate}
+                onChange={(event) =>
+                  setBorrowingForm({
+                    ...borrowingForm,
+                    monthlyInterestRate: event.target.value,
+                  })
+                }
+                inputProps={{ min: 0, step: "0.01" }}
+                helperText="Enter the agreed rate for this borrowing. Enter 0 for an interest-free director or investor loan."
                 fullWidth
                 required
               />
@@ -1420,6 +1487,21 @@ export default function Bank() {
                   setBorrowingForm({
                     ...borrowingForm,
                     borrowingDate: event.target.value,
+                  })
+                }
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+                required
+              />
+
+              <TextField
+                label="Repayment Due Date"
+                type="date"
+                value={borrowingForm.repaymentDueDate}
+                onChange={(event) =>
+                  setBorrowingForm({
+                    ...borrowingForm,
+                    repaymentDueDate: event.target.value,
                   })
                 }
                 InputLabelProps={{ shrink: true }}
