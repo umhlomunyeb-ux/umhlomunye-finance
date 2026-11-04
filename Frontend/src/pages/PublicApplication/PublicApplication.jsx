@@ -53,6 +53,13 @@ const DOCUMENT_TYPES = [
   "Other",
 ];
 
+function normalizeSouthAfricanPhone(value) {
+  let digits = String(value ?? "").replace(/\\D/g, "");
+  if (digits.startsWith("27") && digits.length === 11) digits = `0${digits.slice(2)}`;
+  if (digits.length === 9 && /^[6-8]/.test(digits)) digits = `0${digits}`;
+  return digits;
+}
+
 const EMPTY_FORM = {
   first_name: "",
   last_name: "",
@@ -699,7 +706,7 @@ export default function PublicApplication() {
       return;
     }
 
-    if (!/^0\d{9}$/.test(String(form.cellphone || "").trim())) {
+    if (!/^0\d{9}$/.test(normalizeSouthAfricanPhone(form.cellphone))) {
       setError("Please enter a valid 10-digit cellphone number starting with 0.");
       return;
     }
@@ -719,7 +726,7 @@ export default function PublicApplication() {
       return;
     }
 
-    if (!/^0\d{9}$/.test(String(form.work_telephone || "").trim())) {
+    if (!/^0\d{9}$/.test(normalizeSouthAfricanPhone(form.work_telephone))) {
       setError("Please enter a valid 10-digit work telephone number starting with 0.");
       return;
     }
@@ -802,7 +809,7 @@ export default function PublicApplication() {
             form.last_name.trim(),
 
           cellphone:
-            form.cellphone.trim(),
+            normalizeSouthAfricanPhone(form.cellphone),
 
           email:
             form.email.trim() || null,
@@ -814,7 +821,7 @@ export default function PublicApplication() {
             form.work_address.trim(),
 
           work_telephone:
-            form.work_telephone.trim(),
+            normalizeSouthAfricanPhone(form.work_telephone),
 
           employer:
             form.employer.trim() || null,
