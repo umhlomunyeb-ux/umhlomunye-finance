@@ -1562,6 +1562,7 @@ export default function PublicApplication() {
                   fullWidth
                   required
                   label="ID Number"
+                  type="password"
                   value={idNumber}
                   onChange={
                     handleIdChange
