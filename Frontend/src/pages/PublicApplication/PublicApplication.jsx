@@ -1681,6 +1681,7 @@ export default function PublicApplication() {
 
           {idChecked && (
             <form
+              noValidate
               onSubmit={handleSubmit}
             >
               {/* =================================================
