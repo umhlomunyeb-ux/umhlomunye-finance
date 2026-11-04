@@ -127,7 +127,7 @@ export default function Bank() {
     amount: "",
     borrowingDate: today(),
     repaymentDueDate: "",
-    monthlyInterestRate: "0",
+    monthlyInterestRate: "",
     description: "",
     reference: "",
   });
@@ -451,7 +451,7 @@ export default function Bank() {
         amount: "",
         borrowingDate: today(),
         repaymentDueDate: "",
-        monthlyInterestRate: "0",
+        monthlyInterestRate: "",
         description: "",
         reference: "",
       });
