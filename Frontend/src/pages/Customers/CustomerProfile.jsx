@@ -231,16 +231,7 @@ export default function CustomerProfile() {
       {updateLink && (
         <Paper sx={{ p: 2, mb: 3 }}>
           <Typography variant="subtitle1">Customer information update link</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Send this link to the customer's currently registered cellphone number via WhatsApp or SMS. It expires in 7 days and can be used once.</Typography>
-          <TextField fullWidth size="small" value={updateLink} InputProps={{ readOnly: true }} />
-          <Button sx={{ mt: 1 }} startIcon={<ContentCopyIcon />} onClick={() => navigator.clipboard.writeText(updateLink).then(() => toast.success("Link copied."))}>Copy link</Button>
-        </Paper>
-      )}
-
-      {updateLink && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="subtitle1">Customer information update link</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Send this link to the customer's currently registered cellphone number via WhatsApp or SMS. It expires in 7 days and can be used once.</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Share this link with the customer in person, on WhatsApp, by SMS, or through another trusted channel. No OTP or registered contact details are required. It expires in 7 days and can be used once.</Typography>
           <TextField fullWidth size="small" value={updateLink} InputProps={{ readOnly: true }} />
           <Button sx={{ mt: 1 }} startIcon={<ContentCopyIcon />} onClick={() => navigator.clipboard.writeText(updateLink).then(() => toast.success("Link copied."))}>Copy link</Button>
         </Paper>
