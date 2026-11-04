@@ -214,7 +214,7 @@ export default function PublicApplication() {
      * check will occur during synchronization.
      */
     if (!navigator.onLine) {
-      setIdChecked(true);
+      setIdChecked(false);
       setExistingCustomer(false);
       setCustomerNumber("");
 
@@ -224,7 +224,7 @@ export default function PublicApplication() {
       }));
 
       setIdMessage(
-        "You are currently offline. The ID number will be checked when the application synchronizes."
+        "An internet connection is required to check this ID securely. Reconnect and check the ID again; it will not be saved offline."
       );
 
       return;
@@ -342,7 +342,7 @@ export default function PublicApplication() {
        * the application.
        */
       if (!navigator.onLine) {
-        setIdChecked(true);
+        setIdChecked(false);
         setExistingCustomer(false);
         setCustomerNumber("");
 
@@ -352,7 +352,7 @@ export default function PublicApplication() {
         }));
 
         setIdMessage(
-          "The internet connection was lost. The application can be saved offline and the ID will be checked when synchronization occurs."
+          "The connection was lost during the ID check. Reconnect and check again; the ID number will not be stored offline."
         );
 
         return;
