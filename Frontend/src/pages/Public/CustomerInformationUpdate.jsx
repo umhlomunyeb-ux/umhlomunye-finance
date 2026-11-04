@@ -12,7 +12,6 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import { supabase } from "../../lib/supabase";
 
 const EMPTY = {
@@ -126,7 +125,7 @@ export default function CustomerInformationUpdate() {
     return (
       <Container maxWidth="sm" sx={{ py: 6 }}>
         <Paper sx={{ p: 4, textAlign: "center" }}>
-          <CheckCircleOutlineIcon color="success" sx={{ fontSize: 56 }} />
+          <Typography color="success.main" sx={{ fontSize: 56, lineHeight: 1 }}>✓</Typography>
           <Typography variant="h5" sx={{ mt: 2 }}>Information updated</Typography>
           <Typography sx={{ mt: 1 }}>Thank you, {customerName || "customer"}. Your details have been updated successfully.</Typography>
           <Typography color="text.secondary" sx={{ mt: 1 }}>Reference: {customerNumber}</Typography>
