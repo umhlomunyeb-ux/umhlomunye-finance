@@ -1,0 +1,2 @@
+revoke all on function public.cancel_unfinished_public_application(uuid,text) from public, anon, authenticated;
+grant execute on function public.cancel_unfinished_public_application(uuid,text) to service_role;
