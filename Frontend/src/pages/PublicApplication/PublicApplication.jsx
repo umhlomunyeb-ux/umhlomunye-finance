@@ -93,6 +93,8 @@ export default function PublicApplication() {
   const [customerNumber, setCustomerNumber] =
     useState("");
 
+  const [resumeApplication, setResumeApplication] = useState(null);
+
   const [submitted, setSubmitted] = useState(false);
 
   const [applicationNumber, setApplicationNumber] =
@@ -189,6 +191,7 @@ export default function PublicApplication() {
     setIdChecked(false);
     setExistingCustomer(false);
     setCustomerNumber("");
+    setResumeApplication(null);
     setIdMessage("");
     setError("");
     setSelectedTermMonths(1);
@@ -259,6 +262,18 @@ export default function PublicApplication() {
         Array.isArray(data)
           ? data[0] || null
           : data || null;
+
+      let resumableApplication = null;
+      try {
+        const { data: resumeData, error: resumeError } = await supabase.rpc(
+          "resume_public_loan_application_by_id_number",
+          { p_id_number: normalizedId }
+        );
+        if (resumeError) throw resumeError;
+        resumableApplication = resumeData || null;
+      } catch (resumeError) {
+        console.warn("PUBLIC APPLICATION RESUME LOOKUP:", resumeError);
+      }
 
       setIdChecked(true);
 
@@ -337,6 +352,11 @@ export default function PublicApplication() {
           "No existing customer was found. Please complete the application details below."
         );
       }
+
+      setResumeApplication(resumableApplication);
+      if (resumableApplication) {
+        setIdMessage("An unfinished quotation was found for this ID number. Choose whether to continue it or cancel it and start a new application.");
+      }
     } catch (err) {
       console.error(
         "PUBLIC CUSTOMER ID LOOKUP ERROR:",
@@ -375,6 +395,89 @@ export default function PublicApplication() {
       );
     } finally {
       setCheckingId(false);
+    }
+  }
+
+  async function handleContinuePreviousApplication() {
+    if (!resumeApplication) return;
+    setLoading(true);
+    setError("");
+    try {
+      const savedForm = resumeApplication.form || {};
+      setForm({
+        ...EMPTY_FORM,
+        ...savedForm,
+        id_number: idNumber,
+        amount_requested: String(savedForm.amount_requested ?? resumeApplication.offer_amount ?? "100"),
+        preferred_payment_date: savedForm.preferred_payment_date || resumeApplication.preferred_payment_date || "",
+      });
+      const savedExpenses = Array.isArray(resumeApplication.expenses) ? resumeApplication.expenses : [];
+      setExpenses(savedExpenses.length
+        ? savedExpenses.map((item) => ({
+            category: item.category,
+            description: item.description || "",
+            monthly_amount: String(item.monthly_amount ?? "0"),
+          }))
+        : ["Grocery", "Housing", "Clothing", "Transportation", "Existing Loan Repayments", "Other Expenses"]
+            .map((category) => ({ category, description: "", monthly_amount: "0" })));
+      setSelectedTermMonths(Number(resumeApplication.offer_term_months || 1));
+      setApplicationId(resumeApplication.application_id);
+      setApplicationNumber(resumeApplication.application_number);
+      setApplicationLocalId("");
+      setUploadToken(resumeApplication.upload_token);
+      setPendingSync(false);
+      setAffordabilityAssessment({
+        status: resumeApplication.affordability_status,
+        monthly_expenses: resumeApplication.monthly_expenses_total,
+        disposable_income: resumeApplication.disposable_income,
+        reason: resumeApplication.affordability_reason,
+      });
+      setFundingAssessment(null);
+      const { data: offerData, error: offerError } = await supabase.rpc(
+        "get_public_application_offer",
+        {
+          p_application_id: resumeApplication.application_id,
+          p_upload_token: resumeApplication.upload_token,
+        }
+      );
+      if (offerError) throw offerError;
+      setPublicOffer(offerData || null);
+      setResumeApplication(null);
+      setSubmitted(true);
+    } catch (resumeError) {
+      setError(resumeError?.message || "Unable to reopen your quotation. Please check your ID number and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleStartNewApplication() {
+    if (!resumeApplication) return;
+    setLoading(true);
+    setError("");
+    try {
+      const { data, error: cancelError } = await supabase.rpc(
+        "cancel_unfinished_public_application",
+        {
+          p_application_id: resumeApplication.application_id,
+          p_id_number: idNumber,
+        }
+      );
+      if (cancelError) throw cancelError;
+      if (!data?.success) throw new Error("The previous application could not be cancelled.");
+      setResumeApplication(null);
+      setIdMessage(`Previous quotation ${data.application_number || ""} cancelled. You can now complete a new application.`);
+      setExpenses(["Grocery", "Housing", "Clothing", "Transportation", "Existing Loan Repayments", "Other Expenses"]
+        .map((category) => ({ category, description: "", monthly_amount: "" })));
+      setSelectedTermMonths(1);
+      setPublicOffer(null);
+      setApplicationId("");
+      setApplicationNumber("");
+      setUploadToken("");
+    } catch (cancelError) {
+      setError(cancelError?.message || "Unable to cancel the previous quotation. No new application has been started.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1685,11 +1788,28 @@ export default function PublicApplication() {
             )}
           </Paper>
 
+          {resumeApplication && (
+            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderColor: "primary.main" }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom>
+                Unfinished quotation found
+              </Typography>
+              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                Application {resumeApplication.application_number} has an unfinished quotation for R {Number(resumeApplication.offer_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}. You can continue with the same application or cancel it and start again.
+              </Typography>
+              <Button fullWidth variant="contained" disabled={loading} onClick={handleContinuePreviousApplication} sx={{ mb: 1 }}>
+                {loading ? "Opening..." : "Continue where I left off"}
+              </Button>
+              <Button fullWidth color="error" variant="outlined" disabled={loading} onClick={handleStartNewApplication}>
+                Cancel previous quotation and start a new application
+              </Button>
+            </Paper>
+          )}
+
           {/* =====================================================
               EVERYTHING BELOW ID CHECK
           ===================================================== */}
 
-          {idChecked && (
+          {idChecked && !resumeApplication && (
             <form
               noValidate
               onSubmit={handleSubmit}
