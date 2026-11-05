@@ -251,16 +251,6 @@ export async function getBankBalance() {
     getBankTransactions(),
   ]);
 
-  const transactionMovement = transactions
-    .filter((transaction) => transaction.is_void !== true)
-    .reduce((balance, transaction) => {
-      const amount = toNumber(transaction.amount);
-
-      return transaction.direction === "IN"
-        ? balance + amount
-        : balance - amount;
-    }, 0);
-
   const latestTransaction = transactions
     .filter((transaction) => transaction.is_void !== true)
     .sort((a, b) =>
