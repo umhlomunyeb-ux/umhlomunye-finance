@@ -92,6 +92,9 @@ export default function PublicApplication() {
 
   const [customerNumber, setCustomerNumber] =
     useState("");
+  const [topUpEligibility, setTopUpEligibility] = useState(null);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [topUpResult, setTopUpResult] = useState(null);
 
   const [resumeApplication, setResumeApplication] = useState(null);
 
@@ -191,6 +194,9 @@ export default function PublicApplication() {
     setIdChecked(false);
     setExistingCustomer(false);
     setCustomerNumber("");
+    setTopUpEligibility(null);
+    setTopUpAmount("");
+    setTopUpResult(null);
     setResumeApplication(null);
     setIdMessage("");
     setError("");
@@ -279,6 +285,12 @@ export default function PublicApplication() {
 
       if (customer) {
         setExistingCustomer(true);
+        const { data: eligibility, error: eligibilityError } = await supabase.rpc(
+          "get_public_top_up_eligibility",
+          { p_id_number: normalizedId }
+        );
+        if (eligibilityError) throw eligibilityError;
+        setTopUpEligibility(eligibility || null);
 
         setCustomerNumber(
           customer.customer_number || ""
@@ -342,6 +354,7 @@ export default function PublicApplication() {
       } else {
         setExistingCustomer(false);
         setCustomerNumber("");
+        setTopUpEligibility(null);
 
         setForm({
           ...EMPTY_FORM,
@@ -395,6 +408,39 @@ export default function PublicApplication() {
       );
     } finally {
       setCheckingId(false);
+    }
+  }
+
+  async function handleSubmitTopUp() {
+    setError("");
+    setTopUpResult(null);
+    const amount = Number(topUpAmount);
+    const maximum = Number(topUpEligibility?.maximum_top_up || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter a valid top-up amount.");
+      return;
+    }
+    if (amount > maximum) {
+      setError(`Your requested top-up is above your available credit limit. Maximum top-up amount: ${formatCurrency(maximum)}. Please enter an amount equal to or below ${formatCurrency(maximum)}.`);
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data, error: submitError } = await supabase.rpc("submit_public_loan_top_up", {
+        p_id_number: normalizeId(idNumber),
+        p_amount: amount,
+      });
+      if (submitError) throw submitError;
+      setTopUpResult(data);
+      const { data: refreshed, error: refreshError } = await supabase.rpc(
+        "get_public_top_up_eligibility",
+        { p_id_number: normalizeId(idNumber) }
+      );
+      if (!refreshError) setTopUpEligibility(refreshed || null);
+    } catch (err) {
+      setError(err?.message || "Unable to submit your top-up request.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1809,7 +1855,53 @@ export default function PublicApplication() {
               EVERYTHING BELOW ID CHECK
           ===================================================== */}
 
-          {idChecked && !resumeApplication && (
+          {idChecked && !resumeApplication && topUpEligibility?.has_open_loan && (
+            <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom>Apply for a Top-Up Loan</Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Your available top-up is based on your approved credit limit less your outstanding principal. Interest and fees are not included in this calculation.
+              </Alert>
+              <Typography sx={{ mb: 1 }}>
+                **Maximum available top-up: {formatCurrency(Number(topUpEligibility.maximum_top_up || 0))}**
+              </Typography>
+              {Number(topUpEligibility.maximum_top_up || 0) <= 0 ? (
+                <Alert severity="warning">You currently have no available credit for a top-up.</Alert>
+              ) : (
+                <>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Top-Up Amount"
+                    value={topUpAmount}
+                    onChange={(event) => { setTopUpAmount(event.target.value); setError(""); setTopUpResult(null); }}
+                    inputProps={{ min: 0.01, max: Number(topUpEligibility.maximum_top_up), step: "0.01" }}
+                    helperText={`Maximum you may apply for: ${formatCurrency(Number(topUpEligibility.maximum_top_up))}`}
+                    sx={{ mb: 2 }}
+                    disabled={loading || Boolean(topUpResult)}
+                  />
+                  {Number(topUpAmount) > Number(topUpEligibility.maximum_top_up) && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      Your requested top-up is above your available credit limit. Maximum top-up amount: {formatCurrency(Number(topUpEligibility.maximum_top_up))}. Please enter an amount equal to or below {formatCurrency(Number(topUpEligibility.maximum_top_up))}.
+                    </Alert>
+                  )}
+                  <Button
+                    variant="contained"
+                    onClick={handleSubmitTopUp}
+                    disabled={loading || !topUpAmount || Number(topUpAmount) <= 0 || Number(topUpAmount) > Number(topUpEligibility.maximum_top_up) || Boolean(topUpResult)}
+                  >
+                    {loading ? "Submitting..." : "Submit Top-Up"}
+                  </Button>
+                </>
+              )}
+              {topUpResult && (
+                <Alert severity="success" sx={{ mt: 2 }}>
+                  Your top-up has passed the credit-limit and affordability checks and has been automatically approved. Funding status: {topUpResult.funding_status === "FUNDED" ? "Funds have been released." : "Your approved top-up is waiting for company funds."}
+                </Alert>
+              )}
+            </Paper>
+          )}
+
+          {idChecked && !resumeApplication && !topUpEligibility?.has_open_loan && (
             <form
               noValidate
               onSubmit={handleSubmit}
