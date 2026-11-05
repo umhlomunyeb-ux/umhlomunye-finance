@@ -12,6 +12,8 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Checkbox,
+  FormControlLabel,
   Grid,
   MenuItem,
   Paper,
@@ -29,6 +31,7 @@ import autoTable from "jspdf-autotable";
 
 import {
   addBankMoney,
+  verifyCompanyBankAccount,
   createCompanyBorrowing,
   createInitialBankBalance,
   getBankSummary,
@@ -97,6 +100,14 @@ export default function Bank() {
   const [borrowingDialog, setBorrowingDialog] = useState(false);
   const [repaymentDialog, setRepaymentDialog] = useState(false);
   const [otherExpenseDialog, setOtherExpenseDialog] = useState(false);
+  const [verifyBankDialog, setVerifyBankDialog] = useState(false);
+  const [verifyBankForm, setVerifyBankForm] = useState({
+    accountName: "",
+    bankName: "",
+    accountNumberLast4: "",
+    statementBalance: "",
+    confirmed: false,
+  });
 
   const [selectedBorrowing, setSelectedBorrowing] = useState(null);
   const [otherExpenseForm, setOtherExpenseForm] = useState({
@@ -192,6 +203,7 @@ export default function Bank() {
     setBorrowingDialog(false);
     setRepaymentDialog(false);
     setOtherExpenseDialog(false);
+    setVerifyBankDialog(false);
     setSelectedBorrowing(null);
 
     setRepaymentForm({
@@ -269,6 +281,58 @@ export default function Bank() {
       ) || null;
 
     prepareRepaymentForBorrowing(borrowing);
+  }
+
+  function openVerifyBankDialog() {
+    const account = summary?.account;
+    const isPlaceholder =
+      /placeholder|temporary historical/i.test(
+        `${account?.account_name || ""} ${account?.bank_name || ""}`
+      );
+
+    setVerifyBankForm({
+      accountName: isPlaceholder ? "" : account?.account_name || "",
+      bankName: isPlaceholder ? "" : account?.bank_name || "",
+      accountNumberLast4: account?.account_number_last4 || "",
+      statementBalance: "",
+      confirmed: false,
+    });
+    setError("");
+    setVerifyBankDialog(true);
+  }
+
+  async function handleVerifyBankAccount(event) {
+    event.preventDefault();
+
+    if (!verifyBankForm.confirmed) {
+      setError("Confirm that you checked the real bank account and current balance against the bank statement.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      const result = await verifyCompanyBankAccount({
+        accountId: summary?.account?.id,
+        accountName: verifyBankForm.accountName,
+        bankName: verifyBankForm.bankName,
+        accountNumberLast4: verifyBankForm.accountNumberLast4,
+        statementBalance: verifyBankForm.statementBalance,
+        confirmed: verifyBankForm.confirmed,
+      });
+
+      closeDialogs();
+      showSuccess(
+        `Bank account verified. The ledger has been reconciled to ${formatCurrency(result?.statement_balance)}.`
+      );
+      await loadBankData();
+    } catch (err) {
+      console.error("VERIFY BANK ACCOUNT ERROR:", err);
+      setError(err.message || "Unable to verify the company bank account.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleInitialBalance(event) {
@@ -783,6 +847,54 @@ export default function Bank() {
         </Alert>
       )}
 
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={2}
+            alignItems={{ xs: "stretch", md: "center" }}
+            justifyContent="space-between"
+          >
+            <Box>
+              <Typography variant="h6" fontWeight={700}>
+                Company Bank Account
+              </Typography>
+              <Typography color="text.secondary">
+                {summary?.account?.account_name || "No active account"}
+                {summary?.account?.bank_name ? ` · ${summary.account.bank_name}` : ""}
+                {summary?.account?.account_number_last4
+                  ? ` · ending ${summary.account.account_number_last4}`
+                  : ""}
+              </Typography>
+              <Chip
+                sx={{ mt: 1 }}
+                size="small"
+                color={summary?.account?.is_verified ? "success" : "warning"}
+                label={
+                  summary?.account?.is_verified
+                    ? `Verified ${summary.account.verified_at ? `· ${formatDate(summary.account.verified_at.slice(0, 10))}` : ""}`
+                    : "Not verified — excluded from loan funding"
+                }
+              />
+              {!summary?.account?.is_verified && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  The account must be checked against the actual bank statement before it can fund loans.
+                </Typography>
+              )}
+            </Box>
+            {isAdmin && summary?.account?.id && (
+              <Button
+                variant="contained"
+                color={summary.account.is_verified ? "success" : "warning"}
+                onClick={openVerifyBankDialog}
+              >
+                {summary.account.is_verified ? "Reconcile / Reverify Account" : "Verify Bank Account"}
+              </Button>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
+
       <Grid container spacing={2} mb={3}>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card>
@@ -1145,6 +1257,77 @@ export default function Bank() {
           </CardContent>
         </Card>
       )}
+
+      {/* BANK ACCOUNT VERIFICATION AND RECONCILIATION */}
+      <Dialog
+        open={verifyBankDialog}
+        onClose={closeDialogs}
+        fullWidth
+        maxWidth="sm"
+      >
+        <Box component="form" onSubmit={handleVerifyBankAccount}>
+          <DialogTitle>Verify Company Bank Account</DialogTitle>
+          <DialogContent>
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Only continue after checking the actual company bank account and its current available balance against a recent bank statement. Verification makes the reconciled balance eligible for loan-funding reservations.
+            </Alert>
+            <Stack spacing={2} mt={1}>
+              <TextField
+                label="Account Name"
+                value={verifyBankForm.accountName}
+                onChange={(event) => setVerifyBankForm({ ...verifyBankForm, accountName: event.target.value })}
+                fullWidth
+                required
+              />
+              <TextField
+                label="Bank Name"
+                value={verifyBankForm.bankName}
+                onChange={(event) => setVerifyBankForm({ ...verifyBankForm, bankName: event.target.value })}
+                fullWidth
+                required
+              />
+              <TextField
+                label="Last 4 Digits of Account Number"
+                value={verifyBankForm.accountNumberLast4}
+                onChange={(event) => setVerifyBankForm({ ...verifyBankForm, accountNumberLast4: event.target.value.replace(/\D/g, "").slice(0, 4) })}
+                inputProps={{ maxLength: 4, inputMode: "numeric" }}
+                helperText="Optional. Do not enter the full account number."
+                fullWidth
+              />
+              <TextField
+                label="Current Balance on Bank Statement (R)"
+                type="number"
+                value={verifyBankForm.statementBalance}
+                onChange={(event) => setVerifyBankForm({ ...verifyBankForm, statementBalance: event.target.value })}
+                inputProps={{ min: 0, step: "0.01" }}
+                helperText="Enter the actual current balance. The system will record a reconciliation adjustment if it differs from the ledger."
+                fullWidth
+                required
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={verifyBankForm.confirmed}
+                    onChange={(event) => setVerifyBankForm({ ...verifyBankForm, confirmed: event.target.checked })}
+                  />
+                }
+                label="I confirm that the bank details and balance above have been checked against the actual company bank statement."
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeDialogs}>Cancel</Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="success"
+              disabled={saving || !verifyBankForm.confirmed}
+            >
+              {saving ? "Verifying..." : "Confirm and Verify Account"}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
 
       {/* INITIAL BALANCE DIALOG */}
       <Dialog
