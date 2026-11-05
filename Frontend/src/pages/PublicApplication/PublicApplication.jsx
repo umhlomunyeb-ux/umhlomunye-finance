@@ -241,8 +241,6 @@ export default function PublicApplication() {
     }
     try {
       setCheckingId(true);
-      setOtpSent(false);
-      setOtpCode("");
       setVerificationToken("");
       setMaskedOtpEmail("");
       setCustomerAction("");
@@ -254,12 +252,14 @@ export default function PublicApplication() {
       setForm((previous) => ({ ...EMPTY_FORM, ...previous, id_number: normalizedId }));
       if (data.existingCustomer || data.otpRequired) {
         if (data.emailMissing) throw new Error(data.error);
+        setOtpCode("");
         setOtpSent(true);
         setMaskedOtpEmail(data.maskedEmail || "your registered email address");
         setIdMessage("A six-digit verification code has been sent to your registered email address.");
         setIdChecked(false);
         return;
       }
+      setOtpSent(false);
       setExistingCustomer(false);
       setCustomerNumber("");
       setTopUpEligibility(null);
@@ -1397,8 +1397,7 @@ export default function PublicApplication() {
                   severity="warning"
                   sx={{
                     mt: 2,
-                    textAlign: "left",
-                  }}
+                    textAlign: "left",                  }}
                 >
                   <strong>
                     Waiting for Internet
@@ -1836,7 +1835,10 @@ export default function PublicApplication() {
               <Typography variant="h6" fontWeight="bold" gutterBottom>Verify your identity</Typography>
               <Alert severity="info" sx={{ mb: 2 }}>We sent a six-digit code to {maskedOtpEmail}. The code expires in five minutes.</Alert>
               <TextField fullWidth label="Six-digit email code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputProps={{ inputMode: "numeric", maxLength: 6 }} sx={{ mb: 2 }} />
-              <Button variant="contained" onClick={handleVerifyOtp} disabled={otpVerifying || otpCode.length !== 6}>{otpVerifying ? "Verifying..." : "Verify and Continue"}</Button>
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Button variant="contained" onClick={handleVerifyOtp} disabled={otpVerifying || otpCode.length !== 6}>{otpVerifying ? "Verifying..." : "Verify and Continue"}</Button>
+                <Button variant="outlined" onClick={handleCheckId} disabled={checkingId || otpVerifying}>{checkingId ? "Sending..." : "Resend code"}</Button>
+              </Box>
             </Paper>
           )}
 
