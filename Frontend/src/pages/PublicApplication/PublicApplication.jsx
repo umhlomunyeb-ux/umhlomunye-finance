@@ -110,6 +110,7 @@ export default function PublicApplication() {
   const [pendingSync, setPendingSync] = useState(false);
 
   const [affordabilityAssessment, setAffordabilityAssessment] = useState(null);
+  const [fundingAssessment, setFundingAssessment] = useState(null);
   const [fundingBookingComplete, setFundingBookingComplete] = useState(false);
   const [fundingBookingMessage, setFundingBookingMessage] = useState("");
   const [preferredFundingDate, setPreferredFundingDate] = useState("");
@@ -908,6 +909,7 @@ export default function PublicApplication() {
       setAffordabilityAssessment(
         result?.affordability_assessment || null
       );
+      setFundingAssessment(result?.funding_assessment || null);
 
       /*
        * Real server application ID.
@@ -1434,11 +1436,11 @@ export default function PublicApplication() {
                     </Typography>
                   )}
                 </Alert>
-                {affordabilityAssessment.status === "AFFORDABLE" && applicationId && uploadToken && !fundingBookingComplete && (
+                {affordabilityAssessment.status === "AFFORDABLE" && fundingAssessment?.sufficient === false && fundingAssessment?.reason !== "NOT_AFFORDABLE" && applicationId && uploadToken && !fundingBookingComplete && !["ISSUED", "ACCEPTED", "FINALIZED"].includes(publicOffer?.offer_status) && (
                   <Box sx={{ mt: 2 }}>
                     <Typography fontWeight="bold" sx={{ mb: 1 }}>Funding is subject to available company funds.</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      You may wait for funds to become available or select a future date. No money is reserved until the company bank balance is verified and sufficient funds are available.
+                      The available company balance after existing reservations is R {Number(fundingAssessment.available_funds || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}. Your requested amount is R {Number(fundingAssessment.requested_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}. The shortfall is R {Number(fundingAssessment.shortfall || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}. You may wait for funds or select a future funding date.
                     </Typography>
                     <Button variant="contained" fullWidth sx={{ mb: 1 }} disabled={loading}
                       onClick={() => handleFundingBooking("WAIT")}>Wait for Funds</Button>
