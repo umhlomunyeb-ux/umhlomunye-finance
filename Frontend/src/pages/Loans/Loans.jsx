@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
   Dialog,
@@ -38,6 +39,7 @@ import {
 } from "../../services/documentService";
 
 export default function Loans() {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
   const [idCheckOpen, setIdCheckOpen] = useState(false);
@@ -177,8 +179,7 @@ export default function Loans() {
    */
 
   function handleNewLoan() {
-    resetLoanStartState();
-    setIdCheckOpen(true);
+    navigate("/apply");
   }
 
   /*
