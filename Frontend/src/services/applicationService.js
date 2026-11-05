@@ -554,6 +554,7 @@ async function submitApplicationToServer(
     }
 
     submitted.affordability_assessment = expenseResult?.assessment || null;
+    submitted.funding_assessment = expenseResult?.funding || null;
   }
 
   return submitted;
