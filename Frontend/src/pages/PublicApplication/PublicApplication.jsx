@@ -988,6 +988,8 @@ export default function PublicApplication() {
           id_number:
             normalizedFormId,
 
+          verificationToken,
+
           monthly_expenses: expenses.map((item) => ({
             category: item.category,
             description: item.description,
@@ -1397,8 +1399,7 @@ export default function PublicApplication() {
                     severity="info"
                     sx={{
                       mt: 2,
-                      textAlign: "left",
-                    }}
+                      textAlign: "left",                    }}
                   >
                     {documents.length} supporting
                     document
