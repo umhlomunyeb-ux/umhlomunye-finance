@@ -76,6 +76,7 @@ function getTransactionTypeLabel(type) {
     LOAN_REPAYMENT: "Loan Repayment",
     OTHER_INCOME: "Other Income",
     OTHER_EXPENSE: "Other Expense",
+    BANK_RECONCILIATION: "Bank Balance Reconciliation",
     VOID: "Voided",
   };
 
