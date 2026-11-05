@@ -204,6 +204,11 @@ export default function PublicApplication() {
     setIdChecked(false);
     setExistingCustomer(false);
     setCustomerNumber("");
+    setOtpSent(false);
+    setOtpCode("");
+    setVerificationToken("");
+    setMaskedOtpEmail("");
+    setCustomerAction("");
     setTopUpEligibility(null);
     setTopUpAmount("");
     setTopUpResult(null);
@@ -274,14 +279,14 @@ export default function PublicApplication() {
 
   async function handleVerifyOtp() {
     setError("");
-    if (!/^\\d{6}$/.test(String(otpCode).replace(/\\D/g, ""))) {
+    if (!/^\d{6}$/.test(String(otpCode).replace(/\D/g, ""))) {
       setError("Enter the six-digit verification code sent to your email.");
       return;
     }
     try {
       setOtpVerifying(true);
       const { data: verifyData, error: verifyError } = await supabase.functions.invoke("public-customer-otp", {
-        body: { action: "verify", idNumber: normalizeId(idNumber), otp: String(otpCode).replace(/\\D/g, "") },
+        body: { action: "verify", idNumber: normalizeId(idNumber), otp: String(otpCode).replace(/\D/g, "") },
       });
       if (verifyError) throw verifyError;
       if (!verifyData?.success || !verifyData?.verificationToken) throw new Error(verifyData?.error || "The verification code could not be confirmed.");
@@ -1397,8 +1402,7 @@ export default function PublicApplication() {
                   >
                     {documents.length} supporting
                     document
-                    {documents.length ===
-                    1
+                    {documents.length ===                    1
                       ? ""
                       : "s"}{" "}
                     {documents.length ===
@@ -1813,7 +1817,7 @@ export default function PublicApplication() {
             <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
               <Typography variant="h6" fontWeight="bold" gutterBottom>Verify your identity</Typography>
               <Alert severity="info" sx={{ mb: 2 }}>We sent a six-digit code to {maskedOtpEmail}. The code expires in five minutes.</Alert>
-              <TextField fullWidth label="Six-digit email code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\\D/g, "").slice(0, 6))} inputProps={{ inputMode: "numeric", maxLength: 6 }} sx={{ mb: 2 }} />
+              <TextField fullWidth label="Six-digit email code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputProps={{ inputMode: "numeric", maxLength: 6 }} sx={{ mb: 2 }} />
               <Button variant="contained" onClick={handleVerifyOtp} disabled={otpVerifying || otpCode.length !== 6}>{otpVerifying ? "Verifying..." : "Verify and Continue"}</Button>
             </Paper>
           )}
