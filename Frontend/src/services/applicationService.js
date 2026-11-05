@@ -282,6 +282,28 @@ async function getStoredApplicationDocument(
 }
 
 /* ============================================================
+   SOUTH AFRICAN PHONE NORMALIZATION
+============================================================ */
+
+function normalizeSouthAfricanPhone(value) {
+  const raw = String(value ?? "").trim();
+  const digits = raw.replace(/\\D/g, "");
+
+  // Convert international South African format (+27...) to local format (0...).
+  if (digits.startsWith("27") && digits.length === 11) {
+    return `0${digits.slice(2)}`;
+  }
+
+  // Already in local 10-digit format.
+  if (digits.length === 10 && digits.startsWith("0")) {
+    return digits;
+  }
+
+  // Return the cleaned value so the existing validator reports invalid numbers.
+  return digits;
+}
+
+/* ============================================================
    VALIDATION
 ============================================================ */
 
