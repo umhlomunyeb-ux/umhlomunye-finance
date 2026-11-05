@@ -2166,12 +2166,12 @@ export default function PublicApplication() {
               </Alert>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
-                  <TextField fullWidth required type="number" label="Monthly Income" name="monthly_income"
+                  <TextField fullWidth required type="password" label="Monthly Income" name="monthly_income"
                     value={form.monthly_income} onChange={handleChange}
                     helperText={existingCustomer && form.monthly_income !== ""
-                      ? "Your saved monthly income has been loaded. You can edit it if it has changed, or leave it as is."
-                      : "Enter your current monthly income."}
-                    inputProps={{ min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
+                      ? "Your saved monthly income is hidden for privacy. You can edit it if it has changed, or leave it as is."
+                      : "Enter your current monthly income. The amount will be masked for privacy."}
+                    inputProps={{ inputMode: "decimal", min: 0, step: "0.01" }} InputProps={{ startAdornment: "R " }} />
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <TextField fullWidth type="number" label="Other Monthly Income" name="other_income"
