@@ -242,7 +242,6 @@ export default function PublicApplication() {
     try {
       setCheckingId(true);
       setVerificationToken("");
-      setMaskedOtpEmail("");
       setCustomerAction("");
       const { data, error: startError } = await supabase.functions.invoke("public-customer-otp", {
         body: { action: "start", idNumber: normalizedId },
@@ -1397,8 +1396,7 @@ export default function PublicApplication() {
                   severity="warning"
                   sx={{
                     mt: 2,
-                    textAlign: "left",                  }}
-                >
+                    textAlign: "left",                  }}                >
                   <strong>
                     Waiting for Internet
                   </strong>
