@@ -252,7 +252,7 @@ export default function PublicApplication() {
       if (startError) throw startError;
       if (!data?.success) throw new Error(data?.error || "Unable to check this ID.");
       setForm((previous) => ({ ...EMPTY_FORM, ...previous, id_number: normalizedId }));
-      if (data.existingCustomer) {
+      if (data.existingCustomer || data.otpRequired) {
         if (data.emailMissing) throw new Error(data.error);
         setOtpSent(true);
         setMaskedOtpEmail(data.maskedEmail || "your registered email address");
@@ -298,6 +298,19 @@ export default function PublicApplication() {
       if (!data?.success) throw new Error(data?.error || "Unable to load the verified customer record.");
       const customer = data.customer;
       setVerificationToken(token);
+      if (!customer) {
+        setExistingCustomer(false);
+        setCustomerNumber("");
+        setTopUpEligibility(null);
+        setResumeApplication(data.resumeApplication || null);
+        setForm({ ...EMPTY_FORM, id_number: normalizeId(idNumber) });
+        setIdChecked(true);
+        setOtpSent(false);
+        setOtpCode("");
+        setCustomerAction("new_loan");
+        setIdMessage("Your identity has been verified. You can continue your previous quotation or start a new application.");
+        return;
+      }
       setExistingCustomer(true);
       setCustomerNumber(customer.customer_number || "");
       setTopUpEligibility(data.topUpEligibility || null);
@@ -466,15 +479,20 @@ export default function PublicApplication() {
     setLoading(true);
     setError("");
     try {
-      const { data, error: cancelError } = await supabase.rpc(
-        "cancel_unfinished_public_application",
+      const { data: cancelData, error: cancelError } = await supabase.functions.invoke(
+        "public-customer-otp",
         {
-          p_application_id: resumeApplication.application_id,
-          p_id_number: idNumber,
+          body: {
+            action: "cancel_resume",
+            idNumber: normalizeId(idNumber),
+            verificationToken,
+            applicationId: resumeApplication.application_id,
+          },
         }
       );
       if (cancelError) throw cancelError;
-      if (!data?.success) throw new Error("The previous application could not be cancelled.");
+      if (!cancelData?.success || !cancelData?.result?.success) throw new Error(cancelData?.error || "The previous application could not be cancelled.");
+      const data = cancelData.result;
       setResumeApplication(null);
       setIdMessage(`Previous quotation ${data.application_number || ""} cancelled. You can now complete a new application.`);
       setExpenses(["Grocery", "Housing", "Clothing", "Transportation", "Existing Loan Repayments", "Other Expenses"]
@@ -1397,8 +1415,7 @@ export default function PublicApplication() {
                   0 && (
                   <Alert
                     severity="info"
-                    sx={{
-                      mt: 2,
+                    sx={{                      mt: 2,
                       textAlign: "left",                    }}
                   >
                     {documents.length} supporting
