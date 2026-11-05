@@ -1,0 +1,2 @@
+revoke all on function public.lookup_public_customer_by_id_number(text) from public, anon, authenticated;
+grant execute on function public.lookup_public_customer_by_id_number(text) to authenticated, service_role;
