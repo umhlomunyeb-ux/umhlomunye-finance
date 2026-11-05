@@ -136,6 +136,43 @@ function toNumber(value) {
    BANK ACCOUNT
 ========================================================= */
 
+export async function verifyCompanyBankAccount({
+  accountId,
+  accountName,
+  bankName,
+  accountNumberLast4 = "",
+  statementBalance,
+  confirmed = false,
+}) {
+  const numericBalance = Number(statementBalance);
+  if (!accountId) throw new Error("The active company bank account was not found.");
+  if (!accountName?.trim() || !bankName?.trim()) {
+    throw new Error("Enter the actual account name and bank name.");
+  }
+  if (!Number.isFinite(numericBalance) || numericBalance < 0) {
+    throw new Error("Enter a valid current bank statement balance.");
+  }
+  if (!confirmed) {
+    throw new Error("Confirm that the bank details and balance were checked against the actual bank statement.");
+  }
+
+  const { data, error } = await supabase.rpc("verify_company_bank_account", {
+    p_account_id: accountId,
+    p_account_name: accountName.trim(),
+    p_bank_name: bankName.trim(),
+    p_account_number_last4: accountNumberLast4?.trim() || null,
+    p_statement_balance: numericBalance,
+    p_confirmed: true,
+  });
+
+  if (error) {
+    console.error("VERIFY COMPANY BANK ACCOUNT RPC ERROR:", error);
+    throw new Error(getErrorMessage(error, "Unable to verify the company bank account."));
+  }
+
+  return data;
+}
+
 export async function getBankAccount() {
   const { data, error } = await supabase
     .from("bank_accounts")
@@ -224,7 +261,16 @@ export async function getBankBalance() {
         : balance - amount;
     }, 0);
 
-  return toNumber(account?.opening_balance) + transactionMovement;
+  const latestTransaction = transactions
+    .filter((transaction) => transaction.is_void !== true)
+    .sort((a, b) =>
+      String(b.transaction_date).localeCompare(String(a.transaction_date)) ||
+      String(b.created_at).localeCompare(String(a.created_at))
+    )[0];
+
+  return latestTransaction
+    ? toNumber(latestTransaction.balance_after)
+    : toNumber(account?.opening_balance);
 }
 
 
@@ -1168,6 +1214,7 @@ export async function getBankSummary() {
     activeTransactions
       .filter(
         (transaction) =>
+          transaction.transaction_type !== "BANK_RECONCILIATION" &&
           transaction.direction ===
           "IN"
       )
@@ -1184,6 +1231,7 @@ export async function getBankSummary() {
     activeTransactions
       .filter(
         (transaction) =>
+          transaction.transaction_type !== "BANK_RECONCILIATION" &&
           transaction.direction ===
           "OUT"
       )
@@ -1242,9 +1290,9 @@ export async function getBankSummary() {
     totalBankFees,
 
     currentBalance:
-      toNumber(account?.opening_balance) +
-      totalMoneyIn -
-      totalMoneyOut,
+      activeTransactions.length
+        ? toNumber(activeTransactions[0].balance_after)
+        : toNumber(account?.opening_balance),
 
     netMovement:
       totalMoneyIn -
@@ -1381,19 +1429,17 @@ function buildBankReport(
         ).toUpperCase();
 
       if (
-        transaction.direction ===
-        "IN"
+        type !== "BANK_RECONCILIATION" &&
+        transaction.direction === "IN"
       ) {
-        report.moneyIn +=
-          amount;
+        report.moneyIn += amount;
       }
 
       if (
-        transaction.direction ===
-        "OUT"
+        type !== "BANK_RECONCILIATION" &&
+        transaction.direction === "OUT"
       ) {
-        report.moneyOut +=
-          amount;
+        report.moneyOut += amount;
       }
 
       if (
@@ -1540,6 +1586,7 @@ export async function removeBankSubscription(
 const bankService = {
   getBankAccount,
   getBankBalance,
+  verifyCompanyBankAccount,
   getBankTransactions,
 
   createInitialBankBalance,
