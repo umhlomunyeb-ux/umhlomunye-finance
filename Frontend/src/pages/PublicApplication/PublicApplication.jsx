@@ -1862,7 +1862,7 @@ export default function PublicApplication() {
                 Your available top-up is based on your approved credit limit less your outstanding principal. Interest and fees are not included in this calculation.
               </Alert>
               <Typography sx={{ mb: 1 }}>
-                **Maximum available top-up: {formatCurrency(Number(topUpEligibility.maximum_top_up || 0))}**
+                <strong>Maximum available top-up: {formatCurrency(Number(topUpEligibility.maximum_top_up || 0))}</strong>
               </Typography>
               {Number(topUpEligibility.maximum_top_up || 0) <= 0 ? (
                 <Alert severity="warning">You currently have no available credit for a top-up.</Alert>
