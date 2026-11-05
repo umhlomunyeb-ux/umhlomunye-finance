@@ -90,8 +90,18 @@ export default function PublicApplication() {
   const [existingCustomer, setExistingCustomer] =
     useState(false);
 
-  const [customerNumber, setCustomerNumber] =
-    useState("");
+  const [customerNumber, setCustomerNumber] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [verificationToken, setVerificationToken] = useState("");
+  const [maskedOtpEmail, setMaskedOtpEmail] = useState("");
+  const [customerAction, setCustomerAction] = useState("");
+  const [creditLimitReason, setCreditLimitReason] = useState("");
+  const [requestedCreditLimit, setRequestedCreditLimit] = useState("");
+  const [creditLimitPayslip, setCreditLimitPayslip] = useState(null);
+  const [creditLimitSubmitting, setCreditLimitSubmitting] = useState(false);
+  const [creditLimitRequestResult, setCreditLimitRequestResult] = useState(null);
   const [topUpEligibility, setTopUpEligibility] = useState(null);
   const [topUpAmount, setTopUpAmount] = useState("");
   const [topUpResult, setTopUpResult] = useState(null);
@@ -211,203 +221,157 @@ export default function PublicApplication() {
   async function handleCheckId() {
     setError("");
     setIdMessage("");
-
-    const normalizedId =
-      normalizeId(idNumber);
-
+    const normalizedId = normalizeId(idNumber);
     if (normalizedId.length !== 13) {
-      setError(
-        "Please enter a valid 13-digit South African ID number."
-      );
+      setError("Please enter a valid 13-digit South African ID number.");
       return;
     }
-
-    /*
-     * OFFLINE
-     *
-     * Do not attempt the customer lookup when there
-     * is no connection. The application can still be
-     * captured and queued. The server-side customer/ID
-     * check will occur during synchronization.
-     */
     if (!navigator.onLine) {
       setIdChecked(false);
       setExistingCustomer(false);
       setCustomerNumber("");
-
-      setForm((previous) => ({
-        ...previous,
-        id_number: normalizedId,
-      }));
-
-      setIdMessage(
-        "An internet connection is required to check this ID securely. Reconnect and check the ID again; it will not be saved offline."
-      );
-
+      setForm((previous) => ({ ...previous, id_number: normalizedId }));
+      setIdMessage("An internet connection is required to check this ID securely. Reconnect and check the ID again; it will not be saved offline.");
       return;
     }
-
     try {
       setCheckingId(true);
-
-      const {
-        data,
-        error: lookupError,
-      } = await supabase.rpc(
-        "lookup_public_customer_by_id_number",
-        {
-          p_id_number: normalizedId,
-        }
-      );
-
-      if (lookupError) {
-        throw lookupError;
-      }
-
-      const customer =
-        Array.isArray(data)
-          ? data[0] || null
-          : data || null;
-
-      let resumableApplication = null;
-      try {
-        const { data: resumeData, error: resumeError } = await supabase.rpc(
-          "resume_public_loan_application_by_id_number",
-          { p_id_number: normalizedId }
-        );
-        if (resumeError) throw resumeError;
-        resumableApplication = resumeData || null;
-      } catch (resumeError) {
-        console.warn("PUBLIC APPLICATION RESUME LOOKUP:", resumeError);
-      }
-
-      setIdChecked(true);
-
-      if (customer) {
-        setExistingCustomer(true);
-        const { data: eligibility, error: eligibilityError } = await supabase.rpc(
-          "get_public_top_up_eligibility",
-          { p_id_number: normalizedId }
-        );
-        if (eligibilityError) throw eligibilityError;
-        setTopUpEligibility(eligibility || null);
-
-        setCustomerNumber(
-          customer.customer_number || ""
-        );
-
-        setForm({
-          ...EMPTY_FORM,
-
-          id_number: normalizedId,
-
-          first_name:
-            customer.first_name || "",
-
-          last_name:
-            customer.last_name || "",
-
-          cellphone:
-            customer.cellphone || "",
-
-          email:
-            customer.email || "",
-
-          physical_address:
-            customer.physical_address || "",
-
-          employer:
-            customer.employer || "",
-
-          employment_status:
-            customer.employment_status || "",
-
-          monthly_income:
-            customer.monthly_income ?? "",
-
-          other_income:
-            customer.other_income ?? "",
-
-          bank_name:
-            customer.bank_name || "",
-
-          account_number:
-            customer.account_number || "",
-
-          loan_purpose:
-            customer.loan_purpose || "",
-
-          collection_preference:
-            customer.collection_preference ||
-            "",
-
-          amount_requested: "100",
-
-          preferred_payment_date: "",
-
-          notes: "",
-        });
-
-        setIdMessage(
-          "Existing customer found. Your registered information has been loaded."
-        );
-      } else {
-        setExistingCustomer(false);
-        setCustomerNumber("");
-        setTopUpEligibility(null);
-
-        setForm({
-          ...EMPTY_FORM,
-          id_number: normalizedId,
-        });
-
-        setIdMessage(
-          "No existing customer was found. Please complete the application details below."
-        );
-      }
-
-      setResumeApplication(resumableApplication);
-      if (resumableApplication) {
-        setIdMessage("An unfinished quotation was found for this ID number. Choose whether to continue it or cancel it and start a new application.");
-      }
-    } catch (err) {
-      console.error(
-        "PUBLIC CUSTOMER ID LOOKUP ERROR:",
-        err
-      );
-
-      /*
-       * The connection can disappear after navigator.onLine
-       * reported that the device was online. In that case,
-       * allow offline application capture instead of losing
-       * the application.
-       */
-      if (!navigator.onLine) {
+      setOtpSent(false);
+      setOtpCode("");
+      setVerificationToken("");
+      setMaskedOtpEmail("");
+      setCustomerAction("");
+      const { data, error: startError } = await supabase.functions.invoke("public-customer-otp", {
+        body: { action: "start", idNumber: normalizedId },
+      });
+      if (startError) throw startError;
+      if (!data?.success) throw new Error(data?.error || "Unable to check this ID.");
+      setForm((previous) => ({ ...EMPTY_FORM, ...previous, id_number: normalizedId }));
+      if (data.existingCustomer) {
+        if (data.emailMissing) throw new Error(data.error);
+        setOtpSent(true);
+        setMaskedOtpEmail(data.maskedEmail || "your registered email address");
+        setIdMessage("A six-digit verification code has been sent to your registered email address.");
         setIdChecked(false);
-        setExistingCustomer(false);
-        setCustomerNumber("");
-
-        setForm((previous) => ({
-          ...previous,
-          id_number: normalizedId,
-        }));
-
-        setIdMessage(
-          "The connection was lost during the ID check. Reconnect and check again; the ID number will not be stored offline."
-        );
-
         return;
       }
-
-      setIdChecked(false);
       setExistingCustomer(false);
-
-      setError(
-        err?.message ||
-          "Unable to check the ID number. Please try again."
-      );
+      setCustomerNumber("");
+      setTopUpEligibility(null);
+      setResumeApplication(null);
+      setIdChecked(true);
+      setCustomerAction("new_loan");
+      setForm({ ...EMPTY_FORM, id_number: normalizedId });
+      setIdMessage("No existing customer record was found. Please complete the new loan application.");
+    } catch (err) {
+      console.error("PUBLIC CUSTOMER OTP START ERROR:", err);
+      setIdChecked(false);
+      setError(err?.message || "Unable to check the ID number. Please try again.");
     } finally {
       setCheckingId(false);
+    }
+  }
+
+  async function handleVerifyOtp() {
+    setError("");
+    if (!/^\\d{6}$/.test(String(otpCode).replace(/\\D/g, ""))) {
+      setError("Enter the six-digit verification code sent to your email.");
+      return;
+    }
+    try {
+      setOtpVerifying(true);
+      const { data: verifyData, error: verifyError } = await supabase.functions.invoke("public-customer-otp", {
+        body: { action: "verify", idNumber: normalizeId(idNumber), otp: String(otpCode).replace(/\\D/g, "") },
+      });
+      if (verifyError) throw verifyError;
+      if (!verifyData?.success || !verifyData?.verificationToken) throw new Error(verifyData?.error || "The verification code could not be confirmed.");
+      const token = verifyData.verificationToken;
+      const { data, error: optionsError } = await supabase.functions.invoke("public-customer-otp", {
+        body: { action: "options", idNumber: normalizeId(idNumber), verificationToken: token },
+      });
+      if (optionsError) throw optionsError;
+      if (!data?.success) throw new Error(data?.error || "Unable to load the verified customer record.");
+      const customer = data.customer;
+      setVerificationToken(token);
+      setExistingCustomer(true);
+      setCustomerNumber(customer.customer_number || "");
+      setTopUpEligibility(data.topUpEligibility || null);
+      setResumeApplication(data.resumeApplication || null);
+      setForm({
+        ...EMPTY_FORM,
+        id_number: normalizeId(idNumber),
+        first_name: customer.first_name || "",
+        last_name: customer.last_name || "",
+        cellphone: customer.cellphone || "",
+        email: customer.email || "",
+        physical_address: customer.physical_address || "",
+        employer: customer.employer || "",
+        employment_status: customer.employment_status || "",
+        monthly_income: customer.monthly_income ?? "",
+        other_income: customer.other_income ?? "",
+        bank_name: customer.bank_name || "",
+        account_number: customer.account_number || "",
+        loan_purpose: customer.loan_purpose || "",
+        collection_preference: customer.collection_preference || "",
+        amount_requested: "100",
+      });
+      setIdChecked(true);
+      setOtpSent(false);
+      setOtpCode("");
+      setCustomerAction("");
+      setIdMessage("Identity verified. Choose what you would like to do.");
+    } catch (err) {
+      console.error("PUBLIC CUSTOMER OTP VERIFY ERROR:", err);
+      setError(err?.message || "Verification failed. Please request a new code.");
+    } finally {
+      setOtpVerifying(false);
+    }
+  }
+
+  async function handleSubmitCreditLimitRequest() {
+    setError("");
+    setCreditLimitRequestResult(null);
+    if (!verificationToken) {
+      setError("Verify your identity again before submitting this request.");
+      return;
+    }
+    if (!creditLimitPayslip) {
+      setError("Upload your latest payslip to request a credit-limit increase.");
+      return;
+    }
+    if (!creditLimitReason.trim() || creditLimitReason.trim().length < 10) {
+      setError("Please explain why you are requesting a credit-limit increase (at least 10 characters).");
+      return;
+    }
+    try {
+      setCreditLimitSubmitting(true);
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || "").split(",")[1] || "");
+        reader.onerror = () => reject(new Error("Unable to read the payslip file."));
+        reader.readAsDataURL(creditLimitPayslip);
+      });
+      const { data, error: requestError } = await supabase.functions.invoke("public-customer-otp", {
+        body: {
+          action: "credit_limit_request",
+          idNumber: normalizeId(idNumber),
+          verificationToken,
+          requestedCreditLimit: Number(requestedCreditLimit),
+          reason: creditLimitReason,
+          payslipBase64: base64,
+          payslipMimeType: creditLimitPayslip.type,
+        },
+      });
+      if (requestError) throw requestError;
+      if (!data?.success) throw new Error(data?.error || "Unable to submit your credit-limit request.");
+      setCreditLimitRequestResult(data.request);
+      setCreditLimitPayslip(null);
+      setCreditLimitReason("");
+      setRequestedCreditLimit("");
+    } catch (err) {
+      setError(err?.message || "Unable to submit your credit-limit request.");
+    } finally {
+      setCreditLimitSubmitting(false);
     }
   }
 
@@ -421,24 +385,19 @@ export default function PublicApplication() {
       return;
     }
     if (amount > maximum) {
-      setError(`Your requested top-up is above your available credit limit. Maximum top-up amount: ${formatCurrency(maximum)}. Please enter an amount equal to or below ${formatCurrency(maximum)}.`);
+      setError(`Your requested top-up is above your available credit limit. Maximum top-up amount: ${formatCurrency(maximum)}.`);
       return;
     }
     setLoading(true);
     try {
-      const { data, error: submitError } = await supabase.rpc("submit_public_loan_top_up", {
-        p_id_number: normalizeId(idNumber),
-        p_amount: amount,
+      const { data, error: submitError } = await supabase.functions.invoke("public-customer-otp", {
+        body: { action: "top_up", idNumber: normalizeId(idNumber), verificationToken, amount },
       });
       if (submitError) throw submitError;
-      setTopUpResult(data);
-      const { data: refreshed, error: refreshError } = await supabase.rpc(
-        "get_public_top_up_eligibility",
-        { p_id_number: normalizeId(idNumber) }
-      );
-      if (!refreshError) setTopUpEligibility(refreshed || null);
+      if (!data?.success) throw new Error(data?.error || "Unable to submit the top-up.");
+      setTopUpResult(data.result || null);
     } catch (err) {
-      setError(err?.message || "Unable to submit your top-up request.");
+      setError(err?.message || "Unable to submit the top-up.");
     } finally {
       setLoading(false);
     }
@@ -1398,7 +1357,6 @@ export default function PublicApplication() {
             >
               Application Number
             </Typography>
-
             <Typography
               variant="h4"
               color="primary"
@@ -1851,11 +1809,48 @@ export default function PublicApplication() {
             </Paper>
           )}
 
+          {otpSent && (
+            <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom>Verify your identity</Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>We sent a six-digit code to {maskedOtpEmail}. The code expires in five minutes.</Alert>
+              <TextField fullWidth label="Six-digit email code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\\D/g, "").slice(0, 6))} inputProps={{ inputMode: "numeric", maxLength: 6 }} sx={{ mb: 2 }} />
+              <Button variant="contained" onClick={handleVerifyOtp} disabled={otpVerifying || otpCode.length !== 6}>{otpVerifying ? "Verifying..." : "Verify and Continue"}</Button>
+            </Paper>
+          )}
+
+          {idChecked && existingCustomer && !resumeApplication && !customerAction && (
+            <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom>What would you like to do?</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={4}><Button fullWidth variant="outlined" sx={{ minHeight: 76 }} onClick={() => setCustomerAction("new_loan")}>Apply for a New Loan</Button></Grid>
+                <Grid item xs={12} md={4}><Button fullWidth variant="outlined" sx={{ minHeight: 76 }} disabled={!topUpEligibility?.has_open_loan || Number(topUpEligibility?.maximum_top_up || 0) <= 0} onClick={() => setCustomerAction("topup")}>Apply for a Top-Up Loan</Button></Grid>
+                <Grid item xs={12} md={4}><Button fullWidth variant="outlined" sx={{ minHeight: 76 }} onClick={() => setCustomerAction("credit_limit")}>Request Credit-Limit Increase</Button></Grid>
+              </Grid>
+              {!topUpEligibility?.has_open_loan && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Top-up is available only when you have an active loan.</Typography>}
+            </Paper>
+          )}
+
+          {idChecked && existingCustomer && customerAction === "credit_limit" && (
+            <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom>Request a Credit-Limit Increase</Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>Your request will be sent to the administrator for review. Your latest payslip is required. Your current credit limit is {formatCurrency(Number(topUpEligibility?.credit_limit || 0))}.</Alert>
+              <TextField fullWidth type="number" label="Requested Credit Limit (R)" value={requestedCreditLimit} onChange={(event) => setRequestedCreditLimit(event.target.value)} inputProps={{ min: 1, max: 6000, step: "0.01" }} sx={{ mb: 2 }} />
+              <TextField fullWidth multiline minRows={3} label="Reason for the increase" value={creditLimitReason} onChange={(event) => setCreditLimitReason(event.target.value)} sx={{ mb: 2 }} />
+              <Button component="label" variant="outlined" sx={{ mb: 2 }}>Upload Latest Payslip<input hidden type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => setCreditLimitPayslip(event.target.files?.[0] || null)} /></Button>
+              {creditLimitPayslip && <Typography variant="body2" sx={{ mb: 2 }}>{creditLimitPayslip.name} ({(creditLimitPayslip.size / 1048576).toFixed(2)} MB)</Typography>}
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Button variant="contained" onClick={handleSubmitCreditLimitRequest} disabled={creditLimitSubmitting}>{creditLimitSubmitting ? "Submitting..." : "Submit Request for Approval"}</Button>
+                <Button onClick={() => setCustomerAction("")}>Back</Button>
+              </Box>
+              {creditLimitRequestResult && <Alert severity="success" sx={{ mt: 2 }}>Your credit-limit increase request has been submitted to the administrator for approval.</Alert>}
+            </Paper>
+          )}
+
           {/* =====================================================
               EVERYTHING BELOW ID CHECK
           ===================================================== */}
 
-          {idChecked && !resumeApplication && topUpEligibility?.has_open_loan && (
+          {idChecked && existingCustomer && !resumeApplication && customerAction === "topup" && (
             <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
               <Typography variant="h6" fontWeight="bold" gutterBottom>Apply for a Top-Up Loan</Typography>
               <Alert severity="info" sx={{ mb: 2 }}>
@@ -1901,7 +1896,7 @@ export default function PublicApplication() {
             </Paper>
           )}
 
-          {idChecked && !resumeApplication && !topUpEligibility?.has_open_loan && (
+          {idChecked && !resumeApplication && (!existingCustomer || customerAction === "new_loan") && (
             <form
               noValidate
               onSubmit={handleSubmit}
