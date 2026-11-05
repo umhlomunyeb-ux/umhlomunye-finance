@@ -59,3 +59,7 @@ BEGIN
   RETURN jsonb_build_object('success',true,'application_number',v_app.application_number);
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.resume_public_loan_application_by_id_number(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.cancel_unfinished_public_application(uuid,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.resume_public_loan_application_by_id_number(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cancel_unfinished_public_application(uuid,text) TO anon, authenticated;
