@@ -658,38 +658,47 @@ export default function Dashboard() {
       [transactions]
     );
 
-  const upcomingInterest =
+  const upcomingPayments =
     useMemo(() => {
-      const now =
-        new Date();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const lastDay = new Date(today);
+      lastDay.setDate(lastDay.getDate() + 7);
+
+      const getPaymentDate = (value) => {
+        if (!value) return null;
+
+        // Payment dates are stored as date-only values.
+        const datePart = String(value).slice(0, 10);
+        const [year, month, day] = datePart.split("-").map(Number);
+
+        if (!year || !month || !day) return null;
+
+        return new Date(year, month - 1, day);
+      };
 
       return activeLoans
         .filter((loan) => {
-          if (
-            !loan.next_interest_date
-          ) {
-            return false;
-          }
-
-          const interestDate =
-            new Date(
-              loan.next_interest_date
-            );
+          const paymentDate = getPaymentDate(
+            loan.next_payment_date || loan.first_payment_date
+          );
 
           return (
-            interestDate >= now
+            paymentDate &&
+            paymentDate >= today &&
+            paymentDate <= lastDay &&
+            Number(loan.current_balance || 0) > 0
           );
         })
-        .sort(
-          (a, b) =>
-            new Date(
-              a.next_interest_date
-            ) -
-            new Date(
-              b.next_interest_date
-            )
-        )
-        .slice(0, 10);
+        .sort((a, b) =>
+          getPaymentDate(
+            a.next_payment_date || a.first_payment_date
+          ) -
+          getPaymentDate(
+            b.next_payment_date || b.first_payment_date
+          )
+        );
     }, [activeLoans]);
 
   if (loading) {
@@ -1048,7 +1057,7 @@ export default function Dashboard() {
         </Box>
       </Box>
 
-      {/* UPCOMING INTEREST */}
+      {/* UPCOMING PAYMENTS */}
       <Card
         elevation={2}
         sx={{
@@ -1068,7 +1077,7 @@ export default function Dashboard() {
                 variant="h6"
                 fontWeight={700}
               >
-                Upcoming Interest Processing
+                Upcoming Payments (Next 7 Days)
               </Typography>
 
               <Typography
@@ -1087,13 +1096,13 @@ export default function Dashboard() {
             sx={{ mb: 2 }}
           />
 
-          {upcomingInterest.length ===
+          {upcomingPayments.length ===
           0 ? (
             <Typography
               color="text.secondary"
               sx={{ py: 3 }}
             >
-              No upcoming interest processing.
+              No payments are due within the next 7 days.
             </Typography>
           ) : (
             <TableContainer>
@@ -1114,7 +1123,7 @@ export default function Dashboard() {
 
                     <TableCell>
                       <strong>
-                        Interest Date
+                        Payment Date
                       </strong>
                     </TableCell>
 
@@ -1127,7 +1136,7 @@ export default function Dashboard() {
                 </TableHead>
 
                 <TableBody>
-                  {upcomingInterest.map(
+                  {upcomingPayments.map(
                     (loan) => (
                       <TableRow
                         key={loan.id}
@@ -1157,7 +1166,7 @@ export default function Dashboard() {
 
                         <TableCell>
                           {formatDateTime(
-                            loan.next_interest_date
+                            (loan.next_payment_date || loan.first_payment_date)
                           )}
                         </TableCell>
 
